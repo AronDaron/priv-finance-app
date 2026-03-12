@@ -1,0 +1,44 @@
+{
+  "name": "priv-finance-app",
+  "version": "1.0.0",
+  "description": "Desktopowa aplikacja do śledzenia portfela inwestycyjnego z AI",
+  "type": "module",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "electron-vite build && electron-builder",
+    "preview": "electron-vite preview"
+  },
+  "build": {
+    "appId": "com.priv.finance-app",
+    "productName": "Finance Portfolio Tracker",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "resources/icon.ico"
+    },
+    "files": [
+      "out/**/*"
+    ]
+  },
+  "dependencies": {
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "^25.4.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.4",
+    "autoprefixer": "^10.4.27",
+    "electron": "^41.0.0",
+    "electron-builder": "^26.8.1",
+    "electron-vite": "^5.0.0",
+    "postcss": "^8.5.8",
+    "tailwindcss": "^3.4.19",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1"
+  }
+}

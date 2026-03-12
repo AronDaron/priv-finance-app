@@ -6,17 +6,15 @@ Ten plik dostarcza wskazówek dla Claude Code (claude.ai/code) podczas pracy z k
 
 Desktopowy tracker portfela inwestycyjnego (plik `.exe` dla Windows) zbudowany na Electron + React + TypeScript. Śledzi akcje i złoto, oferuje analizę AI przez OpenRouter. **Zero-cost operation** — brak płatnych API; wszystkie dane z `yahoo-finance2` (darmowe). Dane użytkownika przechowywane lokalnie w SQLite.
 
-Środowisko deweloperskie: kontener Linux LXC. Testy zawsze przez `npm run dev` — użytkownik testuje ręcznie w oknie Electrona, brak automatycznych testów.
+Środowisko deweloperskie: kontener Linux LXC (headless, brak monitora). Testy UI przez przeglądarkę pod adresem IP serwera — `npm run dev` startuje Vite dev server z `--host`. Electron używany wyłącznie do finalnego buildu `.exe`.
 
 ## Komendy
 
 ```bash
-npm run dev      # Uruchom aplikację Electron z hot reload (główny workflow)
+npm run dev      # Vite dev server dostępny w przeglądarce pod http://[IP-serwera]:5173
 npm run build    # Kompiluj + utwórz instalator Windows (.exe)
 npm run preview  # Podgląd w trybie produkcyjnym
 ```
-
-Jeśli `electron-vite` nie jest znaleziony: `npx electron-vite dev`
 
 ## Architektura
 
