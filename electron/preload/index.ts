@@ -84,5 +84,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     getAll: () =>
       ipcRenderer.invoke('db:settings:getAll')
+  },
+
+  // ── finance (yahoo-finance2 + technicalindicators) ───────────────────────
+  finance: {
+    quote: (ticker: string) =>
+      ipcRenderer.invoke('finance:quote', ticker),
+    history: (ticker: string, period: string) =>
+      ipcRenderer.invoke('finance:history', ticker, period),
+    search: (query: string) =>
+      ipcRenderer.invoke('finance:search', query),
+    fundamentals: (ticker: string) =>
+      ipcRenderer.invoke('finance:fundamentals', ticker),
+    dividends: (ticker: string) =>
+      ipcRenderer.invoke('finance:dividends', ticker),
+    technicals: (ticker: string, period: string) =>
+      ipcRenderer.invoke('finance:technicals', ticker, period),
   }
 })

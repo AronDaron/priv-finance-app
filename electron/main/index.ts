@@ -2,6 +2,15 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import {
+  fetchQuote,
+  fetchHistory,
+  searchTickers,
+  fetchFundamentals,
+  fetchDividends,
+  calculateTechnicals,
+} from './finance'
+import type { HistoryPeriod } from '../../src/lib/types'
+import {
   initDatabase,
   getAllAssets,
   addAsset,
@@ -110,6 +119,32 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('db:settings:getAll', () => {
     return getAllSettings()
+  })
+
+  // ── finance (yahoo-finance2 + technicalindicators) ─────────────────────────
+  ipcMain.handle('finance:quote', (_event, ticker: string) =>
+    fetchQuote(ticker)
+  )
+
+  ipcMain.handle('finance:history', (_event, ticker: string, period: HistoryPeriod) =>
+    fetchHistory(ticker, period)
+  )
+
+  ipcMain.handle('finance:search', (_event, query: string) =>
+    searchTickers(query)
+  )
+
+  ipcMain.handle('finance:fundamentals', (_event, ticker: string) =>
+    fetchFundamentals(ticker)
+  )
+
+  ipcMain.handle('finance:dividends', (_event, ticker: string) =>
+    fetchDividends(ticker)
+  )
+
+  ipcMain.handle('finance:technicals', async (_event, ticker: string, period: HistoryPeriod) => {
+    const candles = await fetchHistory(ticker, period)
+    return calculateTechnicals(candles)
   })
 }
 
