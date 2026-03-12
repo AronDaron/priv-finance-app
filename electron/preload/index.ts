@@ -86,6 +86,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('db:settings:getAll')
   },
 
+  // ── AI (OpenRouter) ──────────────────────────────────────────────────────
+  ai: {
+    analyzeStock: (ticker: string) =>
+      ipcRenderer.invoke('ai:analyzeStock', ticker),
+    analyzePortfolio: () =>
+      ipcRenderer.invoke('ai:analyzePortfolio'),
+  },
+
   // ── finance (yahoo-finance2 + technicalindicators) ───────────────────────
   finance: {
     quote: (ticker: string) =>

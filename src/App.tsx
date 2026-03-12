@@ -5,6 +5,7 @@ import PortfolioView from './components/portfolio/PortfolioView'
 import StockDetailView from './components/stock/StockDetailView'
 import TransactionsView from './components/transactions/TransactionsView'
 import SettingsView from './components/settings/SettingsView'
+import AIAnalysisView from './components/ai/AIAnalysisView'
 
 export default function App() {
   return (
@@ -17,6 +18,7 @@ export default function App() {
           <Route path="stock/:ticker" element={<StockDetailView />} />
           <Route path="transactions" element={<TransactionsView />} />
           <Route path="settings" element={<SettingsView />} />
+          <Route path="ai" element={<AIAnalysisView />} />
         </Route>
       </Routes>
     </HashRouter>

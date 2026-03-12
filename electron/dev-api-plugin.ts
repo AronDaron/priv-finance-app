@@ -1,5 +1,18 @@
 import type { Plugin } from 'vite'
+import type { IncomingMessage } from 'http'
 import type { HistoryPeriod } from '../src/lib/types'
+
+function readBody(req: IncomingMessage): Promise<Record<string, string>> {
+  return new Promise((resolve, reject) => {
+    let data = ''
+    req.on('data', chunk => { data += chunk })
+    req.on('end', () => {
+      try { resolve(JSON.parse(data || '{}')) }
+      catch { reject(new Error('Invalid JSON body')) }
+    })
+    req.on('error', reject)
+  })
+}
 
 /**
  * Vite dev server plugin — udostępnia trasy /api/* używając yahoo-finance2.
@@ -45,6 +58,54 @@ export function financeDevApiPlugin(): Plugin {
             case '/technicals': {
               const candles = await finance.fetchHistory(ticker, period)
               data = finance.calculateTechnicals(candles)
+              break
+            }
+            case '/ai/analyze-stock': {
+              const body = await readBody(req)
+              const { ticker: t, apiKey } = body
+              if (!t) { res.statusCode = 400; res.end(JSON.stringify({ error: 'Brak ticker' })); return }
+              const ai = await import('./main/ai')
+              const [fundamentals, history, quote] = await Promise.all([
+                finance.fetchFundamentals(t),
+                finance.fetchHistory(t, '1y'),
+                finance.fetchQuote(t),
+              ])
+              const technicals = finance.calculateTechnicals(history)
+              const report_text = await ai.analyzeStock({
+                ticker: t, apiKey, name: quote.name,
+                currentPrice: quote.price, currency: quote.currency,
+                fundamentals, technicals,
+              })
+              data = { report_text, model: ai.WORKER_MODEL, ticker: t }
+              break
+            }
+            case '/ai/analyze-portfolio': {
+              const body = await readBody(req)
+              const { tickers, apiKey } = body
+              if (!tickers) { res.statusCode = 400; res.end(JSON.stringify({ error: 'Brak tickers' })); return }
+              const ai = await import('./main/ai')
+              const tickerList = tickers.split(',').map((s: string) => s.trim()).filter(Boolean)
+              const enrichedAssets = await Promise.all(tickerList.map(async (t: string) => {
+                const [fundamentals, history, quote] = await Promise.all([
+                  finance.fetchFundamentals(t),
+                  finance.fetchHistory(t, '1y'),
+                  finance.fetchQuote(t),
+                ])
+                const technicals = finance.calculateTechnicals(history)
+                const workerReport = await ai.analyzeStock({
+                  ticker: t, apiKey, name: quote.name,
+                  currentPrice: quote.price, currency: quote.currency,
+                  fundamentals, technicals,
+                })
+                return { ticker: t, name: quote.name, quantity: 1, currentPrice: quote.price,
+                  purchasePrice: quote.price, currency: quote.currency, portfolioSharePercent: 0, workerReport }
+              }))
+              const totalValue = enrichedAssets.reduce((s, a) => s + a.currentPrice, 0)
+              enrichedAssets.forEach(a => { a.portfolioSharePercent = (a.currentPrice / totalValue) * 100 })
+              const report_text = await ai.analyzePortfolio({
+                apiKey, assets: enrichedAssets, totalValueUSD: totalValue, totalPnlPercent: 0,
+              })
+              data = { report_text, model: ai.MANAGER_MODEL }
               break
             }
             default:

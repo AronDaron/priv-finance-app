@@ -61,6 +61,10 @@ declare global {
         dividends(ticker: string): Promise<DividendEntry[]>
         technicals(ticker: string, period: HistoryPeriod): Promise<TechnicalIndicators>
       }
+      ai: {
+        analyzeStock(ticker: string): Promise<AIReport>
+        analyzePortfolio(): Promise<AIReport>
+      }
     }
   }
 }
@@ -296,4 +300,39 @@ export async function getDividends(ticker: string): Promise<DividendEntry[]> {
 export async function getTechnicals(ticker: string, period: HistoryPeriod): Promise<TechnicalIndicators> {
   if (isElectron()) return window.electronAPI!.finance.technicals(ticker, period)
   return devApiFetch('/technicals', { ticker, period })
+}
+
+// ─── AI API ───────────────────────────────────────────────────────────────────
+
+async function devApiPost<T>(endpoint: string, body: Record<string, string>): Promise<T> {
+  const res = await fetch(`/api${endpoint}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText })) as { error: string }
+    throw new Error(err.error ?? res.statusText)
+  }
+  return res.json() as Promise<T>
+}
+
+export async function analyzeStock(ticker: string): Promise<AIReport> {
+  if (isElectron()) return window.electronAPI!.ai.analyzeStock(ticker)
+  const apiKey = await getSetting('openrouter_api_key')
+  const result = await devApiPost<{ report_text: string; model: string; ticker: string }>(
+    '/ai/analyze-stock', { ticker, apiKey: apiKey ?? '' }
+  )
+  return addReport({ ticker, model: result.model, report_text: result.report_text })
+}
+
+export async function analyzePortfolio(): Promise<AIReport> {
+  if (isElectron()) return window.electronAPI!.ai.analyzePortfolio()
+  const apiKey = await getSetting('openrouter_api_key')
+  const assets = await getAssets()
+  const tickers = assets.map(a => a.ticker).join(',')
+  const result = await devApiPost<{ report_text: string; model: string }>(
+    '/ai/analyze-portfolio', { tickers, apiKey: apiKey ?? '' }
+  )
+  return addReport({ ticker: '__PORTFOLIO__', model: result.model, report_text: result.report_text })
 }
