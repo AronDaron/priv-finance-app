@@ -1,16 +1,16 @@
 {
   "compilerOptions": {
-    "composite": true,
     "skipLibCheck": true,
     "module": "CommonJS",
     "moduleResolution": "node",
-    "target": "ES2020",
-    "lib": ["ES2020"],
+    "target": "ES2022",
+    "lib": ["ES2022"],
     "strict": true,
-    "types": ["node"]
+    "types": ["node"],
+    "esModuleInterop": true
   },
   "include": [
     "electron/**/*.ts",
-    "electron.vite.config.ts"
+    "src/lib/types.ts"
   ]
 }

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { createChart, CandlestickSeries } from 'lightweight-charts'
-import type { IChartApi, ISeriesApi } from 'lightweight-charts'
+import type { IChartApi, ISeriesApi, UTCTimestamp } from 'lightweight-charts'
 import type { OHLCCandle } from '../../lib/types'
 
 interface Props {
@@ -60,7 +60,7 @@ export function CandlestickChart({ data, ticker, height = 400 }: Props) {
   // Efekt #2: aktualizacja danych (zależność: data, ticker)
   useEffect(() => {
     if (!seriesRef.current || data.length === 0) return
-    seriesRef.current.setData(data)
+    seriesRef.current.setData(data.map(c => ({ ...c, time: c.time as UTCTimestamp })))
     chartRef.current?.timeScale().fitContent()
   }, [data, ticker])
 

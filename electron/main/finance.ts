@@ -58,10 +58,10 @@ export async function searchTickers(query: string): Promise<SearchResult[]> {
   const yf = await getYF()
   const result = await yf.search(query)
   return (result.quotes ?? []).slice(0, 10).map(q => ({
-    ticker: q.symbol ?? '',
+    ticker: (q.symbol ?? '') as string,
     name: (q as any).shortname ?? (q as any).longname ?? q.symbol ?? '',
     exchange: (q as any).exchange ?? '',
-    type: q.quoteType ?? 'EQUITY',
+    type: (q.quoteType ?? 'EQUITY') as string,
   }))
 }
 
@@ -90,6 +90,7 @@ export async function fetchDividends(ticker: string): Promise<DividendEntry[]> {
   const yf = await getYF()
   const rows = await yf.historical(ticker, {
     period1: '2015-01-01',
+    period2: new Date(),
     events: 'dividends',
   })
   return rows
