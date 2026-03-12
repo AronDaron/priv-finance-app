@@ -62,6 +62,6 @@ Instrukcja krok po kroku do wykonania przez agenta:
   - Stwórz tabele SQLite: `portfolio_assets`, `transactions`, `ai_reports`, `settings`.
   - Po tym kroku: dodawanie/usuwanie spółek działa w przeglądarce (localStorage) i w .exe (SQLite).
 - [x] **3. Integracja Danych:** Zaimplementuj pobieranie danych z `yahoo-finance2` (ceny, OHLC, fundamentalne, wyszukiwarka) przez IPC. W trybie dev (przeglądarka) — mock dane historyczne. Wyświetl wykres świecowy Lightweight Charts dla dowolnego tickera.
-- [ ] **4. Interfejs (GUI):** Zbuduj widoki używając wyłącznie `src/lib/api.ts` (nigdy bezpośrednio `window.electronAPI`): Dashboard (wykres kołowy portfela), Wyszukiwarka/Dodawanie aktywów, Widok Spółki (wykresy świecowe, wskaźniki RSI/MACD/SMA).
+- [x] **4. Interfejs (GUI):** Zbuduj widoki używając wyłącznie `src/lib/api.ts` (nigdy bezpośrednio `window.electronAPI`): Dashboard (wykres kołowy portfela), Wyszukiwarka/Dodawanie aktywów, Widok Spółki (wykresy świecowe, wskaźniki RSI/MACD/SMA).
 - [ ] **5. Moduł AI (Map-Reduce):** Zaimplementuj zapytania do OpenRoutera. Najpierw test na jednej spółce (Worker), potem zapis do DB, na końcu agregacja (Manager).
 - [ ] **6. Build:** Skonfiguruj `electron-builder` i wygeneruj testowy plik `app-setup.exe` dla Windowsa.

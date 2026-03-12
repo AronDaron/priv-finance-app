@@ -8,3 +8,5 @@ out
 .env
 .env.local
 resources/icon.ico
+*.md
+!CLAUDE.md

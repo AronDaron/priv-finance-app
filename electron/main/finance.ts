@@ -5,11 +5,13 @@ import type {
 import * as ti from 'technicalindicators'
 
 // Dynamic import — wymagany bo yahoo-finance2 jest ESM, a main process to CJS
-let _yf: typeof import('yahoo-finance2')['default'] | null = null
-async function getYF() {
+// yahoo-finance2 v3: default to klasa, trzeba wywołać new YahooFinance()
+type YFInstance = InstanceType<typeof import('yahoo-finance2')['default']>
+let _yf: YFInstance | null = null
+async function getYF(): Promise<YFInstance> {
   if (!_yf) {
     const mod = await import('yahoo-finance2')
-    _yf = mod.default
+    _yf = new mod.default()
   }
   return _yf
 }
