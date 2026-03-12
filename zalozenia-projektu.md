@@ -56,7 +56,7 @@ Integracja z API OpenRouter. Aplikacja musi implementować asynchroniczną archi
 Instrukcja krok po kroku do wykonania przez agenta:
 
 - [x] **1. Inicjalizacja:** Skonfiguruj projekt Vite + React + TS + Electron. `npm run dev` odpala Vite dev server dostępny w przeglądarce pod IP serwera LXC.
-- [ ] **2. Baza Danych + Warstwa API:**
+- [x] **2. Baza Danych + Warstwa API:**
   - Stwórz `src/lib/api.ts` — jedyna warstwa dostępu do danych dla komponentów React. Automatycznie wykrywa środowisko: brak `window.electronAPI` → localStorage (dev/przeglądarka); obecność `window.electronAPI` → SQLite (.exe).
   - Skonfiguruj `better-sqlite3` po stronie Electron (main process + IPC handlers w preload).
   - Stwórz tabele SQLite: `portfolio_assets`, `transactions`, `ai_reports`, `settings`.

@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "vite --host",
     "build": "electron-vite build && electron-builder",
-    "preview": "electron-vite preview"
+    "preview": "electron-vite preview",
+    "postinstall": "electron-rebuild"
   },
   "build": {
     "appId": "com.priv.finance-app",
@@ -24,10 +25,12 @@
     ]
   },
   "dependencies": {
+    "better-sqlite3": "^12.6.2",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.4.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
@@ -35,6 +38,7 @@
     "autoprefixer": "^10.4.27",
     "electron": "^41.0.0",
     "electron-builder": "^26.8.1",
+    "electron-rebuild": "^3.2.9",
     "electron-vite": "^5.0.0",
     "postcss": "^8.5.8",
     "tailwindcss": "^3.4.19",

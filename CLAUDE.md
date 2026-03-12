@@ -69,7 +69,7 @@ W trybie dev `electron-vite` automatycznie ustawia zmienną `ELECTRON_RENDERER_U
 ## Kamienie milowe
 
 - [x] **1.** Inicjalizacja projektu (Vite + React + TS + Electron)
-- [ ] **2.** Baza danych (better-sqlite3; wymaga `electron-rebuild` przy cross-compile)
+- [x] **2.** Baza danych (better-sqlite3; wymaga `electron-rebuild` przy cross-compile)
 - [ ] **3.** Integracja danych (yahoo-finance2 + Lightweight Charts candlestick)
 - [ ] **4.** GUI (Dashboard wykres kołowy, wyszukiwarka/dodawanie aktywów, widok spółki)
 - [ ] **5.** Moduł AI (OpenRouter, wzorzec Map-Reduce)
