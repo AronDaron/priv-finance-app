@@ -12,7 +12,7 @@ export default function PortfolioHistoryChart({ data }: { data: DataPoint[] }) {
   return (
     <div className="glass-card rounded-xl p-5">
       <h3 className="text-sm font-medium text-gray-400 mb-4">Historia wartości portfela (PLN)</h3>
-      <ResponsiveContainer width="100%" height={220}>
+      <ResponsiveContainer width="100%" height={460}>
         <AreaChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
           <defs>
             <linearGradient id="portfolioGradient" x1="0" y1="0" x2="0" y2="1">

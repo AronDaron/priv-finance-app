@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { getAssets, getQuote, getAssetMeta } from '../../lib/api'
 import type { EnrichedAsset } from '../../lib/types'
 import SummaryCards from './SummaryCards'
-import PortfolioPieChart from './PortfolioPieChart'
 import AllocationPieChart from './AllocationPieChart'
 import PortfolioHistoryChart from './PortfolioHistoryChart'
 import LoadingSpinner from '../ui/LoadingSpinner'
@@ -126,12 +125,9 @@ export default function DashboardView() {
   const totalPnL = assets.reduce((s, a) => s + a.pnl, 0)
   const totalROI = totalCost > 0 ? (totalPnL / totalCost) * 100 : 0
 
-  const sorted = [...assets].sort((a, b) => b.valueInPLN - a.valueInPLN)
-  const slices = sorted.map((a) => ({
-    ticker: a.ticker,
-    value: a.valueInPLN,
-    percentage: totalValuePLN > 0 ? (a.valueInPLN / totalValuePLN) * 100 : 0,
-  }))
+  const portfolioData = [...assets]
+    .sort((a, b) => b.valueInPLN - a.valueInPLN)
+    .map((a) => ({ name: a.ticker, value: a.valueInPLN }))
 
   return (
     <div className="p-6 space-y-6">
@@ -142,15 +138,14 @@ export default function DashboardView() {
         totalROI={totalROI}
         assetCount={assets.length}
       />
-      <div className="glass-card rounded-xl p-5">
-        <h3 className="text-lg font-semibold text-white mb-4">Alokacja portfela</h3>
-        <PortfolioPieChart slices={slices} />
-      </div>
-      <PortfolioHistoryChart data={historyData} />
-      <div className="grid grid-cols-3 gap-4">
-        <AllocationPieChart title="Alokacja Regionalna" data={regionData} />
-        <AllocationPieChart title="Alokacja Sektorowa" data={sectorData} />
-        <AllocationPieChart title="Rodzaj Aktywów" data={typeData} />
+      <div className="grid grid-cols-2 gap-4 items-start">
+        <div className="grid grid-cols-2 gap-4">
+          <AllocationPieChart title="Alokacja portfela" data={portfolioData} />
+          <AllocationPieChart title="Alokacja Regionalna" data={regionData} />
+          <AllocationPieChart title="Alokacja Sektorowa" data={sectorData} />
+          <AllocationPieChart title="Rodzaj Aktywów" data={typeData} />
+        </div>
+        <PortfolioHistoryChart data={historyData} />
       </div>
     </div>
   )
