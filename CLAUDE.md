@@ -2,6 +2,12 @@
 
 Ten plik dostarcza wskazówek dla Claude Code (claude.ai/code) podczas pracy z kodem w tym repozytorium.
 
+## ZASADY
+
+Na początku każdej rozmowy przeczytaj /root/.claude/projects/.../memory/project_structure.md przed podjęciem jakiegokolwiek zadania.
+
+Na końcu każdej rozmowy zaktualuzuj /root/.claude/projects/.../memory/project_structure.md po wykonanych działaniach
+
 ## Przegląd projektu
 
 Desktopowy tracker portfela inwestycyjnego (plik `.exe` dla Windows) zbudowany na Electron + React + TypeScript. Śledzi akcje i złoto, oferuje analizę AI przez OpenRouter. **Zero-cost operation** — brak płatnych API; wszystkie dane z `yahoo-finance2` (darmowe). Dane użytkownika przechowywane lokalnie w SQLite.
