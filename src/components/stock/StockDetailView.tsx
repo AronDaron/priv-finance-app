@@ -94,7 +94,7 @@ export default function StockDetailView() {
           </div>
 
           {candles.length > 0 && (
-            <div className="bg-finance-card rounded-xl border border-gray-700 p-4">
+            <div className="glass-card rounded-xl p-4">
               <CandlestickChart data={candles} ticker={quote.ticker} height={400} />
             </div>
           )}

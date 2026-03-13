@@ -11,7 +11,7 @@ interface Props {
 
 export default function StockAnalysisCard({ ticker, name, report, isAnalyzing, onAnalyze }: Props) {
   return (
-    <div className="bg-finance-card border border-gray-700 rounded-lg p-4 flex flex-col gap-3">
+    <div className="glass-card rounded-lg p-4 flex flex-col gap-3">
       {/* Header */}
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">

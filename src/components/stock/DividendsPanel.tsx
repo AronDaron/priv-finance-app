@@ -15,7 +15,7 @@ export default function DividendsPanel({ dividends }: Props) {
   const visible = expanded ? sorted : sorted.slice(0, 10)
 
   return (
-    <div className="bg-finance-card rounded-xl border border-gray-700 p-5">
+    <div className="glass-card rounded-xl p-5">
       <h3 className="text-lg font-semibold text-white mb-4">Historia dywidend</h3>
       <table className="w-full text-sm">
         <thead>

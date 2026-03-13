@@ -1,14 +1,16 @@
 import { useNavigate } from 'react-router-dom'
 import { formatCurrency, formatPercent } from '../../lib/utils'
 import type { PortfolioAsset, StockQuote } from '../../lib/types'
+import Sparkline from '../ui/Sparkline'
 
 interface Props {
   asset: PortfolioAsset
   quote: StockQuote | null
+  sparkline?: number[]
   onDelete: () => void
 }
 
-export default function AssetRow({ asset, quote, onDelete }: Props) {
+export default function AssetRow({ asset, quote, sparkline, onDelete }: Props) {
   const navigate = useNavigate()
   const currentPrice = quote?.price ?? asset.purchase_price
   const currentValue = asset.quantity * currentPrice
@@ -45,6 +47,12 @@ export default function AssetRow({ asset, quote, onDelete }: Props) {
       </td>
       <td className={`px-4 py-3 text-right font-medium ${pnlPercent >= 0 ? 'text-finance-green' : 'text-finance-red'}`}>
         {formatPercent(pnlPercent)}
+      </td>
+      <td className="px-4 py-3 text-center">
+        {sparkline && sparkline.length >= 2
+          ? <Sparkline data={sparkline} width={80} height={32} />
+          : <span className="text-gray-600 text-xs">—</span>
+        }
       </td>
       <td className="px-4 py-3 text-center">
         <button

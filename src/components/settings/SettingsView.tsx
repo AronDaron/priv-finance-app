@@ -25,7 +25,7 @@ export default function SettingsView() {
       <h2 className="text-lg font-semibold text-white mb-6">Ustawienia</h2>
 
       {/* OpenRouter API Key */}
-      <div className="bg-finance-card rounded-xl border border-gray-700 p-5 mb-4">
+      <div className="glass-card rounded-xl p-5 mb-4">
         <h3 className="text-base font-semibold text-white mb-1">OpenRouter API Key</h3>
         <p className="text-xs text-gray-400 mb-4">
           Klucz wymagany do funkcji AI (Milestone 5). Przechowywany lokalnie w SQLite.
@@ -62,7 +62,7 @@ export default function SettingsView() {
       </div>
 
       {/* Informacje o aplikacji */}
-      <div className="bg-finance-card rounded-xl border border-gray-700 p-5">
+      <div className="glass-card rounded-xl p-5">
         <h3 className="text-base font-semibold text-white mb-3">Informacje o aplikacji</h3>
         <div className="space-y-2 text-sm">
           <div className="flex justify-between">

@@ -21,7 +21,7 @@ export default function FundamentalsPanel({ fundamentals }: Props) {
   ]
 
   return (
-    <div className="bg-finance-card rounded-xl border border-gray-700 p-5">
+    <div className="glass-card rounded-xl p-5">
       <h3 className="text-lg font-semibold text-white mb-4">Dane fundamentalne</h3>
       <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
         {rows.map(({ label, value }) => (

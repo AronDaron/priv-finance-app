@@ -9,7 +9,7 @@ interface Props {
 
 export default function PortfolioAnalysisPanel({ report, isAnalyzing, onAnalyze }: Props) {
   return (
-    <div className="bg-finance-card border border-gray-600 rounded-lg p-5">
+    <div className="glass-card rounded-lg p-5">
       {/* Header */}
       <div className="flex items-center justify-between gap-3 mb-4">
         <div>
