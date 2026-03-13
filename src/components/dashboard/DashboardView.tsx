@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getAssets, getQuote, getAssetMeta } from '../../lib/api'
+import { getAssets, getQuote, getAssetMeta, getFundamentals } from '../../lib/api'
 import type { EnrichedAsset } from '../../lib/types'
 import SummaryCards from './SummaryCards'
 import AllocationPieChart from './AllocationPieChart'
@@ -43,24 +43,30 @@ export default function DashboardView() {
 
         const enriched = await Promise.all(
           list.map(async (asset) => {
-            let currentPrice = asset.purchase_price
-            try {
-              const q = await getQuote(asset.ticker)
-              currentPrice = q.price
-            } catch {
-              // fallback do ceny zakupu
-            }
-            const meta = await getAssetMeta(asset.ticker).catch(() => ({ region: 'Inne', assetType: 'Akcje', sector: null }))
-            const currentValue = asset.quantity * currentPrice
-            const valueInPLN = currentValue * toPlnRate(asset.currency)
-            const costBasis = asset.quantity * asset.purchase_price
+            const [q, meta, fund] = await Promise.all([
+              getQuote(asset.ticker).catch(() => null),
+              getAssetMeta(asset.ticker).catch(() => ({ region: 'Inne', assetType: 'Akcje', sector: null })),
+              getFundamentals(asset.ticker).catch(() => null),
+            ])
+            const currentPrice  = q?.price ?? asset.purchase_price
+            const quoteCurrency = q?.currency ?? asset.currency
+
+            const currentValue   = asset.quantity * currentPrice
+            const valueInPLN     = currentValue * toPlnRate(quoteCurrency)
+            const costBasis      = asset.quantity * asset.purchase_price
+            const costBasisInPLN = costBasis * toPlnRate(asset.currency)
+            const annualDividendPLN = (fund?.dividendRate ?? 0) * asset.quantity * toPlnRate(quoteCurrency)
+
             return {
               ...asset,
               currentPrice,
               currentValue,
               valueInPLN,
               costBasis,
-              pnl: currentValue - costBasis,
+              costBasisInPLN,
+              pnl: valueInPLN - costBasisInPLN,
+              quoteCurrency,
+              annualDividendPLN,
               region: meta.region,
               assetType: meta.assetType,
               sector: meta.sector ?? undefined,
@@ -121,9 +127,10 @@ export default function DashboardView() {
   }
 
   const totalValuePLN = assets.reduce((s, a) => s + a.valueInPLN, 0)
-  const totalCost = assets.reduce((s, a) => s + a.costBasis, 0)
+  const totalCost = assets.reduce((s, a) => s + a.costBasisInPLN, 0)
   const totalPnL = assets.reduce((s, a) => s + a.pnl, 0)
   const totalROI = totalCost > 0 ? (totalPnL / totalCost) * 100 : 0
+  const totalAnnualDividendPLN = assets.reduce((s, a) => s + a.annualDividendPLN, 0)
 
   const portfolioData = [...assets]
     .sort((a, b) => b.valueInPLN - a.valueInPLN)
@@ -137,6 +144,7 @@ export default function DashboardView() {
         totalPnL={totalPnL}
         totalROI={totalROI}
         assetCount={assets.length}
+        totalAnnualDividend={totalAnnualDividendPLN}
       />
       <div className="grid grid-cols-2 gap-4 items-start">
         <div className="grid grid-cols-2 gap-4">

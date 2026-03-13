@@ -7,16 +7,23 @@ interface Props {
   asset: PortfolioAsset
   quote: StockQuote | null
   sparkline?: number[]
+  usdPln?: number
+  eurPln?: number
   onDelete: () => void
 }
 
-export default function AssetRow({ asset, quote, sparkline, onDelete }: Props) {
+export default function AssetRow({ asset, quote, sparkline, usdPln = 4.0, eurPln = 4.3, onDelete }: Props) {
   const navigate = useNavigate()
-  const currentPrice = quote?.price ?? asset.purchase_price
-  const currentValue = asset.quantity * currentPrice
-  const costBasis = asset.quantity * asset.purchase_price
-  const pnl = currentValue - costBasis
-  const pnlPercent = costBasis > 0 ? (pnl / costBasis) * 100 : 0
+  const toPlnRate = (currency: string) =>
+    currency === 'PLN' ? 1 : currency === 'USD' ? usdPln : currency === 'EUR' ? eurPln : 1
+
+  const currentPrice    = quote?.price ?? asset.purchase_price
+  const quoteCurrency   = quote?.currency ?? asset.currency
+  const currentValue    = asset.quantity * currentPrice
+  const valueInPLN      = currentValue * toPlnRate(quoteCurrency)
+  const costBasisInPLN  = asset.quantity * asset.purchase_price * toPlnRate(asset.currency)
+  const pnl             = valueInPLN - costBasisInPLN
+  const pnlPercent      = costBasisInPLN > 0 ? (pnl / costBasisInPLN) * 100 : 0
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -40,10 +47,10 @@ export default function AssetRow({ asset, quote, sparkline, onDelete }: Props) {
         {quote ? formatCurrency(currentPrice, quote.currency) : '—'}
       </td>
       <td className="px-4 py-3 text-right text-white">
-        {formatCurrency(currentValue, asset.currency)}
+        {formatCurrency(valueInPLN, 'PLN')}
       </td>
       <td className={`px-4 py-3 text-right font-medium ${pnl >= 0 ? 'text-finance-green' : 'text-finance-red'}`}>
-        {(pnl >= 0 ? '+' : '') + formatCurrency(pnl, asset.currency)}
+        {(pnl >= 0 ? '+' : '') + formatCurrency(pnl, 'PLN')}
       </td>
       <td className={`px-4 py-3 text-right font-medium ${pnlPercent >= 0 ? 'text-finance-green' : 'text-finance-red'}`}>
         {formatPercent(pnlPercent)}

@@ -5,9 +5,10 @@ interface Props {
   totalPnL: number
   totalROI: number
   assetCount: number
+  totalAnnualDividend?: number
 }
 
-export default function SummaryCards({ totalValue, totalPnL, totalROI, assetCount }: Props) {
+export default function SummaryCards({ totalValue, totalPnL, totalROI, assetCount, totalAnnualDividend = 0 }: Props) {
   const cards = [
     {
       label: 'Wartość portfela (PLN)',
@@ -31,8 +32,20 @@ export default function SummaryCards({ totalValue, totalPnL, totalROI, assetCoun
     },
   ]
 
+  if (totalAnnualDividend > 0) {
+    cards.push({
+      label: 'Roczna dywidenda (est.)',
+      value: formatCurrency(totalAnnualDividend, 'PLN'),
+      color: 'text-finance-green',
+    })
+  }
+
+  const gridClass = cards.length === 5
+    ? 'grid grid-cols-2 lg:grid-cols-5 gap-4'
+    : 'grid grid-cols-2 lg:grid-cols-4 gap-4'
+
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className={gridClass}>
       {cards.map(card => (
         <div key={card.label} className="glass-card-accent rounded-xl p-5">
           <p className="text-xs text-gray-400 uppercase tracking-wider">{card.label}</p>

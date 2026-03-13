@@ -77,6 +77,7 @@ export async function fetchFundamentals(ticker: string): Promise<FundamentalData
     pe: (sd as any)?.trailingPE ?? null,
     eps: (ks as any)?.trailingEps ?? null,
     dividendYield: (sd as any)?.dividendYield ?? null,
+    dividendRate: (sd as any)?.dividendRate ?? null,
     marketCap: (sd as any)?.marketCap ?? null,
     week52High: (sd as any)?.fiftyTwoWeekHigh ?? null,
     week52Low: (sd as any)?.fiftyTwoWeekLow ?? null,
@@ -88,6 +89,11 @@ export async function fetchFundamentals(ticker: string): Promise<FundamentalData
 
 export async function fetchDividends(ticker: string): Promise<DividendEntry[]> {
   const yf = await getYF()
+  let currency = 'USD'
+  try {
+    const quoteResult = await yf.quoteSummary(ticker, { modules: ['price'] })
+    currency = (quoteResult.price as any)?.currency ?? 'USD'
+  } catch {}
   const rows = await yf.historical(ticker, {
     period1: '2015-01-01',
     period2: new Date(),
@@ -98,7 +104,7 @@ export async function fetchDividends(ticker: string): Promise<DividendEntry[]> {
     .map(r => ({
       date: r.date.toISOString().split('T')[0],
       amount: (r as any).dividends as number,
-      currency: 'USD',
+      currency,
     }))
 }
 

@@ -1,6 +1,15 @@
 import { useState, useEffect } from 'react'
 import { getAssets, deleteAsset, getQuote, getHistory } from '../../lib/api'
 import type { PortfolioAsset, StockQuote } from '../../lib/types'
+
+async function getRate(ticker: string): Promise<number> {
+  try {
+    const q = await getQuote(ticker)
+    return q.price ?? 1
+  } catch {
+    return 1
+  }
+}
 import AssetRow from './AssetRow'
 import AddAssetModal from './AddAssetModal'
 import LoadingSpinner from '../ui/LoadingSpinner'
@@ -13,12 +22,20 @@ export default function PortfolioView() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showAddModal, setShowAddModal] = useState(false)
+  const [usdPln, setUsdPln] = useState(4.0)
+  const [eurPln, setEurPln] = useState(4.3)
 
   const loadData = async () => {
     setLoading(true)
     setError(null)
     try {
-      const list = await getAssets()
+      const [list, usdRate, eurRate] = await Promise.all([
+        getAssets(),
+        getRate('USDPLN=X'),
+        getRate('EURPLN=X'),
+      ])
+      setUsdPln(usdRate)
+      setEurPln(eurRate)
       setAssets(list)
       const [quoteEntries, sparkEntries] = await Promise.all([
         Promise.all(
@@ -111,6 +128,8 @@ export default function PortfolioView() {
                   asset={asset}
                   quote={quotes.get(asset.ticker) ?? null}
                   sparkline={sparklines.get(asset.ticker)}
+                  usdPln={usdPln}
+                  eurPln={eurPln}
                   onDelete={() => handleDelete(asset.id)}
                 />
               ))}

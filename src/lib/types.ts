@@ -51,7 +51,10 @@ export interface EnrichedAsset extends PortfolioAsset {
   currentValue: number
   valueInPLN: number
   costBasis: number
-  pnl: number
+  costBasisInPLN: number    // koszt zakupu przeliczony na PLN wg asset.currency
+  quoteCurrency: string     // waluta notowania (np. USD dla GC=F)
+  pnl: number               // zawsze w PLN
+  annualDividendPLN: number // szacowana roczna dywidenda w PLN
   region?: string
   sector?: string
   assetType?: string
@@ -90,6 +93,7 @@ export interface FundamentalData {
   pe: number | null              // P/E ratio
   eps: number | null             // Earnings Per Share
   dividendYield: number | null   // ułamek dziesiętny, np. 0.015 = 1.5%
+  dividendRate: number | null    // roczna dywidenda na akcję w walucie quote
   marketCap: number | null
   week52High: number | null
   week52Low: number | null
