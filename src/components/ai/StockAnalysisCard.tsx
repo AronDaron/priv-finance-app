@@ -1,4 +1,5 @@
 import type { AIReport } from '../../lib/types'
+import { MarkdownRenderer } from './MarkdownRenderer'
 
 interface Props {
   ticker: string
@@ -64,7 +65,7 @@ export default function StockAnalysisCard({ ticker, name, report, isAnalyzing, o
             <span>{new Date(report.created_at).toLocaleString('pl-PL', { dateStyle: 'short', timeStyle: 'short' })}</span>
           </div>
           <div className="border-t border-gray-700 pt-3">
-            <p className="text-gray-200 text-sm whitespace-pre-wrap leading-relaxed">{report.report_text}</p>
+            <MarkdownRenderer content={report.report_text} />
           </div>
         </>
       ) : (

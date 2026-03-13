@@ -26,16 +26,6 @@ const links = [
     ),
   },
   {
-    to: '/transactions',
-    label: 'Transakcje',
-    icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-          d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-      </svg>
-    ),
-  },
-  {
     to: '/ai',
     label: 'Analiza AI',
     icon: (
@@ -61,8 +51,8 @@ const links = [
 
 export default function Sidebar() {
   return (
-    <div className="w-56 bg-gray-900 border-r border-gray-700 flex flex-col">
-      <div className="px-4 py-5 border-b border-gray-700">
+    <div className="w-56 flex flex-col" style={{ background: 'linear-gradient(to bottom, rgba(17,24,39,0.9), rgba(10,14,21,0.95))', borderRight: '1px solid rgba(55,65,81,0.4)', backdropFilter: 'blur(4px)' }}>
+      <div className="px-4 py-5 border-b border-gray-700/40">
         <h1 className="text-finance-green font-bold text-lg leading-tight">Finance</h1>
         <p className="text-gray-500 text-xs mt-0.5">Portfolio Tracker</p>
       </div>
@@ -75,8 +65,8 @@ export default function Sidebar() {
             className={({ isActive }) =>
               `flex items-center gap-3 px-4 py-3 rounded-lg mx-2 transition-colors ${
                 isActive
-                  ? 'bg-finance-card text-finance-green'
-                  : 'text-gray-400 hover:bg-finance-card hover:text-white'
+                  ? 'bg-gradient-to-r from-finance-green/20 to-emerald-900/20 text-white border-r-2 border-finance-green'
+                  : 'text-gray-400 hover:bg-white/5 hover:text-white'
               }`
             }
           >

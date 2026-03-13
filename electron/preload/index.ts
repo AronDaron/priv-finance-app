@@ -9,6 +9,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Metadane
   version: process.versions.electron,
 
+  portfolioHistory: () =>
+    ipcRenderer.invoke('finance:portfolioHistory'),
+
   // ── portfolio_assets ────────────────────────────────────────────────────
   assets: {
     getAll: () =>
@@ -20,6 +23,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       quantity: number
       purchase_price: number
       currency: string
+      purchase_date?: string
     }) => ipcRenderer.invoke('db:assets:add', asset),
 
     update: (
@@ -108,5 +112,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('finance:dividends', ticker),
     technicals: (ticker: string, period: string) =>
       ipcRenderer.invoke('finance:technicals', ticker, period),
+    assetMeta: (ticker: string) =>
+      ipcRenderer.invoke('finance:assetMeta', ticker),
   }
 })

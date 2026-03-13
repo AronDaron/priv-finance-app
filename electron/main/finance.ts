@@ -102,6 +102,67 @@ export async function fetchDividends(ticker: string): Promise<DividendEntry[]> {
     }))
 }
 
+const EXCHANGE_TO_REGION: Record<string, string> = {
+  'NMS': 'Ameryka', 'NGM': 'Ameryka', 'NCM': 'Ameryka',
+  'NYQ': 'Ameryka', 'NYSEArca': 'Ameryka',
+  'PCX': 'Ameryka', 'BATS': 'Ameryka', 'CBOE': 'Ameryka',
+  'TSX': 'Ameryka', 'MEX': 'Ameryka',
+  'WSE': 'Europa', 'GPW': 'Europa',
+  'GER': 'Europa', 'XETRA': 'Europa', 'FRA': 'Europa',
+  'LSE': 'Europa', 'IOB': 'Europa',
+  'PAR': 'Europa', 'AMS': 'Europa', 'BRU': 'Europa',
+  'STO': 'Europa', 'HEL': 'Europa', 'CPH': 'Europa',
+  'VIE': 'Europa', 'ZUR': 'Europa', 'MIL': 'Europa',
+  'MCE': 'Europa', 'LIS': 'Europa',
+  'TYO': 'Azja', 'OSA': 'Azja',
+  'HKG': 'Azja', 'HKSE': 'Azja',
+  'SHH': 'Azja', 'SHZ': 'Azja',
+  'KSC': 'Azja', 'KOE': 'Azja',
+  'SGX': 'Azja', 'BSE': 'Azja', 'NSE': 'Azja',
+  'TAI': 'Azja', 'BKK': 'Azja',
+}
+
+export async function fetchAssetMeta(ticker: string): Promise<{ region: string; assetType: string; sector: string | null }> {
+  try {
+    const yf = await getYF()
+    const result = await yf.quoteSummary(ticker, { modules: ['price', 'assetProfile'] })
+    const quote: any = result.price ?? {}
+    const ap: any = result.assetProfile ?? {}
+
+    let region = 'Inne'
+    if (quote.quoteType === 'FUTURE') {
+      region = 'Surowce'
+    } else if (quote.quoteType === 'ETF') {
+      const name = (quote.longName ?? quote.shortName ?? '').toLowerCase()
+      region = /world|global|international|msci world|all country|emerging/i.test(name)
+        ? 'Świat'
+        : (EXCHANGE_TO_REGION[quote.fullExchangeName ?? ''] ?? EXCHANGE_TO_REGION[quote.exchange ?? ''] ?? 'Inne')
+    } else {
+      region = EXCHANGE_TO_REGION[quote.fullExchangeName ?? ''] ?? EXCHANGE_TO_REGION[quote.exchange ?? ''] ?? 'Inne'
+    }
+
+    let assetType = 'Akcje'
+    if (quote.quoteType === 'FUTURE') {
+      if (ticker === 'GC=F') assetType = 'Złoto'
+      else if (ticker === 'SI=F') assetType = 'Srebro'
+      else if (ticker === 'CL=F') assetType = 'Ropa'
+      else assetType = 'Surowiec'
+    } else if (quote.quoteType === 'ETF') assetType = 'ETF'
+    else if (quote.quoteType === 'MUTUALFUND') assetType = 'Fundusz'
+    else if (quote.quoteType === 'CRYPTOCURRENCY') assetType = 'Krypto'
+
+    const sector: string | null = ap.sector ?? (quote.quoteType === 'ETF' ? 'ETF' : null)
+
+    return { region, assetType, sector }
+  } catch {
+    return { region: 'Inne', assetType: 'Akcje', sector: null }
+  }
+}
+
+export async function fetchPortfolioHistory(): Promise<{ date: string; value: number }[]> {
+  return []
+}
+
 export function calculateTechnicals(candles: OHLCCandle[]): TechnicalIndicators {
   const closes = candles.map(c => c.close)
 

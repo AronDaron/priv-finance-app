@@ -8,6 +8,7 @@ import {
   fetchFundamentals,
   fetchDividends,
   calculateTechnicals,
+  fetchAssetMeta,
 } from './finance'
 import type { HistoryPeriod } from '../../src/lib/types'
 import {
@@ -146,6 +147,67 @@ function registerIpcHandlers(): void {
   ipcMain.handle('finance:technicals', async (_event, ticker: string, period: HistoryPeriod) => {
     const candles = await fetchHistory(ticker, period)
     return calculateTechnicals(candles)
+  })
+
+  ipcMain.handle('finance:assetMeta', (_event, ticker: string) =>
+    fetchAssetMeta(ticker)
+  )
+
+  ipcMain.handle('finance:portfolioHistory', async () => {
+    const assets = getAllAssets()
+    if (assets.length === 0) return []
+
+    const mod = await import('yahoo-finance2')
+    const yf = new mod.default()
+
+    const now = new Date()
+    const histories = await Promise.all(
+      assets.map(async (asset) => {
+        try {
+          const hist = await yf.historical(asset.ticker, {
+            period1: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000),
+            period2: now,
+          })
+          return { asset, hist }
+        } catch {
+          return { asset, hist: [] as any[] }
+        }
+      })
+    )
+
+    let usdPln = 4.0
+    let eurPln = 4.3
+    try {
+      const [u, e] = await Promise.all([
+        yf.quoteSummary('USDPLN=X', { modules: ['price'] }),
+        yf.quoteSummary('EURPLN=X', { modules: ['price'] }),
+      ])
+      usdPln = (u.price as any)?.regularMarketPrice ?? 4.0
+      eurPln = (e.price as any)?.regularMarketPrice ?? 4.3
+    } catch {}
+
+    const toPlnRate = (cur: string) => cur === 'PLN' ? 1 : cur === 'EUR' ? eurPln : usdPln
+
+    const dateSet = new Set<string>()
+    histories.forEach(({ hist }) =>
+      hist.forEach((h: any) => dateSet.add(h.date.toISOString().split('T')[0]))
+    )
+    const dates = Array.from(dateSet).sort()
+
+    return dates.map(date => {
+      let totalPLN = 0
+      histories.forEach(({ asset, hist }) => {
+        const purchaseDate = (asset as any).purchase_date ?? (asset.created_at ?? '').split('T')[0]
+        if (date < purchaseDate) return
+        const entry = hist
+          .filter((h: any) => h.date.toISOString().split('T')[0] <= date)
+          .at(-1)
+        if (entry?.close) {
+          totalPLN += asset.quantity * entry.close * toPlnRate(asset.currency)
+        }
+      })
+      return { date, value: totalPLN }
+    })
   })
 
   // ── AI (OpenRouter) ───────────────────────────────────────────────────────

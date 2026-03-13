@@ -9,6 +9,7 @@ export interface PortfolioAsset {
   quantity: number      // ilość jednostek/akcji
   purchase_price: number // średnia cena zakupu (PLN lub USD)
   currency: string      // "USD" | "PLN" | "EUR"
+  purchase_date?: string // format: "YYYY-MM-DD"
   created_at: string    // ISO 8601: "2024-01-15T10:30:00Z"
 }
 
@@ -43,6 +44,18 @@ export type NewTransaction = Omit<Transaction, 'id'>
 export type NewAIReport = Omit<AIReport, 'id' | 'created_at'>
 
 // ─── Typy danych rynkowych ────────────────────────────────────────────────────
+
+// Wzbogacony asset z danymi rynkowymi i konwersją walut
+export interface EnrichedAsset extends PortfolioAsset {
+  currentPrice: number
+  currentValue: number
+  valueInPLN: number
+  costBasis: number
+  pnl: number
+  region?: string
+  sector?: string
+  assetType?: string
+}
 
 export type HistoryPeriod = '1mo' | '3mo' | '6mo' | '1y' | '2y' | '5y'
 

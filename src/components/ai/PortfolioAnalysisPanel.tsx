@@ -1,4 +1,5 @@
 import type { AIReport } from '../../lib/types'
+import { MarkdownRenderer } from './MarkdownRenderer'
 
 interface Props {
   report: AIReport | null
@@ -56,7 +57,7 @@ export default function PortfolioAnalysisPanel({ report, isAnalyzing, onAnalyze 
             Generowanie analizy portfela (Manager AI)... Może to potrwać do 30 sekund.
           </div>
         ) : report ? (
-          <p className="text-gray-200 text-sm whitespace-pre-wrap leading-relaxed">{report.report_text}</p>
+          <MarkdownRenderer content={report.report_text} />
         ) : (
           <div className="text-gray-500 text-sm italic">
             Kliknij „Analizuj Portfel", aby wygenerować kompleksową ocenę dywersyfikacji i ryzyka.

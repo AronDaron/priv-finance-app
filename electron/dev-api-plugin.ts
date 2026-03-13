@@ -60,6 +60,67 @@ export function financeDevApiPlugin(): Plugin {
               data = finance.calculateTechnicals(candles)
               break
             }
+            case '/asset-meta':
+              data = await finance.fetchAssetMeta(ticker)
+              break
+            case '/portfolio-history': {
+              const body = await readBody(req)
+              const assets: Array<{ ticker: string; quantity: number; currency: string; purchase_date?: string; created_at?: string }> =
+                JSON.parse(body.assets ?? '[]')
+              if (assets.length === 0) { data = []; break }
+
+              const mod = await import('yahoo-finance2')
+              const yf = new mod.default()
+
+              const now = new Date()
+              const histories = await Promise.all(
+                assets.map(async (asset) => {
+                  try {
+                    const hist = await yf.historical(asset.ticker, {
+                      period1: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000),
+                      period2: now,
+                    })
+                    return { asset, hist }
+                  } catch {
+                    return { asset, hist: [] as any[] }
+                  }
+                })
+              )
+
+              let usdPln = 4.0, eurPln = 4.3
+              try {
+                const [u, e] = await Promise.all([
+                  yf.quoteSummary('USDPLN=X', { modules: ['price'] }),
+                  yf.quoteSummary('EURPLN=X', { modules: ['price'] }),
+                ])
+                usdPln = (u.price as any)?.regularMarketPrice ?? 4.0
+                eurPln = (e.price as any)?.regularMarketPrice ?? 4.3
+              } catch {}
+
+              const toPlnRate = (cur: string) => cur === 'PLN' ? 1 : cur === 'EUR' ? eurPln : usdPln
+
+              const dateSet = new Set<string>()
+              histories.forEach(({ hist }) =>
+                hist.forEach((h: any) => dateSet.add(h.date.toISOString().split('T')[0]))
+              )
+              const dates = Array.from(dateSet).sort()
+
+              data = dates.map(date => {
+                let totalPLN = 0
+                histories.forEach(({ asset, hist }) => {
+                  const purchaseDate = asset.purchase_date ?? (asset.created_at ?? '').split('T')[0]
+                  if (purchaseDate && date < purchaseDate) return
+                  const entry = hist
+                    .filter((h: any) => h.date.toISOString().split('T')[0] <= date)
+                    .at(-1)
+                  if (entry?.close) {
+                    totalPLN += asset.quantity * entry.close * toPlnRate(asset.currency)
+                  }
+                })
+                return { date, value: totalPLN }
+              })
+              break
+            }
             case '/ai/analyze-stock': {
               const body = await readBody(req)
               const { ticker: t, apiKey } = body

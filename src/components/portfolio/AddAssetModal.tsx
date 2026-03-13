@@ -14,6 +14,7 @@ export default function AddAssetModal({ onClose, onSuccess }: Props) {
     quantity: '',
     purchase_price: '',
     currency: 'USD',
+    purchase_date: new Date().toISOString().split('T')[0],
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -39,6 +40,7 @@ export default function AddAssetModal({ onClose, onSuccess }: Props) {
         quantity: qty,
         purchase_price: price,
         currency: form.currency,
+        purchase_date: form.purchase_date,
       })
       onSuccess()
     } catch (err: unknown) {
@@ -117,6 +119,16 @@ export default function AddAssetModal({ onClose, onSuccess }: Props) {
               <option value="PLN">PLN</option>
               <option value="EUR">EUR</option>
             </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">Data zakupu</label>
+            <input
+              type="date"
+              value={form.purchase_date}
+              onChange={(e) => setForm((f) => ({ ...f, purchase_date: e.target.value }))}
+              max={new Date().toISOString().split('T')[0]}
+              className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-finance-green"
+            />
           </div>
           {error && <p className="text-finance-red text-sm">{error}</p>}
           <div className="flex gap-3 pt-2">

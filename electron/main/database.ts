@@ -14,6 +14,7 @@ export interface DBPortfolioAsset {
   quantity: number
   purchase_price: number
   currency: string
+  purchase_date: string
   created_at: string
 }
 
@@ -34,6 +35,7 @@ export interface DBNewPortfolioAsset {
   quantity: number
   purchase_price: number
   currency: string
+  purchase_date?: string
 }
 
 export interface DBNewTransaction {
@@ -73,6 +75,7 @@ export function initDatabase(): void {
   db.pragma('foreign_keys = ON')
 
   createTables()
+  migrateDatabase()
 }
 
 function createTables(): void {
@@ -113,6 +116,14 @@ function createTables(): void {
   `)
 }
 
+function migrateDatabase(): void {
+  const cols = db.prepare("PRAGMA table_info(portfolio_assets)").all() as { name: string }[]
+  if (!cols.find(c => c.name === 'purchase_date')) {
+    db.exec(`ALTER TABLE portfolio_assets ADD COLUMN purchase_date TEXT`)
+    db.exec(`UPDATE portfolio_assets SET purchase_date = date(created_at) WHERE purchase_date IS NULL`)
+  }
+}
+
 // ─── portfolio_assets ────────────────────────────────────────────────────────
 
 export function getAllAssets(): DBPortfolioAsset[] {
@@ -123,10 +134,13 @@ export function getAllAssets(): DBPortfolioAsset[] {
 
 export function addAsset(asset: DBNewPortfolioAsset): DBPortfolioAsset {
   const stmt = db.prepare(`
-    INSERT INTO portfolio_assets (ticker, name, quantity, purchase_price, currency)
-    VALUES (@ticker, @name, @quantity, @purchase_price, @currency)
+    INSERT INTO portfolio_assets (ticker, name, quantity, purchase_price, currency, purchase_date)
+    VALUES (@ticker, @name, @quantity, @purchase_price, @currency, @purchase_date)
   `)
-  const result = stmt.run(asset)
+  const result = stmt.run({
+    ...asset,
+    purchase_date: asset.purchase_date ?? new Date().toISOString().split('T')[0]
+  })
   return getAssetById(result.lastInsertRowid as number)!
 }
 

@@ -31,6 +31,7 @@ declare global {
   interface Window {
     electronAPI?: {
       version: string
+      portfolioHistory(): Promise<{ date: string; value: number }[]>
       assets: {
         getAll(): Promise<PortfolioAsset[]>
         add(asset: NewPortfolioAsset): Promise<PortfolioAsset>
@@ -60,6 +61,7 @@ declare global {
         fundamentals(ticker: string): Promise<FundamentalData>
         dividends(ticker: string): Promise<DividendEntry[]>
         technicals(ticker: string, period: HistoryPeriod): Promise<TechnicalIndicators>
+        assetMeta(ticker: string): Promise<{ region: string; assetType: string; sector: string | null }>
       }
       ai: {
         analyzeStock(ticker: string): Promise<AIReport>
@@ -315,6 +317,18 @@ async function devApiPost<T>(endpoint: string, body: Record<string, string>): Pr
     throw new Error(err.error ?? res.statusText)
   }
   return res.json() as Promise<T>
+}
+
+export async function getAssetMeta(ticker: string): Promise<{ region: string; assetType: string; sector: string | null }> {
+  if (isElectron()) return window.electronAPI!.finance.assetMeta(ticker)
+  return devApiFetch('/asset-meta', { ticker })
+}
+
+export async function getPortfolioHistory(): Promise<{ date: string; value: number }[]> {
+  if (isElectron()) return window.electronAPI!.portfolioHistory()
+  const assets = lsGet<PortfolioAsset[]>(LS_KEYS.ASSETS, [])
+  if (assets.length === 0) return []
+  return devApiPost('/portfolio-history', { assets: JSON.stringify(assets) })
 }
 
 export async function analyzeStock(ticker: string): Promise<AIReport> {
