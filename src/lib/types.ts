@@ -11,7 +11,35 @@ export interface PortfolioAsset {
   currency: string      // "USD" | "PLN" | "EUR"
   purchase_date?: string // format: "YYYY-MM-DD"
   created_at: string    // ISO 8601: "2024-01-15T10:30:00Z"
+  portfolio_id?: number
 }
+
+export interface Portfolio {
+  id: number
+  name: string
+  created_at: string
+}
+
+export interface CashAccount {
+  id: number
+  portfolio_id: number
+  currency: 'PLN' | 'USD' | 'EUR'
+  balance: number
+  created_at: string
+}
+
+export interface CashTransaction {
+  id: number
+  portfolio_id: number
+  type: 'deposit' | 'withdrawal'
+  amount: number
+  currency: 'PLN' | 'USD' | 'EUR'
+  date: string
+  notes?: string
+  created_at: string
+}
+
+export type NewCashTransaction = Omit<CashTransaction, 'id' | 'created_at'>
 
 export interface Transaction {
   id: number

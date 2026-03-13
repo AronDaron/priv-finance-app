@@ -9,6 +9,7 @@ import {
   fetchDividends,
   calculateTechnicals,
   fetchAssetMeta,
+  fetchPortfolioHistory,
 } from './finance'
 import type { HistoryPeriod } from '../../src/lib/types'
 import {
@@ -26,7 +27,14 @@ import {
   addReport,
   getSetting,
   setSetting,
-  getAllSettings
+  getAllSettings,
+  getPortfolios,
+  createPortfolio,
+  renamePortfolio,
+  deletePortfolio,
+  getCashAccounts,
+  addCashTransaction,
+  getCashTransactions,
 } from './database'
 import { analyzeStock, analyzePortfolio, WORKER_MODEL, MANAGER_MODEL } from './ai'
 
@@ -60,9 +68,20 @@ function createWindow(): void {
 }
 
 function registerIpcHandlers(): void {
+  // ── portfolios ────────────────────────────────────────────────────────────
+  ipcMain.handle('db:portfolios:getAll', () => getPortfolios())
+  ipcMain.handle('db:portfolios:create', (_event, { name }) => createPortfolio(name))
+  ipcMain.handle('db:portfolios:rename', (_event, { id, name }) => { renamePortfolio(id, name); return { success: true } })
+  ipcMain.handle('db:portfolios:delete', (_event, { id }) => { deletePortfolio(id); return { success: true } })
+
+  // ── cash ──────────────────────────────────────────────────────────────────
+  ipcMain.handle('db:cash:getAccounts', (_event, { portfolioId } = {}) => getCashAccounts(portfolioId))
+  ipcMain.handle('db:cash:addTransaction', (_event, data) => addCashTransaction(data))
+  ipcMain.handle('db:cash:getTransactions', (_event, { portfolioId } = {}) => getCashTransactions(portfolioId))
+
   // ── portfolio_assets ──────────────────────────────────────────────────────
-  ipcMain.handle('db:assets:getAll', () => {
-    return getAllAssets()
+  ipcMain.handle('db:assets:getAll', (_event, portfolioId?: number) => {
+    return getAllAssets(portfolioId)
   })
 
   ipcMain.handle('db:assets:add', (_event, asset) => {
@@ -153,61 +172,9 @@ function registerIpcHandlers(): void {
     fetchAssetMeta(ticker)
   )
 
-  ipcMain.handle('finance:portfolioHistory', async () => {
-    const assets = getAllAssets()
-    if (assets.length === 0) return []
-
-    const mod = await import('yahoo-finance2')
-    const yf = new mod.default()
-
-    const now = new Date()
-    const histories = await Promise.all(
-      assets.map(async (asset) => {
-        try {
-          const hist = await yf.historical(asset.ticker, {
-            period1: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000),
-            period2: now,
-          })
-          return { asset, hist }
-        } catch {
-          return { asset, hist: [] as any[] }
-        }
-      })
-    )
-
-    let usdPln = 4.0
-    let eurPln = 4.3
-    try {
-      const [u, e] = await Promise.all([
-        yf.quoteSummary('USDPLN=X', { modules: ['price'] }),
-        yf.quoteSummary('EURPLN=X', { modules: ['price'] }),
-      ])
-      usdPln = (u.price as any)?.regularMarketPrice ?? 4.0
-      eurPln = (e.price as any)?.regularMarketPrice ?? 4.3
-    } catch {}
-
-    const toPlnRate = (cur: string) => cur === 'PLN' ? 1 : cur === 'EUR' ? eurPln : usdPln
-
-    const dateSet = new Set<string>()
-    histories.forEach(({ hist }) =>
-      hist.forEach((h: any) => dateSet.add(h.date.toISOString().split('T')[0]))
-    )
-    const dates = Array.from(dateSet).sort()
-
-    return dates.map(date => {
-      let totalPLN = 0
-      histories.forEach(({ asset, hist }) => {
-        const purchaseDate = (asset as any).purchase_date ?? (asset.created_at ?? '').split('T')[0]
-        if (date < purchaseDate) return
-        const entry = hist
-          .filter((h: any) => h.date.toISOString().split('T')[0] <= date)
-          .at(-1)
-        if (entry?.close) {
-          totalPLN += asset.quantity * entry.close * toPlnRate(asset.currency)
-        }
-      })
-      return { date, value: totalPLN }
-    })
+  ipcMain.handle('finance:portfolioHistory', async (_event, portfolioId?: number, period?: string) => {
+    const assets = getAllAssets(portfolioId)
+    return fetchPortfolioHistory(assets, period ?? '1y')
   })
 
   // ── AI (OpenRouter) ───────────────────────────────────────────────────────

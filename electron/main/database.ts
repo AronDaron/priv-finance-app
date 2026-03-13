@@ -16,6 +16,41 @@ export interface DBPortfolioAsset {
   currency: string
   purchase_date: string
   created_at: string
+  portfolio_id: number
+}
+
+export interface DBPortfolio {
+  id: number
+  name: string
+  created_at: string
+}
+
+export interface DBCashAccount {
+  id: number
+  portfolio_id: number
+  currency: string
+  balance: number
+  created_at: string
+}
+
+export interface DBCashTransaction {
+  id: number
+  portfolio_id: number
+  type: 'deposit' | 'withdrawal'
+  amount: number
+  currency: string
+  date: string
+  notes: string | null
+  created_at: string
+}
+
+export interface DBNewCashTransaction {
+  portfolio_id: number
+  type: 'deposit' | 'withdrawal'
+  amount: number
+  currency: string
+  date: string
+  notes?: string | null
 }
 
 export interface DBTransaction {
@@ -80,6 +115,12 @@ export function initDatabase(): void {
 
 function createTables(): void {
   db.exec(`
+    CREATE TABLE IF NOT EXISTS portfolios (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      name       TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS portfolio_assets (
       id             INTEGER PRIMARY KEY AUTOINCREMENT,
       ticker         TEXT NOT NULL UNIQUE,
@@ -87,7 +128,28 @@ function createTables(): void {
       quantity       REAL NOT NULL DEFAULT 0,
       purchase_price REAL NOT NULL DEFAULT 0,
       currency       TEXT NOT NULL DEFAULT 'USD',
-      created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+      portfolio_id   INTEGER DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS cash_accounts (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      portfolio_id INTEGER NOT NULL DEFAULT 1,
+      currency     TEXT NOT NULL DEFAULT 'PLN',
+      balance      REAL NOT NULL DEFAULT 0,
+      created_at   TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(portfolio_id, currency)
+    );
+
+    CREATE TABLE IF NOT EXISTS cash_transactions (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      portfolio_id INTEGER NOT NULL DEFAULT 1,
+      type         TEXT NOT NULL CHECK(type IN ('deposit','withdrawal')),
+      amount       REAL NOT NULL,
+      currency     TEXT NOT NULL DEFAULT 'PLN',
+      date         TEXT NOT NULL,
+      notes        TEXT,
+      created_at   TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS transactions (
@@ -122,11 +184,25 @@ function migrateDatabase(): void {
     db.exec(`ALTER TABLE portfolio_assets ADD COLUMN purchase_date TEXT`)
     db.exec(`UPDATE portfolio_assets SET purchase_date = date(created_at) WHERE purchase_date IS NULL`)
   }
+  if (!cols.find(c => c.name === 'portfolio_id')) {
+    db.exec(`ALTER TABLE portfolio_assets ADD COLUMN portfolio_id INTEGER DEFAULT 1`)
+  }
+
+  // Utwórz domyślny portfel jeśli tabela pusta
+  const count = db.prepare('SELECT COUNT(*) as c FROM portfolios').get() as { c: number }
+  if (count.c === 0) {
+    db.prepare(`INSERT INTO portfolios (id, name) VALUES (1, 'Główny portfel')`).run()
+  }
 }
 
 // ─── portfolio_assets ────────────────────────────────────────────────────────
 
-export function getAllAssets(): DBPortfolioAsset[] {
+export function getAllAssets(portfolioId?: number): DBPortfolioAsset[] {
+  if (portfolioId !== undefined) {
+    return db
+      .prepare('SELECT * FROM portfolio_assets WHERE portfolio_id = ? ORDER BY created_at ASC')
+      .all(portfolioId) as DBPortfolioAsset[]
+  }
   return db
     .prepare('SELECT * FROM portfolio_assets ORDER BY created_at ASC')
     .all() as DBPortfolioAsset[]
@@ -268,4 +344,66 @@ export function getAllSettings(): Record<string, string> {
     value: string
   }>
   return Object.fromEntries(rows.map((r) => [r.key, r.value]))
+}
+
+// ─── portfolios ───────────────────────────────────────────────────────────────
+
+export function getPortfolios(): DBPortfolio[] {
+  return db.prepare('SELECT * FROM portfolios ORDER BY id ASC').all() as DBPortfolio[]
+}
+
+export function createPortfolio(name: string): DBPortfolio {
+  const result = db.prepare('INSERT INTO portfolios (name) VALUES (?)').run(name)
+  return db.prepare('SELECT * FROM portfolios WHERE id = ?').get(result.lastInsertRowid) as DBPortfolio
+}
+
+export function renamePortfolio(id: number, name: string): void {
+  db.prepare('UPDATE portfolios SET name = ? WHERE id = ?').run(name, id)
+}
+
+export function deletePortfolio(id: number): void {
+  db.prepare('DELETE FROM portfolio_assets WHERE portfolio_id = ?').run(id)
+  db.prepare('DELETE FROM cash_accounts WHERE portfolio_id = ?').run(id)
+  db.prepare('DELETE FROM cash_transactions WHERE portfolio_id = ?').run(id)
+  db.prepare('DELETE FROM portfolios WHERE id = ?').run(id)
+}
+
+// ─── cash_accounts / cash_transactions ───────────────────────────────────────
+
+export function getCashAccounts(portfolioId?: number): DBCashAccount[] {
+  if (portfolioId !== undefined) {
+    return db
+      .prepare('SELECT * FROM cash_accounts WHERE portfolio_id = ? ORDER BY currency ASC')
+      .all(portfolioId) as DBCashAccount[]
+  }
+  return db.prepare('SELECT * FROM cash_accounts ORDER BY portfolio_id, currency ASC').all() as DBCashAccount[]
+}
+
+export function addCashTransaction(data: DBNewCashTransaction): DBCashTransaction {
+  // Dodaj transakcję
+  const result = db.prepare(`
+    INSERT INTO cash_transactions (portfolio_id, type, amount, currency, date, notes)
+    VALUES (@portfolio_id, @type, @amount, @currency, @date, @notes)
+  `).run({ ...data, notes: data.notes ?? null })
+
+  // Zaktualizuj saldo konta gotówkowego (INSERT OR REPLACE)
+  const delta = data.type === 'deposit' ? data.amount : -data.amount
+  db.prepare(`
+    INSERT INTO cash_accounts (portfolio_id, currency, balance)
+    VALUES (@portfolio_id, @currency, @delta)
+    ON CONFLICT(portfolio_id, currency) DO UPDATE SET balance = balance + @delta
+  `).run({ portfolio_id: data.portfolio_id, currency: data.currency, delta })
+
+  return db
+    .prepare('SELECT * FROM cash_transactions WHERE id = ?')
+    .get(result.lastInsertRowid) as DBCashTransaction
+}
+
+export function getCashTransactions(portfolioId?: number): DBCashTransaction[] {
+  if (portfolioId !== undefined) {
+    return db
+      .prepare('SELECT * FROM cash_transactions WHERE portfolio_id = ? ORDER BY date DESC')
+      .all(portfolioId) as DBCashTransaction[]
+  }
+  return db.prepare('SELECT * FROM cash_transactions ORDER BY date DESC').all() as DBCashTransaction[]
 }

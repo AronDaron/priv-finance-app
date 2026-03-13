@@ -2,10 +2,13 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import type { PortfolioAsset, AIReport } from '../../lib/types'
 import { getAssets, getReports, getSetting, analyzeStock, analyzePortfolio } from '../../lib/api'
+import { usePortfolio } from '../../contexts/PortfolioContext'
 import StockAnalysisCard from './StockAnalysisCard'
 import PortfolioAnalysisPanel from './PortfolioAnalysisPanel'
 
 export default function AIAnalysisView() {
+  const { portfolios } = usePortfolio()
+  const [selectedPortfolioId, setSelectedPortfolioId] = useState<number | null>(null) // null = wszystkie
   const [assets, setAssets] = useState<PortfolioAsset[]>([])
   const [stockReports, setStockReports] = useState<Record<string, AIReport | null>>({})
   const [portfolioReport, setPortfolioReport] = useState<AIReport | null>(null)
@@ -15,8 +18,10 @@ export default function AIAnalysisView() {
 
   useEffect(() => {
     getSetting('openrouter_api_key').then(key => setHasApiKey(!!key))
+  }, [])
 
-    getAssets().then(setAssets)
+  useEffect(() => {
+    getAssets(selectedPortfolioId ?? undefined).then(setAssets)
 
     getReports().then(reports => {
       const byTicker: Record<string, AIReport> = {}
@@ -28,7 +33,7 @@ export default function AIAnalysisView() {
       setStockReports(byTicker)
       setPortfolioReport(byTicker['__PORTFOLIO__'] ?? null)
     })
-  }, [])
+  }, [selectedPortfolioId])
 
   const handleAnalyzeStock = async (ticker: string) => {
     setAnalyzing(ticker)
@@ -49,7 +54,6 @@ export default function AIAnalysisView() {
     try {
       const report = await analyzePortfolio()
       setPortfolioReport(report)
-      // Odśwież raporty spółek (Manager mógł je wygenerować)
       getReports().then(reports => {
         const byTicker: Record<string, AIReport> = {}
         reports.forEach(r => {
@@ -68,7 +72,7 @@ export default function AIAnalysisView() {
 
   return (
     <div className="p-6 space-y-6">
-      {/* Page header */}
+      {/* Nagłówek */}
       <div className="flex items-center justify-between">
         <h1 className="text-white text-xl font-bold">Analiza AI</h1>
         <button
@@ -91,11 +95,40 @@ export default function AIAnalysisView() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                   d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
               </svg>
-              Analizuj Portfel
+              Analizuj portfel
             </>
           )}
         </button>
       </div>
+
+      {/* Selektor portfela */}
+      {portfolios.length > 1 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => setSelectedPortfolioId(null)}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              selectedPortfolioId === null
+                ? 'bg-finance-green text-white'
+                : 'glass-card text-gray-300 hover:text-white'
+            }`}
+          >
+            Wszystkie
+          </button>
+          {portfolios.map(p => (
+            <button
+              key={p.id}
+              onClick={() => setSelectedPortfolioId(p.id)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                selectedPortfolioId === p.id
+                  ? 'bg-finance-green text-white'
+                  : 'glass-card text-gray-300 hover:text-white'
+              }`}
+            >
+              {p.name}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Brak klucza API */}
       {hasApiKey === false && (
@@ -127,7 +160,7 @@ export default function AIAnalysisView() {
       {/* Portfel pusty */}
       {assets.length === 0 && (
         <div className="text-gray-500 text-sm italic">
-          Portfel jest pusty — dodaj spółki przed analizą.
+          Brak spółek w wybranym portfelu.
         </div>
       )}
 
@@ -143,7 +176,9 @@ export default function AIAnalysisView() {
       {/* Karty spółek */}
       {assets.length > 0 && (
         <div>
-          <h2 className="text-gray-400 text-sm font-medium mb-3">Spółki w portfelu</h2>
+          <h2 className="text-gray-400 text-sm font-medium mb-3">
+            Spółki {selectedPortfolioId !== null ? `— ${portfolios.find(p => p.id === selectedPortfolioId)?.name}` : '— wszystkie portfele'}
+          </h2>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {assets.map(asset => (
               <StockAnalysisCard

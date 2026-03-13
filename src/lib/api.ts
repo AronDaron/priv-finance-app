@@ -22,6 +22,10 @@ import type {
   TechnicalIndicators,
   DividendEntry,
   HistoryPeriod,
+  Portfolio,
+  CashAccount,
+  CashTransaction,
+  NewCashTransaction,
 } from './types'
 
 // ─── Deklaracja typów dla window.electronAPI ─────────────────────────────────
@@ -31,9 +35,20 @@ declare global {
   interface Window {
     electronAPI?: {
       version: string
-      portfolioHistory(): Promise<{ date: string; value: number }[]>
+      portfolioHistory(portfolioId?: number, period?: string): Promise<{ date: string; value: number }[]>
+      portfolios: {
+        getAll(): Promise<Portfolio[]>
+        create(name: string): Promise<Portfolio>
+        rename(id: number, name: string): Promise<{ success: boolean }>
+        delete(id: number): Promise<{ success: boolean }>
+      }
+      cash: {
+        getAccounts(portfolioId?: number): Promise<CashAccount[]>
+        addTransaction(data: NewCashTransaction): Promise<CashTransaction>
+        getTransactions(portfolioId?: number): Promise<CashTransaction[]>
+      }
       assets: {
-        getAll(): Promise<PortfolioAsset[]>
+        getAll(portfolioId?: number): Promise<PortfolioAsset[]>
         add(asset: NewPortfolioAsset): Promise<PortfolioAsset>
         update(id: number, updates: Partial<NewPortfolioAsset>): Promise<PortfolioAsset | null>
         delete(id: number): Promise<{ success: boolean }>
@@ -83,7 +98,10 @@ const LS_KEYS = {
   ASSETS: 'fp_assets',
   TRANSACTIONS: 'fp_transactions',
   REPORTS: 'fp_reports',
-  SETTINGS: 'fp_settings'
+  SETTINGS: 'fp_settings',
+  PORTFOLIOS: 'fp_portfolios',
+  CASH_ACCOUNTS: 'fp_cash_accounts',
+  CASH_TRANSACTIONS: 'fp_cash_transactions',
 } as const
 
 function lsGet<T>(key: string, fallback: T): T {
@@ -107,13 +125,96 @@ function nowIso(): string {
   return new Date().toISOString()
 }
 
+// ─── API: portfolios ──────────────────────────────────────────────────────────
+
+function lsEnsureDefaultPortfolio(): Portfolio[] {
+  const portfolios = lsGet<Portfolio[]>(LS_KEYS.PORTFOLIOS, [])
+  if (portfolios.length === 0) {
+    const defaultPortfolio: Portfolio = { id: 1, name: 'Główny portfel', created_at: nowIso() }
+    lsSet(LS_KEYS.PORTFOLIOS, [defaultPortfolio])
+    return [defaultPortfolio]
+  }
+  return portfolios
+}
+
+export async function getPortfolios(): Promise<Portfolio[]> {
+  if (isElectron()) return window.electronAPI!.portfolios.getAll()
+  return lsEnsureDefaultPortfolio()
+}
+
+export async function createPortfolio(name: string): Promise<Portfolio> {
+  if (isElectron()) return window.electronAPI!.portfolios.create(name)
+  const portfolios = lsEnsureDefaultPortfolio()
+  const newPortfolio: Portfolio = { id: nextId(portfolios), name, created_at: nowIso() }
+  lsSet(LS_KEYS.PORTFOLIOS, [...portfolios, newPortfolio])
+  return newPortfolio
+}
+
+export async function renamePortfolio(id: number, name: string): Promise<void> {
+  if (isElectron()) { await window.electronAPI!.portfolios.rename(id, name); return }
+  const portfolios = lsGet<Portfolio[]>(LS_KEYS.PORTFOLIOS, [])
+  lsSet(LS_KEYS.PORTFOLIOS, portfolios.map(p => p.id === id ? { ...p, name } : p))
+}
+
+export async function deletePortfolio(id: number): Promise<void> {
+  if (isElectron()) { await window.electronAPI!.portfolios.delete(id); return }
+  const portfolios = lsGet<Portfolio[]>(LS_KEYS.PORTFOLIOS, [])
+  lsSet(LS_KEYS.PORTFOLIOS, portfolios.filter(p => p.id !== id))
+  const assets = lsGet<PortfolioAsset[]>(LS_KEYS.ASSETS, [])
+  lsSet(LS_KEYS.ASSETS, assets.filter(a => a.portfolio_id !== id))
+  const cashAccounts = lsGet<CashAccount[]>(LS_KEYS.CASH_ACCOUNTS, [])
+  lsSet(LS_KEYS.CASH_ACCOUNTS, cashAccounts.filter(c => c.portfolio_id !== id))
+  const cashTxs = lsGet<CashTransaction[]>(LS_KEYS.CASH_TRANSACTIONS, [])
+  lsSet(LS_KEYS.CASH_TRANSACTIONS, cashTxs.filter(c => c.portfolio_id !== id))
+}
+
+// ─── API: cash ────────────────────────────────────────────────────────────────
+
+export async function getCashAccounts(portfolioId?: number): Promise<CashAccount[]> {
+  if (isElectron()) return window.electronAPI!.cash.getAccounts(portfolioId)
+  const accounts = lsGet<CashAccount[]>(LS_KEYS.CASH_ACCOUNTS, [])
+  return portfolioId !== undefined ? accounts.filter(a => a.portfolio_id === portfolioId) : accounts
+}
+
+export async function addCashTransaction(data: NewCashTransaction): Promise<CashTransaction> {
+  if (isElectron()) return window.electronAPI!.cash.addTransaction(data)
+  const txs = lsGet<CashTransaction[]>(LS_KEYS.CASH_TRANSACTIONS, [])
+  const newTx: CashTransaction = { ...data, id: nextId(txs), created_at: nowIso() }
+  lsSet(LS_KEYS.CASH_TRANSACTIONS, [...txs, newTx])
+  // Zaktualizuj saldo
+  const accounts = lsGet<CashAccount[]>(LS_KEYS.CASH_ACCOUNTS, [])
+  const idx = accounts.findIndex(a => a.portfolio_id === data.portfolio_id && a.currency === data.currency)
+  const delta = data.type === 'deposit' ? data.amount : -data.amount
+  if (idx >= 0) {
+    accounts[idx] = { ...accounts[idx], balance: accounts[idx].balance + delta }
+    lsSet(LS_KEYS.CASH_ACCOUNTS, accounts)
+  } else {
+    const newAccount: CashAccount = {
+      id: nextId(accounts),
+      portfolio_id: data.portfolio_id,
+      currency: data.currency as 'PLN' | 'USD' | 'EUR',
+      balance: delta,
+      created_at: nowIso()
+    }
+    lsSet(LS_KEYS.CASH_ACCOUNTS, [...accounts, newAccount])
+  }
+  return newTx
+}
+
+export async function getCashTransactions(portfolioId?: number): Promise<CashTransaction[]> {
+  if (isElectron()) return window.electronAPI!.cash.getTransactions(portfolioId)
+  const txs = lsGet<CashTransaction[]>(LS_KEYS.CASH_TRANSACTIONS, [])
+  return portfolioId !== undefined ? txs.filter(t => t.portfolio_id === portfolioId) : txs
+}
+
 // ─── API: portfolio_assets ────────────────────────────────────────────────────
 
-export async function getAssets(): Promise<PortfolioAsset[]> {
+export async function getAssets(portfolioId?: number): Promise<PortfolioAsset[]> {
   if (isElectron()) {
-    return window.electronAPI!.assets.getAll()
+    return window.electronAPI!.assets.getAll(portfolioId)
   }
-  return lsGet<PortfolioAsset[]>(LS_KEYS.ASSETS, [])
+  const assets = lsGet<PortfolioAsset[]>(LS_KEYS.ASSETS, [])
+  return portfolioId !== undefined ? assets.filter(a => a.portfolio_id === portfolioId) : assets
 }
 
 export async function addAsset(asset: NewPortfolioAsset): Promise<PortfolioAsset> {
@@ -121,7 +222,8 @@ export async function addAsset(asset: NewPortfolioAsset): Promise<PortfolioAsset
     return window.electronAPI!.assets.add(asset)
   }
   const assets = lsGet<PortfolioAsset[]>(LS_KEYS.ASSETS, [])
-  const existing = assets.find((a) => a.ticker === asset.ticker)
+  const targetPfId = asset.portfolio_id ?? 1
+  const existing = assets.find((a) => a.ticker === asset.ticker && (a.portfolio_id ?? 1) === targetPfId)
   if (existing) {
     const totalQty = existing.quantity + asset.quantity
     const avgPrice =
@@ -334,11 +436,12 @@ export async function getAssetMeta(ticker: string): Promise<{ region: string; as
   return devApiFetch('/asset-meta', { ticker })
 }
 
-export async function getPortfolioHistory(): Promise<{ date: string; value: number }[]> {
-  if (isElectron()) return window.electronAPI!.portfolioHistory()
-  const assets = lsGet<PortfolioAsset[]>(LS_KEYS.ASSETS, [])
+export async function getPortfolioHistory(portfolioId?: number, period: string = '1y'): Promise<{ date: string; value: number }[]> {
+  if (isElectron()) return window.electronAPI!.portfolioHistory(portfolioId, period)
+  const allAssets = lsGet<PortfolioAsset[]>(LS_KEYS.ASSETS, [])
+  const assets = portfolioId !== undefined ? allAssets.filter(a => a.portfolio_id === portfolioId) : allAssets
   if (assets.length === 0) return []
-  return devApiPost('/portfolio-history', { assets: JSON.stringify(assets) })
+  return devApiPost('/portfolio-history', { assets: JSON.stringify(assets), period })
 }
 
 export async function analyzeStock(ticker: string): Promise<AIReport> {

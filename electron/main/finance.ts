@@ -11,7 +11,7 @@ let _yf: YFInstance | null = null
 async function getYF(): Promise<YFInstance> {
   if (!_yf) {
     const mod = await import('yahoo-finance2')
-    _yf = new mod.default()
+    _yf = new mod.default({ suppressNotices: ['ripHistorical'] })
   }
   return _yf
 }
@@ -40,7 +40,7 @@ export async function fetchHistory(ticker: string, period: HistoryPeriod): Promi
   const yf = await getYF()
   const now = new Date()
   const period1 = new Date(now.getTime() - PERIOD_DAYS[period] * 86_400_000)
-  const rows = await yf.historical(ticker, { period1, period2: now })
+  const rows = await yf.historical(ticker, { period1, period2: now }, { validateResult: false })
   return rows
     .filter(r => r.open != null && r.high != null && r.low != null && r.close != null)
     .map(r => ({
@@ -165,10 +165,6 @@ export async function fetchAssetMeta(ticker: string): Promise<{ region: string; 
   }
 }
 
-export async function fetchPortfolioHistory(): Promise<{ date: string; value: number }[]> {
-  return []
-}
-
 export function calculateTechnicals(candles: OHLCCandle[]): TechnicalIndicators {
   const closes = candles.map(c => c.close)
 
@@ -198,4 +194,70 @@ export function calculateTechnicals(candles: OHLCCandle[]): TechnicalIndicators 
     sma50: sma50.at(-1) ?? null,
     sma200: sma200.at(-1) ?? null,  // null gdy historia < 200 świec
   }
+}
+
+export async function fetchPortfolioHistory(
+  assets: Array<{ ticker: string; quantity: number; currency: string; purchase_date?: string }>,
+  period: string = '1y'
+): Promise<{ date: string; value: number }[]> {
+  if (assets.length === 0) return []
+
+  const yf = await getYF()
+  const now = new Date()
+  const periodDays = PERIOD_DAYS[period as HistoryPeriod] ?? 365
+  const period1 = new Date(now.getTime() - periodDays * 86_400_000)
+
+  const histories = await Promise.all(
+    assets.map(async (asset) => {
+      try {
+        const hist = await yf.historical(
+          asset.ticker,
+          { period1, period2: now },
+          { validateResult: false }
+        )
+        return { asset, hist }
+      } catch {
+        return { asset, hist: [] as any[] }
+      }
+    })
+  )
+
+  let usdPln = 4.0
+  let eurPln = 4.3
+  try {
+    const [u, e] = await Promise.all([
+      yf.quoteSummary('USDPLN=X', { modules: ['price'] }),
+      yf.quoteSummary('EURPLN=X', { modules: ['price'] }),
+    ])
+    usdPln = (u.price as any)?.regularMarketPrice ?? 4.0
+    eurPln = (e.price as any)?.regularMarketPrice ?? 4.3
+  } catch {}
+
+  const toPlnRate = (cur: string) => cur === 'PLN' ? 1 : cur === 'EUR' ? eurPln : usdPln
+
+  // Zbierz wszystkie daty z historii
+  const dateSet = new Set<string>()
+  histories.forEach(({ hist }) =>
+    hist.forEach((h: any) => dateSet.add(h.date.toISOString().split('T')[0]))
+  )
+  const dates = Array.from(dateSet).sort()
+
+  // Dla benchmarku: zawsze używaj aktualnych ilości dla wszystkich dat historycznych.
+  // Nie filtrujemy po purchase_date — to daje "jak by wyglądał portfel w aktualnym składzie".
+  const result = dates.map(date => {
+    let totalPLN = 0
+    histories.forEach(({ asset, hist }) => {
+      const entry = hist
+        .filter((h: any) => h.date.toISOString().split('T')[0] <= date)
+        .at(-1)
+      if (entry?.close) {
+        totalPLN += asset.quantity * entry.close * toPlnRate(asset.currency)
+      }
+    })
+    return { date, value: totalPLN }
+  })
+
+  // Odcinamy wiodące zera (brak danych na początku okresu dla niektórych tickerów)
+  const firstNonZero = result.findIndex(r => r.value > 0)
+  return firstNonZero >= 0 ? result.slice(firstNonZero) : result
 }

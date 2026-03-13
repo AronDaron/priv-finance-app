@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { addAsset } from '../../lib/api'
 import { StockSearch } from '../StockSearch'
+import { usePortfolio } from '../../contexts/PortfolioContext'
 
 interface Props {
   onClose: () => void
@@ -8,6 +9,8 @@ interface Props {
 }
 
 export default function AddAssetModal({ onClose, onSuccess }: Props) {
+  const { activePortfolioId, portfolios } = usePortfolio()
+  const defaultPortfolioId = activePortfolioId ?? portfolios[0]?.id ?? 1
   const [form, setForm] = useState({
     ticker: '',
     name: '',
@@ -15,6 +18,7 @@ export default function AddAssetModal({ onClose, onSuccess }: Props) {
     purchase_price: '',
     currency: 'USD',
     purchase_date: new Date().toISOString().split('T')[0],
+    portfolio_id: defaultPortfolioId,
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -41,6 +45,7 @@ export default function AddAssetModal({ onClose, onSuccess }: Props) {
         purchase_price: price,
         currency: form.currency,
         purchase_date: form.purchase_date,
+        portfolio_id: form.portfolio_id,
       })
       onSuccess()
     } catch (err: unknown) {
@@ -130,6 +135,20 @@ export default function AddAssetModal({ onClose, onSuccess }: Props) {
               className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-finance-green"
             />
           </div>
+          {portfolios.length > 1 && (
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Portfel</label>
+              <select
+                value={form.portfolio_id}
+                onChange={(e) => setForm((f) => ({ ...f, portfolio_id: Number(e.target.value) }))}
+                className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-finance-green"
+              >
+                {portfolios.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
           {error && <p className="text-finance-red text-sm">{error}</p>}
           <div className="flex gap-3 pt-2">
             <button

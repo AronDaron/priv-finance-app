@@ -6,9 +6,10 @@ interface Props {
   totalROI: number
   assetCount: number
   totalAnnualDividend?: number
+  cashValuePLN?: number
 }
 
-export default function SummaryCards({ totalValue, totalPnL, totalROI, assetCount, totalAnnualDividend = 0 }: Props) {
+export default function SummaryCards({ totalValue, totalPnL, totalROI, assetCount, totalAnnualDividend = 0, cashValuePLN = 0 }: Props) {
   const cards = [
     {
       label: 'Wartość portfela (PLN)',
@@ -32,6 +33,14 @@ export default function SummaryCards({ totalValue, totalPnL, totalROI, assetCoun
     },
   ]
 
+  if (cashValuePLN > 0) {
+    cards.push({
+      label: 'Gotówka (PLN)',
+      value: formatCurrency(cashValuePLN, 'PLN'),
+      color: 'text-gray-300',
+    })
+  }
+
   if (totalAnnualDividend > 0) {
     cards.push({
       label: 'Roczna dywidenda (est.)',
@@ -40,9 +49,8 @@ export default function SummaryCards({ totalValue, totalPnL, totalROI, assetCoun
     })
   }
 
-  const gridClass = cards.length === 5
-    ? 'grid grid-cols-2 lg:grid-cols-5 gap-4'
-    : 'grid grid-cols-2 lg:grid-cols-4 gap-4'
+  const cols = cards.length <= 4 ? 4 : cards.length <= 5 ? 5 : 6
+  const gridClass = `grid grid-cols-2 lg:grid-cols-${cols} gap-4`
 
   return (
     <div className={gridClass}>

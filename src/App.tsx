@@ -5,20 +5,25 @@ import PortfolioView from './components/portfolio/PortfolioView'
 import StockDetailView from './components/stock/StockDetailView'
 import SettingsView from './components/settings/SettingsView'
 import AIAnalysisView from './components/ai/AIAnalysisView'
+import BenchmarkView from './components/benchmark/BenchmarkView'
+import { PortfolioProvider } from './contexts/PortfolioContext'
 
 export default function App() {
   return (
     <HashRouter>
-      <Routes>
-        <Route element={<AppLayout />}>
-          <Route index element={<DashboardView />} />
-          <Route path="portfolio" element={<PortfolioView />} />
-          <Route path="portfolio/:ticker" element={<StockDetailView />} />
-          <Route path="stock/:ticker" element={<StockDetailView />} />
-          <Route path="settings" element={<SettingsView />} />
-          <Route path="ai" element={<AIAnalysisView />} />
-        </Route>
-      </Routes>
+      <PortfolioProvider>
+        <Routes>
+          <Route element={<AppLayout />}>
+            <Route index element={<DashboardView />} />
+            <Route path="portfolio" element={<PortfolioView />} />
+            <Route path="portfolio/:ticker" element={<StockDetailView />} />
+            <Route path="stock/:ticker" element={<StockDetailView />} />
+            <Route path="settings" element={<SettingsView />} />
+            <Route path="ai" element={<AIAnalysisView />} />
+            <Route path="benchmark" element={<BenchmarkView />} />
+          </Route>
+        </Routes>
+      </PortfolioProvider>
     </HashRouter>
   )
 }

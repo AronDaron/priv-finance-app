@@ -9,13 +9,35 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Metadane
   version: process.versions.electron,
 
-  portfolioHistory: () =>
-    ipcRenderer.invoke('finance:portfolioHistory'),
+  portfolioHistory: (portfolioId?: number, period?: string) =>
+    ipcRenderer.invoke('finance:portfolioHistory', portfolioId, period),
+
+  // ── portfolios ──────────────────────────────────────────────────────────
+  portfolios: {
+    getAll: () => ipcRenderer.invoke('db:portfolios:getAll'),
+    create: (name: string) => ipcRenderer.invoke('db:portfolios:create', { name }),
+    rename: (id: number, name: string) => ipcRenderer.invoke('db:portfolios:rename', { id, name }),
+    delete: (id: number) => ipcRenderer.invoke('db:portfolios:delete', { id }),
+  },
+
+  // ── cash ─────────────────────────────────────────────────────────────────
+  cash: {
+    getAccounts: (portfolioId?: number) => ipcRenderer.invoke('db:cash:getAccounts', { portfolioId }),
+    addTransaction: (data: {
+      portfolio_id: number
+      type: 'deposit' | 'withdrawal'
+      amount: number
+      currency: string
+      date: string
+      notes?: string | null
+    }) => ipcRenderer.invoke('db:cash:addTransaction', data),
+    getTransactions: (portfolioId?: number) => ipcRenderer.invoke('db:cash:getTransactions', { portfolioId }),
+  },
 
   // ── portfolio_assets ────────────────────────────────────────────────────
   assets: {
-    getAll: () =>
-      ipcRenderer.invoke('db:assets:getAll'),
+    getAll: (portfolioId?: number) =>
+      ipcRenderer.invoke('db:assets:getAll', portfolioId),
 
     add: (asset: {
       ticker: string
