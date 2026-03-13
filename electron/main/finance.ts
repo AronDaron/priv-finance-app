@@ -40,18 +40,22 @@ export async function fetchHistory(ticker: string, period: HistoryPeriod): Promi
   const yf = await getYF()
   const now = new Date()
   const period1 = new Date(now.getTime() - PERIOD_DAYS[period] * 86_400_000)
-  const rows = await yf.historical(ticker, { period1, period2: now }, { validateResult: false })
-  return rows
-    .filter(r => r.open != null && r.high != null && r.low != null && r.close != null)
-    .map(r => ({
-      time: Math.floor(r.date.getTime() / 1000),
-      open: r.open!,
-      high: r.high!,
-      low: r.low!,
-      close: r.close!,
-      volume: r.volume ?? 0,
-    }))
-    .sort((a, b) => a.time - b.time)  // lightweight-charts wymaga kolejności rosnącej
+  try {
+    const result = await yf.chart(ticker, { period1, period2: now, interval: '1d' })
+    return (result.quotes ?? [])
+      .filter(r => r.open != null && r.high != null && r.low != null && r.close != null)
+      .map(r => ({
+        time: Math.floor(r.date.getTime() / 1000),
+        open: r.open!,
+        high: r.high!,
+        low: r.low!,
+        close: r.close!,
+        volume: r.volume ?? 0,
+      }))
+      .sort((a, b) => a.time - b.time)
+  } catch {
+    return []
+  }
 }
 
 export async function searchTickers(query: string): Promise<SearchResult[]> {
@@ -67,23 +71,60 @@ export async function searchTickers(query: string): Promise<SearchResult[]> {
 
 export async function fetchFundamentals(ticker: string): Promise<FundamentalData> {
   const yf = await getYF()
-  const result = await yf.quoteSummary(ticker, {
-    modules: ['summaryDetail', 'defaultKeyStatistics', 'assetProfile'],
-  })
-  const sd = result.summaryDetail
-  const ks = result.defaultKeyStatistics
-  const ap = result.assetProfile
+
+  const [baseResult, stockResult, etfResult] = await Promise.all([
+    yf.quoteSummary(ticker, { modules: ['summaryDetail', 'defaultKeyStatistics', 'assetProfile'] }),
+    yf.quoteSummary(ticker, { modules: ['financialData', 'recommendationTrend', 'calendarEvents'] }).catch(() => ({})),
+    yf.quoteSummary(ticker, { modules: ['topHoldings', 'fundProfile'] }).catch(() => ({})),
+  ])
+
+  const sd = (baseResult as any).summaryDetail
+  const ks = (baseResult as any).defaultKeyStatistics
+  const ap = (baseResult as any).assetProfile
+  const fd = (stockResult as any).financialData ?? null
+  const rt = (stockResult as any).recommendationTrend ?? null
+  const ce = (stockResult as any).calendarEvents ?? null
+  const th = (etfResult as any).topHoldings ?? null
+  const fp = (etfResult as any).fundProfile ?? null
+
+  const trend0 = rt?.trend?.[0] ?? null
+
+  const rawDate = ce?.earnings?.earningsDate?.[0]
+  const nextEarningsDate = rawDate ? new Date(rawDate).toISOString().split('T')[0] : null
+
   return {
-    pe: (sd as any)?.trailingPE ?? null,
-    eps: (ks as any)?.trailingEps ?? null,
-    dividendYield: (sd as any)?.dividendYield ?? null,
-    dividendRate: (sd as any)?.dividendRate ?? null,
-    marketCap: (sd as any)?.marketCap ?? null,
-    week52High: (sd as any)?.fiftyTwoWeekHigh ?? null,
-    week52Low: (sd as any)?.fiftyTwoWeekLow ?? null,
-    beta: (sd as any)?.beta ?? null,
-    sector: (ap as any)?.sector ?? null,
-    industry: (ap as any)?.industry ?? null,
+    pe: sd?.trailingPE ?? null,
+    eps: ks?.trailingEps ?? null,
+    dividendYield: sd?.dividendYield ?? null,
+    dividendRate: sd?.dividendRate ?? null,
+    marketCap: sd?.marketCap ?? null,
+    week52High: sd?.fiftyTwoWeekHigh ?? null,
+    week52Low: sd?.fiftyTwoWeekLow ?? null,
+    beta: sd?.beta ?? null,
+    sector: ap?.sector ?? null,
+    industry: ap?.industry ?? null,
+    totalRevenue: fd?.totalRevenue ?? null,
+    revenueGrowth: fd?.revenueGrowth ?? null,
+    grossMargins: fd?.grossMargins ?? null,
+    profitMargins: fd?.profitMargins ?? null,
+    totalDebt: fd?.totalDebt ?? null,
+    totalCash: fd?.totalCash ?? null,
+    analystRecommendation: fd?.recommendationKey ?? null,
+    numberOfAnalysts: fd?.numberOfAnalystOpinions ?? null,
+    targetMeanPrice: fd?.targetMeanPrice ?? null,
+    earningsGrowth: fd?.earningsGrowth ?? null,
+    recommendationTrend: trend0 ? {
+      strongBuy: trend0.strongBuy ?? 0,
+      buy: trend0.buy ?? 0,
+      hold: trend0.hold ?? 0,
+      sell: trend0.sell ?? 0,
+      strongSell: trend0.strongSell ?? 0,
+    } : null,
+    nextEarningsDate,
+    topHoldings: th?.holdings?.length
+      ? th.holdings.slice(0, 5).map((h: any) => ({ name: h.holdingName ?? '', percent: h.holdingPercent?.raw ?? null }))
+      : null,
+    fundFamily: fp?.family ?? null,
   }
 }
 
@@ -210,12 +251,8 @@ export async function fetchPortfolioHistory(
   const histories = await Promise.all(
     assets.map(async (asset) => {
       try {
-        const hist = await yf.historical(
-          asset.ticker,
-          { period1, period2: now },
-          { validateResult: false }
-        )
-        return { asset, hist }
+        const result = await yf.chart(asset.ticker, { period1, period2: now, interval: '1d' })
+        return { asset, hist: result.quotes ?? [] }
       } catch {
         return { asset, hist: [] as any[] }
       }

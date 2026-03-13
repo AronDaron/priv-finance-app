@@ -129,6 +129,24 @@ export interface FundamentalData {
   beta: number | null
   sector: string | null
   industry: string | null
+  // financialData (akcje)
+  totalRevenue: number | null
+  revenueGrowth: number | null
+  grossMargins: number | null
+  profitMargins: number | null
+  totalDebt: number | null
+  totalCash: number | null
+  analystRecommendation: string | null   // 'buy' | 'hold' | 'sell' | 'strong_buy' | 'none'
+  numberOfAnalysts: number | null
+  targetMeanPrice: number | null
+  earningsGrowth: number | null
+  // recommendationTrend
+  recommendationTrend: { strongBuy: number; buy: number; hold: number; sell: number; strongSell: number } | null
+  // calendarEvents
+  nextEarningsDate: string | null        // 'YYYY-MM-DD'
+  // ETF (topHoldings + fundProfile)
+  topHoldings: Array<{ name: string; percent: number | null }> | null
+  fundFamily: string | null
 }
 
 export interface TechnicalIndicators {

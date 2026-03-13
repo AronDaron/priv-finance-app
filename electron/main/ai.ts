@@ -76,31 +76,66 @@ export interface StockAnalysisParams {
   currency: string
 }
 
+function formatPercent(val: number | null): string {
+  return val != null ? (val * 100).toFixed(1) + '%' : 'brak'
+}
+
+function formatRecommendationTrend(rt: FundamentalData['recommendationTrend']): string {
+  if (!rt) return 'brak'
+  const total = rt.strongBuy + rt.buy + rt.hold + rt.sell + rt.strongSell
+  if (total === 0) return 'brak'
+  return `StrongBuy=${rt.strongBuy} Buy=${rt.buy} Hold=${rt.hold} Sell=${rt.sell} StrongSell=${rt.strongSell} (łącznie ${total})`
+}
+
 export async function analyzeStock(params: StockAnalysisParams): Promise<string> {
   const { ticker, name, apiKey, fundamentals, technicals, currentPrice, currency } = params
-  const { pe, eps, dividendYield, marketCap, beta, sector, industry, week52High, week52Low } = fundamentals
+  const {
+    pe, eps, dividendYield, marketCap, beta, sector, industry, week52High, week52Low,
+    totalRevenue, revenueGrowth, grossMargins, profitMargins, totalDebt, totalCash,
+    analystRecommendation, numberOfAnalysts, targetMeanPrice, earningsGrowth,
+    recommendationTrend, nextEarningsDate, topHoldings, fundFamily,
+  } = fundamentals
   const { rsi14, macd, sma20, sma50, sma200 } = technicals
+
+  const isEtf = topHoldings != null || fundFamily != null
 
   const systemPrompt = `Jesteś doświadczonym analitykiem finansowym piszącym zwięzłe raporty inwestycyjne po polsku.`
 
-  const userPrompt = `Przeanalizuj spółkę ${ticker} (${name}), aktualna cena: ${currentPrice} ${currency}.
-
-DANE FUNDAMENTALNE:
-- P/E ratio: ${pe ?? 'brak'}
-- EPS: ${eps ?? 'brak'}
+  const fundamentalSection = isEtf
+    ? `TYP AKTYWA: ETF
+- Rodzina funduszu: ${fundFamily ?? 'brak'}
+- Kapitalizacja/AUM: ${marketCap != null ? formatMarketCap(marketCap) : 'brak'}
+- Beta: ${beta ?? 'brak'}
+- 52-tygodniowe: max ${week52High ?? 'brak'} / min ${week52Low ?? 'brak'}
+${topHoldings?.length ? `\nTOP SKŁADNIKI:\n${topHoldings.map(h => `- ${h.name}${h.percent != null ? ': ' + (h.percent * 100).toFixed(1) + '%' : ''}`).join('\n')}` : ''}`
+    : `DANE FUNDAMENTALNE:
+- P/E ratio: ${pe ?? 'brak'} | EPS: ${eps ?? 'brak'}
 - Stopa dywidendy: ${dividendYield != null ? (dividendYield * 100).toFixed(2) + '%' : 'brak'}
 - Kapitalizacja: ${marketCap != null ? formatMarketCap(marketCap) : 'brak'}
 - Beta: ${beta ?? 'brak'}
 - Sektor: ${sector ?? 'brak'} / Branża: ${industry ?? 'brak'}
 - 52-tygodniowe: max ${week52High ?? 'brak'} / min ${week52Low ?? 'brak'}
+${totalRevenue != null ? `\nFINANSE SPÓŁKI:
+- Przychody: ${formatMarketCap(totalRevenue)} (wzrost: ${formatPercent(revenueGrowth)})
+- Marża brutto: ${formatPercent(grossMargins)} / Marża netto: ${formatPercent(profitMargins)}
+- Dług: ${totalDebt != null ? formatMarketCap(totalDebt) : 'brak'} | Gotówka: ${totalCash != null ? formatMarketCap(totalCash) : 'brak'}
+${earningsGrowth != null ? `- Wzrost zysku: ${formatPercent(earningsGrowth)}` : ''}` : ''}
+${numberOfAnalysts ? `\nKONSENSUS ANALITYKÓW (${numberOfAnalysts} analityków):
+- Rozkład: ${formatRecommendationTrend(recommendationTrend)}
+- Rekomendacja: ${analystRecommendation?.toUpperCase() ?? 'brak'}${targetMeanPrice ? ` | Cel cenowy: ${targetMeanPrice.toFixed(2)} ${currency}` : ''}` : ''}
+${nextEarningsDate ? `\nNASTĘPNE WYNIKI: ${nextEarningsDate}` : ''}`
 
-WSKAŹNIKI TECHNICZNE (14 dni / 1 rok):
+  const userPrompt = `Przeanalizuj ${isEtf ? 'fundusz ETF' : 'spółkę'} ${ticker} (${name}), aktualna cena: ${currentPrice} ${currency}.
+
+${fundamentalSection}
+
+WSKAŹNIKI TECHNICZNE:
 - RSI(14): ${rsi14?.toFixed(1) ?? 'brak'} ${rsiInterpret(rsi14)}
 - MACD: wartość ${macd.value?.toFixed(3) ?? 'brak'}, sygnał ${macd.signal?.toFixed(3) ?? 'brak'}
 - SMA20/50/200: ${sma20?.toFixed(2) ?? 'brak'} / ${sma50?.toFixed(2) ?? 'brak'} / ${sma200?.toFixed(2) ?? 'brak danych'}
 
 Napisz analizę (max 250 słów) zawierającą:
-1. Krótką ocenę fundamentalną
+1. Krótką ocenę fundamentalną${isEtf ? ' (skład, ekspozycja)' : ' (finanse, wycena, konsensus analityków)'}
 2. Interpretację sygnałów technicznych
 3. Główne ryzyka
 4. Rekomendację: KUP / TRZYMAJ / SPRZEDAJ z jednozdaniowym uzasadnieniem`
