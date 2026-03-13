@@ -5,7 +5,7 @@ const links = [
     to: '/',
     label: 'Dashboard',
     icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
           d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -17,7 +17,7 @@ const links = [
     to: '/portfolio',
     label: 'Portfel',
     icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
           d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z" />
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -29,7 +29,7 @@ const links = [
     to: '/ai',
     label: 'Analiza AI',
     icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
           d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
       </svg>
@@ -39,7 +39,7 @@ const links = [
     to: '/settings',
     label: 'Ustawienia',
     icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
           d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -51,19 +51,19 @@ const links = [
 
 export default function Sidebar() {
   return (
-    <div className="w-56 flex flex-col" style={{ background: 'linear-gradient(to bottom, rgba(17,24,39,0.9), rgba(10,14,21,0.95))', borderRight: '1px solid rgba(55,65,81,0.4)', backdropFilter: 'blur(4px)' }}>
-      <div className="px-4 py-5 border-b border-gray-700/40">
-        <h1 className="text-finance-green font-bold text-lg leading-tight">Finance</h1>
-        <p className="text-gray-500 text-xs mt-0.5">Portfolio Tracker</p>
+    <div className="w-72 flex flex-col" style={{ background: 'linear-gradient(to bottom, rgba(17,24,39,0.9), rgba(10,14,21,0.95))', borderRight: '1px solid rgba(55,65,81,0.4)', backdropFilter: 'blur(4px)' }}>
+      <div className="px-6 py-6 border-b border-gray-700/40">
+        <h1 className="text-finance-green font-bold text-xl leading-tight">Finance</h1>
+        <p className="text-gray-500 text-sm mt-1">Portfolio Tracker</p>
       </div>
-      <nav className="flex-1 py-3">
+      <nav className="flex-1 py-4">
         {links.map(({ to, label, icon }) => (
           <NavLink
             key={to}
             to={to}
             end={to === '/'}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-4 py-3 rounded-lg mx-2 transition-colors ${
+              `flex items-center gap-4 px-5 py-4 rounded-lg mx-3 mb-1 transition-colors ${
                 isActive
                   ? 'bg-gradient-to-r from-finance-green/20 to-emerald-900/20 text-white border-r-2 border-finance-green'
                   : 'text-gray-400 hover:bg-white/5 hover:text-white'
@@ -71,7 +71,7 @@ export default function Sidebar() {
             }
           >
             {icon}
-            <span className="text-sm font-medium">{label}</span>
+            <span className="text-base font-medium">{label}</span>
           </NavLink>
         ))}
       </nav>

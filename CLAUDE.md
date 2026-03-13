@@ -70,9 +70,9 @@ W trybie dev `electron-vite` automatycznie ustawia zmienną `ELECTRON_RENDERER_U
 
 - [x] **1.** Inicjalizacja projektu (Vite + React + TS + Electron)
 - [x] **2.** Baza danych (better-sqlite3; wymaga `electron-rebuild` przy cross-compile)
-- [ ] **3.** Integracja danych (yahoo-finance2 + Lightweight Charts candlestick)
-- [ ] **4.** GUI (Dashboard wykres kołowy, wyszukiwarka/dodawanie aktywów, widok spółki)
-- [ ] **5.** Moduł AI (OpenRouter, wzorzec Map-Reduce)
+- [x] **3.** Integracja danych (yahoo-finance2 + Lightweight Charts candlestick)
+- [x] **4.** GUI (Dashboard wykres kołowy, wyszukiwarka/dodawanie aktywów, widok spółki)
+- [x] **5.** Moduł AI (OpenRouter, wzorzec Map-Reduce)
 - [ ] **6.** Build Windows (electron-builder cross-compile z Linuxa, `electron-rebuild`)
 
 ## Wymagania wstępne Milestone 2

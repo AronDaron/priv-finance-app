@@ -121,6 +121,16 @@ export async function addAsset(asset: NewPortfolioAsset): Promise<PortfolioAsset
     return window.electronAPI!.assets.add(asset)
   }
   const assets = lsGet<PortfolioAsset[]>(LS_KEYS.ASSETS, [])
+  const existing = assets.find((a) => a.ticker === asset.ticker)
+  if (existing) {
+    const totalQty = existing.quantity + asset.quantity
+    const avgPrice =
+      (existing.quantity * existing.purchase_price + asset.quantity * asset.purchase_price) /
+      totalQty
+    const updated = { ...existing, quantity: totalQty, purchase_price: avgPrice }
+    lsSet(LS_KEYS.ASSETS, assets.map((a) => (a.id === existing.id ? updated : a)))
+    return updated
+  }
   const newAsset: PortfolioAsset = {
     ...asset,
     id: nextId(assets),

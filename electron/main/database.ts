@@ -133,6 +133,22 @@ export function getAllAssets(): DBPortfolioAsset[] {
 }
 
 export function addAsset(asset: DBNewPortfolioAsset): DBPortfolioAsset {
+  const existing = db
+    .prepare('SELECT * FROM portfolio_assets WHERE ticker = ?')
+    .get(asset.ticker) as DBPortfolioAsset | undefined
+
+  if (existing) {
+    // Połącz pozycje: nowa ilość = suma, nowa śr. cena = średnia ważona
+    const totalQty = existing.quantity + asset.quantity
+    const avgPrice =
+      (existing.quantity * existing.purchase_price + asset.quantity * asset.purchase_price) /
+      totalQty
+    db.prepare(`
+      UPDATE portfolio_assets SET quantity = @quantity, purchase_price = @purchase_price WHERE id = @id
+    `).run({ quantity: totalQty, purchase_price: avgPrice, id: existing.id })
+    return getAssetById(existing.id)!
+  }
+
   const stmt = db.prepare(`
     INSERT INTO portfolio_assets (ticker, name, quantity, purchase_price, currency, purchase_date)
     VALUES (@ticker, @name, @quantity, @purchase_price, @currency, @purchase_date)
