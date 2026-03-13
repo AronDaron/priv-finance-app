@@ -6,12 +6,13 @@ export interface PortfolioAsset {
   id: number
   ticker: string        // np. "AAPL", "PKOBP.WA", "GC=F"
   name: string          // pełna nazwa: "Apple Inc."
-  quantity: number      // ilość jednostek/akcji
+  quantity: number      // ilość jednostek/akcji (dla metali fizycznych: liczba monet)
   purchase_price: number // średnia cena zakupu (PLN lub USD)
   currency: string      // "USD" | "PLN" | "EUR"
   purchase_date?: string // format: "YYYY-MM-DD"
   created_at: string    // ISO 8601: "2024-01-15T10:30:00Z"
   portfolio_id?: number
+  gold_grams?: number   // gramy czystego metalu na monetę (dla GC=F i SI=F fizycznych); null = giełdowy kontrakt
 }
 
 export interface Portfolio {
@@ -146,4 +147,39 @@ export interface DividendEntry {
   date: string    // ISO 8601, np. '2024-02-15'
   amount: number
   currency: string
+}
+
+// ─── Złoto i srebro fizyczne ──────────────────────────────────────────────────
+
+export interface PhysicalMetalCoin {
+  id: string          // unikalny klucz
+  name: string        // wyświetlana nazwa
+  metal: 'gold' | 'silver'
+  ticker: string      // GC=F lub SI=F
+  pureGrams: number   // gramy czystego metalu w jednej monecie
+}
+
+// Czyste gramy = waga monety × próba
+// 1 troy oz = 31.1035 g
+export const PHYSICAL_METAL_COINS: PhysicalMetalCoin[] = [
+  // Złoto
+  { id: 'gold_philharmonic_1oz', name: 'Wiedeński Filharmonik 1 oz (Au)', metal: 'gold', ticker: 'GC=F', pureGrams: 31.1035 },
+  { id: 'gold_krugerrand_1oz',   name: 'Krugerrand 1 oz (Au)',            metal: 'gold', ticker: 'GC=F', pureGrams: 31.1035 },
+  { id: 'gold_maple_1oz',        name: 'Kanadyjski Liść Klonu 1 oz (Au)', metal: 'gold', ticker: 'GC=F', pureGrams: 31.1035 },
+  { id: 'gold_britannia_1oz',    name: 'Britannia 1 oz (Au)',             metal: 'gold', ticker: 'GC=F', pureGrams: 31.1035 },
+  { id: 'gold_eagle_1oz',        name: 'Złoty Orzeł USA 1 oz (Au)',       metal: 'gold', ticker: 'GC=F', pureGrams: 30.0935 },
+  { id: 'gold_dukat_austria',    name: 'Austriacki Dukat (Au)',           metal: 'gold', ticker: 'GC=F', pureGrams: 3.4909  },
+  { id: 'gold_custom',           name: 'Inna moneta / sztabka (Au)',      metal: 'gold', ticker: 'GC=F', pureGrams: 0       },
+  // Srebro
+  { id: 'silver_philharmonic_1oz', name: 'Wiedeński Filharmonik 1 oz (Ag)', metal: 'silver', ticker: 'SI=F', pureGrams: 31.1035 },
+  { id: 'silver_britannia_1oz',    name: 'Britannia 1 oz (Ag)',              metal: 'silver', ticker: 'SI=F', pureGrams: 31.1035 },
+  { id: 'silver_maple_1oz',        name: 'Kanadyjski Liść Klonu 1 oz (Ag)', metal: 'silver', ticker: 'SI=F', pureGrams: 31.1035 },
+  { id: 'silver_eagle_1oz',        name: 'Srebrny Orzeł USA 1 oz (Ag)',      metal: 'silver', ticker: 'SI=F', pureGrams: 31.1035 },
+  { id: 'silver_nbp_1oz',          name: 'Moneta NBP 1 oz (Ag)',             metal: 'silver', ticker: 'SI=F', pureGrams: 31.1035 },
+  { id: 'silver_custom',           name: 'Inna moneta / sztabka (Ag)',       metal: 'silver', ticker: 'SI=F', pureGrams: 0       },
+]
+
+// Przelicza gramy na uncje troy
+export function gramsToTroyOz(grams: number): number {
+  return grams / 31.1035
 }

@@ -46,6 +46,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       purchase_price: number
       currency: string
       purchase_date?: string
+      gold_grams?: number | null
+      portfolio_id?: number
     }) => ipcRenderer.invoke('db:assets:add', asset),
 
     update: (
@@ -56,6 +58,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         quantity: number
         purchase_price: number
         currency: string
+        gold_grams: number | null
       }>
     ) => ipcRenderer.invoke('db:assets:update', id, updates),
 

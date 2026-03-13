@@ -17,6 +17,7 @@ export interface DBPortfolioAsset {
   purchase_date: string
   created_at: string
   portfolio_id: number
+  gold_grams: number | null  // gramy czystego metalu na monetę; null = kontrakt giełdowy
 }
 
 export interface DBPortfolio {
@@ -71,6 +72,8 @@ export interface DBNewPortfolioAsset {
   purchase_price: number
   currency: string
   purchase_date?: string
+  gold_grams?: number | null
+  portfolio_id?: number
 }
 
 export interface DBNewTransaction {
@@ -187,6 +190,9 @@ function migrateDatabase(): void {
   if (!cols.find(c => c.name === 'portfolio_id')) {
     db.exec(`ALTER TABLE portfolio_assets ADD COLUMN portfolio_id INTEGER DEFAULT 1`)
   }
+  if (!cols.find(c => c.name === 'gold_grams')) {
+    db.exec(`ALTER TABLE portfolio_assets ADD COLUMN gold_grams REAL`)
+  }
 
   // Utwórz domyślny portfel jeśli tabela pusta
   const count = db.prepare('SELECT COUNT(*) as c FROM portfolios').get() as { c: number }
@@ -226,12 +232,14 @@ export function addAsset(asset: DBNewPortfolioAsset): DBPortfolioAsset {
   }
 
   const stmt = db.prepare(`
-    INSERT INTO portfolio_assets (ticker, name, quantity, purchase_price, currency, purchase_date)
-    VALUES (@ticker, @name, @quantity, @purchase_price, @currency, @purchase_date)
+    INSERT INTO portfolio_assets (ticker, name, quantity, purchase_price, currency, purchase_date, gold_grams, portfolio_id)
+    VALUES (@ticker, @name, @quantity, @purchase_price, @currency, @purchase_date, @gold_grams, @portfolio_id)
   `)
   const result = stmt.run({
     ...asset,
-    purchase_date: asset.purchase_date ?? new Date().toISOString().split('T')[0]
+    purchase_date: asset.purchase_date ?? new Date().toISOString().split('T')[0],
+    gold_grams: asset.gold_grams ?? null,
+    portfolio_id: asset.portfolio_id ?? 1,
   })
   return getAssetById(result.lastInsertRowid as number)!
 }

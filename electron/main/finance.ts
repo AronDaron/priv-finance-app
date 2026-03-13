@@ -197,7 +197,7 @@ export function calculateTechnicals(candles: OHLCCandle[]): TechnicalIndicators 
 }
 
 export async function fetchPortfolioHistory(
-  assets: Array<{ ticker: string; quantity: number; currency: string; purchase_date?: string }>,
+  assets: Array<{ ticker: string; quantity: number; currency: string; purchase_date?: string; gold_grams?: number | null }>,
   period: string = '1y'
 ): Promise<{ date: string; value: number }[]> {
   if (assets.length === 0) return []
@@ -251,7 +251,10 @@ export async function fetchPortfolioHistory(
         .filter((h: any) => h.date.toISOString().split('T')[0] <= date)
         .at(-1)
       if (entry?.close) {
-        totalPLN += asset.quantity * entry.close * toPlnRate(asset.currency)
+        // Dla metali fizycznych: cena spot to USD/oz troy → przelicz przez wagę monety
+        const ozPerCoin = asset.gold_grams ? asset.gold_grams / 31.1035 : null
+        const pricePerUnit = ozPerCoin ? entry.close * ozPerCoin : entry.close
+        totalPLN += asset.quantity * pricePerUnit * toPlnRate(asset.currency)
       }
     })
     return { date, value: totalPLN }

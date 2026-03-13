@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { formatCurrency, formatPercent } from '../../lib/utils'
 import type { PortfolioAsset, StockQuote } from '../../lib/types'
+import { gramsToTroyOz } from '../../lib/types'
 import Sparkline from '../ui/Sparkline'
 
 interface Props {
@@ -17,8 +18,11 @@ export default function AssetRow({ asset, quote, sparkline, usdPln = 4.0, eurPln
   const toPlnRate = (currency: string) =>
     currency === 'PLN' ? 1 : currency === 'USD' ? usdPln : currency === 'EUR' ? eurPln : 1
 
-  const currentPrice    = quote?.price ?? asset.purchase_price
+  const spotPrice       = quote?.price ?? asset.purchase_price
   const quoteCurrency   = quote?.currency ?? asset.currency
+  // Dla metali fizycznych: cena spot to USD/oz troy → przelicz na wartość monety
+  const ozPerCoin       = asset.gold_grams ? gramsToTroyOz(asset.gold_grams) : null
+  const currentPrice    = ozPerCoin ? spotPrice * ozPerCoin : spotPrice
   const currentValue    = asset.quantity * currentPrice
   const valueInPLN      = currentValue * toPlnRate(quoteCurrency)
   const costBasisInPLN  = asset.quantity * asset.purchase_price * toPlnRate(asset.currency)
@@ -44,7 +48,12 @@ export default function AssetRow({ asset, quote, sparkline, usdPln = 4.0, eurPln
         {formatCurrency(asset.purchase_price, asset.currency)}
       </td>
       <td className="px-4 py-3 text-right text-white">
-        {quote ? formatCurrency(currentPrice, quote.currency) : '—'}
+        {quote ? (
+          <span title={ozPerCoin ? `Spot: ${formatCurrency(spotPrice, quote.currency)}/oz` : undefined}>
+            {formatCurrency(currentPrice, quote.currency)}
+            {ozPerCoin && <span className="text-xs text-gray-500 ml-1">/szt</span>}
+          </span>
+        ) : '—'}
       </td>
       <td className="px-4 py-3 text-right text-white">
         {formatCurrency(valueInPLN, 'PLN')}
