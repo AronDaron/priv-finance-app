@@ -17,9 +17,9 @@ function Tick({ label, price, changePercent, decimals = 2, unit, tooltip }: {
       <span className="text-gray-400 text-xs font-medium whitespace-nowrap">{label}</span>
       <span className="text-white text-sm font-semibold">
         {price.toFixed(decimals)}
-        {unit && <span className="text-gray-500 text-xs ml-0.5">{unit}</span>}
+        {unit && <span className="text-gray-500 text-xs ml-1"> {unit}</span>}
       </span>
-      <span className={`text-xs font-medium ${isPos ? 'text-finance-green' : 'text-finance-red'}`}>
+      <span className={`text-xs font-medium ml-1 ${isPos ? 'text-finance-green' : 'text-finance-red'}`}>
         {isPos ? '+' : ''}{changePercent.toFixed(2)}%
       </span>
     </div>

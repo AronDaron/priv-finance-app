@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { fetchGlobalAnalysis, fetchNews } from '../../lib/api'
-import type { GlobalAnalysis, RegionScore, NewsRegion } from '../../lib/types'
+import type { GlobalAnalysis, RegionScore, RegionId, NewsRegion } from '../../lib/types'
 import CommoditiesBar from './CommoditiesBar'
 import RegionCard from './RegionCard'
 import RegionDetailModal from './RegionDetailModal'
@@ -9,16 +9,19 @@ import ErrorMessage from '../ui/ErrorMessage'
 
 // Mapowanie regionId → NewsRegion (do pobierania newsów dla AI)
 const REGION_NEWS_MAP: Record<string, NewsRegion> = {
-  usa:          'us',
-  europe:       'eu',
-  poland:       'pl',
-  asia:         'asia',
-  latam_em:     'world',
-  commodities:  'world',
-  australia:    'world',
-  africa:       'world',
-  south_america: 'world',
+  north_america:     'us',
+  europe:            'eu',
+  asia:              'asia',
+  latam_em:          'world',
+  commodities:       'world',
+  australia_oceania: 'world',
+  africa:            'world',
+  south_america:     'world',
+  developed_markets: 'world',
 }
+
+const SECTOR_IDS: RegionId[] = ['commodities', 'developed_markets', 'latam_em']
+const REGION_IDS: RegionId[] = ['north_america', 'europe', 'asia', 'south_america', 'africa', 'australia_oceania']
 
 export default function GlobalView() {
   const [analysis, setAnalysis] = useState<GlobalAnalysis | null>(null)
@@ -58,8 +61,13 @@ export default function GlobalView() {
   if (error)   return <div className="p-6"><ErrorMessage message={error} /></div>
   if (!analysis) return null
 
-  // Posortuj regiony wg score (malejąco)
-  const sorted = [...analysis.regions].sort((a, b) => b.score - a.score)
+  const sectors = SECTOR_IDS
+    .map(id => analysis.regions.find(r => r.id === id))
+    .filter(Boolean) as RegionScore[]
+
+  const regions = REGION_IDS
+    .map(id => analysis.regions.find(r => r.id === id))
+    .filter(Boolean) as RegionScore[]
 
   const fetchedAt = new Date(analysis.marketData.fetchedAt).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })
 
@@ -94,17 +102,37 @@ export default function GlobalView() {
         <CommoditiesBar data={analysis.marketData} />
       </div>
 
-      {/* Kafelki regionów */}
+      {/* Kafelki sektorów i regionów */}
       <div>
-        <p className="text-gray-500 text-xs mb-3 uppercase tracking-wide">Regiony i Sektory — kliknij aby zobaczyć szczegóły i analizę AI</p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {sorted.map(region => (
-            <RegionCard
-              key={region.id}
-              region={region}
-              onClick={() => handleSelectRegion(region)}
-            />
-          ))}
+        <p className="text-gray-500 text-xs mb-3 uppercase tracking-wide">
+          Sektory i Regiony — kliknij aby zobaczyć szczegóły i analizę AI
+        </p>
+        <div className="flex gap-4">
+          {/* Lewa kolumna: Sektory */}
+          <div className="w-[380px] flex-shrink-0 flex flex-col gap-4 border border-gray-700/60 rounded-xl p-4">
+            <p className="text-gray-300 text-xs uppercase tracking-wide font-semibold border-b border-gray-700/50 pb-2">Sektory</p>
+            {sectors.map(region => (
+              <RegionCard
+                key={region.id}
+                region={region}
+                onClick={() => handleSelectRegion(region)}
+              />
+            ))}
+          </div>
+
+          {/* Prawa siatka: Regiony */}
+          <div className="flex-1 flex flex-col gap-4 border border-gray-700/60 rounded-xl p-4">
+            <p className="text-gray-300 text-xs uppercase tracking-wide font-semibold border-b border-gray-700/50 pb-2">Regiony</p>
+            <div className="grid grid-cols-2 gap-4">
+              {regions.map(region => (
+                <RegionCard
+                  key={region.id}
+                  region={region}
+                  onClick={() => handleSelectRegion(region)}
+                />
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 

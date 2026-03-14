@@ -262,6 +262,8 @@ export interface GlobalMarketData {
     ASX200: MarketTickerData  // ^AXJO — Australia ASX 200
     EZA: MarketTickerData     // iShares MSCI South Africa ETF
     BVSP: MarketTickerData    // ^BVSP — Bovespa (Brazil/South America)
+    VWO: MarketTickerData     // Vanguard FTSE Emerging Markets ETF (szeroki proxy EM)
+    INDA: MarketTickerData    // iShares MSCI India ETF
   }
   bonds: {
     US10Y: MarketTickerData   // ^TNX (US 10-year yield)
@@ -276,7 +278,7 @@ export interface RegionScoreComponent {
   weight: number         // waga składnika (suma = 1.0)
 }
 
-export type RegionId = 'usa' | 'europe' | 'poland' | 'asia' | 'latam_em' | 'commodities' | 'australia' | 'africa' | 'south_america'
+export type RegionId = 'north_america' | 'europe' | 'asia' | 'latam_em' | 'commodities' | 'australia_oceania' | 'africa' | 'south_america' | 'developed_markets'
 
 export interface RegionScore {
   id: RegionId
