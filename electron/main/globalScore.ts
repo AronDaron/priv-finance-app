@@ -19,6 +19,14 @@ function contrib(rawValue: number, range: number, weight: number): RegionScoreCo
   return { name: '', rawValue, contribution: pts, weight, pts }
 }
 
+// Jak contrib, ale rawValue służy wyłącznie do wyświetlenia (np. rzeczywisty VIX/yield),
+// a n to już gotowa znormalizowana wartość [-1,1].
+function contribNorm(displayRaw: number, n: number, weight: number): RegionScoreComponent & { pts: number } {
+  const clamped = Math.max(-1, Math.min(1, n))
+  const pts = clamped * weight * 50
+  return { name: '', rawValue: displayRaw, contribution: pts, weight, pts }
+}
+
 // VIX: poziom strachu — im wyższy VIX, tym niższy score
 // VIX ~12 = rynek spokojny (+1), VIX ~40 = panika (-1)
 // Historyczna średnia VIX ~19-20, dlatego neutral = 20
@@ -65,8 +73,8 @@ const REGIONS: RegionDef[] = [
       const components: RegionScoreComponent[] = [
         { ...contrib(m.indices.SP500.change1m, 10, 0.30), name: 'S&P500 (30 dni)' },
         { ...contrib(m.indices.SP500.changePercent, 3,  0.10), name: 'S&P500 (1 dzień)' },
-        { ...contrib(vixFactor(m.indices.VIX.price) * 18, 18, 0.25), name: 'VIX (strach)' },
-        { ...contrib(us10yFactor(m.bonds.US10Y.price) * 2, 2, 0.15), name: 'US10Y Yield' },
+        { ...contribNorm(m.indices.VIX.price, vixFactor(m.indices.VIX.price), 0.25), name: 'VIX (strach)' },
+        { ...contribNorm(m.bonds.US10Y.price, us10yFactor(m.bonds.US10Y.price), 0.15), name: 'US10Y Yield' },
         { ...contrib(m.commodities.oil.change1m, 15, 0.10), name: 'Ropa (eksport/prod.)' },
         { ...contrib(m.currencies.EURUSD.changePercent, 1.5, 0.10), name: 'EUR/USD (płynność)' },
       ]
@@ -87,7 +95,7 @@ const REGIONS: RegionDef[] = [
       const components: RegionScoreComponent[] = [
         { ...contrib(avgIndex, 10, 0.30), name: 'DAX + FTSE (30 dni)' },
         { ...contrib(avgIdx1d,  3, 0.10), name: 'Indeksy (1 dzień)' },
-        { ...contrib(vixFactor(m.indices.VIX.price) * 18, 18, 0.20), name: 'VIX (strach)' },
+        { ...contribNorm(m.indices.VIX.price, vixFactor(m.indices.VIX.price), 0.20), name: 'VIX (strach)' },
         { ...contrib(currencyBasket, 1.5, 0.20), name: 'EUR+GBP+CHF (kurs)' },
         { ...contrib(-m.commodities.gas.change1m, 20, 0.10), name: 'Gaz (import)' },
         { ...contrib(-m.commodities.oil.change1m, 15, 0.10), name: 'Ropa (import)' },
@@ -105,14 +113,14 @@ const REGIONS: RegionDef[] = [
       // Japonia (Nikkei) + Chiny (FXI) + Indie (INDA) — trzy największe rynki Azji
       const avgIndex = (m.indices.Nikkei.change1m + m.indices.FXI.change1m + m.indices.INDA.change1m) / 3
       const avgIdx1d = (m.indices.Nikkei.changePercent + m.indices.FXI.changePercent + m.indices.INDA.changePercent) / 3
-      // JPY, CNY, AUD jako koszyk azjatycki
-      const currencyBasket = (m.currencies.JPYUSD.changePercent + m.currencies.CNYUSD.changePercent + m.currencies.AUDUSD.changePercent) / 3
+      // JPY, CNY — dwie najważniejsze waluty azjatyckie (AUD należy do Australii)
+      const currencyBasket = (m.currencies.JPYUSD.changePercent + m.currencies.CNYUSD.changePercent) / 2
       const components: RegionScoreComponent[] = [
         { ...contrib(avgIndex, 10, 0.30), name: 'Nikkei+FXI+INDA (30 dni)' },
         { ...contrib(avgIdx1d,  3, 0.10), name: 'Indeksy (1 dzień)' },
-        { ...contrib(vixFactor(m.indices.VIX.price) * 18, 18, 0.15), name: 'VIX (globalny)' },
-        { ...contrib(currencyBasket, 1.5, 0.20), name: 'JPY+CNY+AUD (kurs)' },
-        { ...contrib(m.commodities.copper.changePercent, 3, 0.15), name: 'Miedź (przemysł)' },
+        { ...contribNorm(m.indices.VIX.price, vixFactor(m.indices.VIX.price), 0.15), name: 'VIX (globalny)' },
+        { ...contrib(currencyBasket, 1.5, 0.20), name: 'JPY+CNY (kurs)' },
+        { ...contrib(m.commodities.copper.change1m, 10, 0.15), name: 'Miedź (przemysł)' },
         { ...contrib(-m.commodities.oil.change1m, 12, 0.10), name: 'Ropa (import)' },
       ]
       return { components, trend1d: avgIdx1d }
@@ -129,7 +137,7 @@ const REGIONS: RegionDef[] = [
       const components: RegionScoreComponent[] = [
         { ...contrib(m.indices.VWO.change1m, 12, 0.35), name: 'VWO EM (30 dni)' },
         { ...contrib(m.indices.VWO.changePercent, 3,  0.10), name: 'VWO EM (1 dzień)' },
-        { ...contrib(vixFactor(m.indices.VIX.price) * 18, 18, 0.20), name: 'VIX (ryzyko)' },
+        { ...contribNorm(m.indices.VIX.price, vixFactor(m.indices.VIX.price), 0.20), name: 'VIX (ryzyko)' },
         // EM korzysta na surowcach (eksporter)
         { ...contrib(m.commodities.oil.change1m, 12, 0.15), name: 'Ropa (eksport)' },
         { ...contrib(m.commodities.copper.change1m, 10, 0.05), name: 'Miedź (eksport)' },
@@ -164,8 +172,8 @@ const REGIONS: RegionDef[] = [
         { ...contrib(m.indices.Nikkei.change1m,  10, 0.15), name: 'Nikkei (30 dni)' },
         { ...contrib(m.indices.FTSE.change1m,    10, 0.10), name: 'FTSE (30 dni)' },
         { ...contrib(m.indices.ASX200.change1m,  10, 0.05), name: 'ASX200 (30 dni)' },
-        { ...contrib(vixFactor(m.indices.VIX.price) * 18, 18, 0.10), name: 'VIX (ryzyko)' },
-        { ...contrib(us10yFactor(m.bonds.US10Y.price) * 2, 2, 0.15), name: 'US10Y Yield' },
+        { ...contribNorm(m.indices.VIX.price, vixFactor(m.indices.VIX.price), 0.10), name: 'VIX (ryzyko)' },
+        { ...contribNorm(m.bonds.US10Y.price, us10yFactor(m.bonds.US10Y.price), 0.15), name: 'US10Y Yield' },
         { ...contrib(dmCurrencyBasket, 1.5, 0.10), name: 'EUR+GBP+JPY (kurs)' },
       ]
       return { components, trend1d: avgIdx1d }
@@ -181,7 +189,7 @@ const REGIONS: RegionDef[] = [
       const components: RegionScoreComponent[] = [
         { ...contrib(m.indices.ASX200.change1m, 10, 0.35), name: 'ASX200 (30 dni)' },
         { ...contrib(m.indices.ASX200.changePercent, 3, 0.10), name: 'ASX200 (1 dzień)' },
-        { ...contrib(vixFactor(m.indices.VIX.price) * 18, 18, 0.20), name: 'VIX (globalny)' },
+        { ...contribNorm(m.indices.VIX.price, vixFactor(m.indices.VIX.price), 0.20), name: 'VIX (globalny)' },
         { ...contrib(m.currencies.AUDUSD.changePercent, 1.5, 0.15), name: 'AUD/USD (kurs)' },
         // Australia: eksporter surowców — wyższe ceny = lepiej
         { ...contrib(m.commodities.gold.change1m, 8, 0.10), name: 'Złoto (eksport)' },
@@ -200,7 +208,7 @@ const REGIONS: RegionDef[] = [
       const components: RegionScoreComponent[] = [
         { ...contrib(m.indices.EZA.change1m, 12, 0.30), name: 'EZA SA (30 dni)' },
         { ...contrib(m.indices.EZA.changePercent, 3, 0.10), name: 'EZA SA (1 dzień)' },
-        { ...contrib(vixFactor(m.indices.VIX.price) * 18, 18, 0.15), name: 'VIX (ryzyko)' },
+        { ...contribNorm(m.indices.VIX.price, vixFactor(m.indices.VIX.price), 0.15), name: 'VIX (ryzyko)' },
         // Silny USD = gorszy dla Afryki (droższy dług w USD)
         { ...contrib(-m.currencies.EURUSD.changePercent, 1.5, 0.15), name: 'USD (siła, ryzyko)' },
         // RPA: eksporter złota i platyny
@@ -220,7 +228,7 @@ const REGIONS: RegionDef[] = [
       const components: RegionScoreComponent[] = [
         { ...contrib(m.indices.BVSP.change1m, 12, 0.30), name: 'Bovespa (30 dni)' },
         { ...contrib(m.indices.BVSP.changePercent, 3, 0.10), name: 'Bovespa (1 dzień)' },
-        { ...contrib(vixFactor(m.indices.VIX.price) * 18, 18, 0.15), name: 'VIX (ryzyko)' },
+        { ...contribNorm(m.indices.VIX.price, vixFactor(m.indices.VIX.price), 0.15), name: 'VIX (ryzyko)' },
         // Silny USD = gorszy dla EM (droższy dług)
         { ...contrib(-m.currencies.EURUSD.changePercent, 1.5, 0.15), name: 'USD (siła, ryzyko)' },
         // Brazylia: eksporter ropy i surowców
@@ -251,7 +259,7 @@ const REGIONS: RegionDef[] = [
         { ...contrib(m.commodities.copper.change1m, 10, 0.20), name: 'Miedź (30 dni)' },
         { ...contrib(m.commodities.gas.change1m,    25, 0.15), name: 'Gaz (30 dni)' },
         { ...contrib(m.commodities.wheat.change1m,  15, 0.10), name: 'Pszenica (30 dni)' },
-        { ...contrib(vixFactor(m.indices.VIX.price) * 18, 18, 0.10), name: 'VIX (ryzyko)' },
+        { ...contribNorm(m.indices.VIX.price, vixFactor(m.indices.VIX.price), 0.10), name: 'VIX (ryzyko)' },
       ]
       return { components, trend1d: avgCommodity }
     },

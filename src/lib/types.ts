@@ -258,7 +258,6 @@ export interface GlobalMarketData {
     FTSE: MarketTickerData    // ^FTSE
     VIX: MarketTickerData     // ^VIX
     FXI: MarketTickerData     // China Large Cap ETF
-    EWZ: MarketTickerData     // Brazil / EM ETF
     ASX200: MarketTickerData  // ^AXJO — Australia ASX 200
     EZA: MarketTickerData     // iShares MSCI South Africa ETF
     BVSP: MarketTickerData    // ^BVSP — Bovespa (Brazil/South America)
