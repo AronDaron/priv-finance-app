@@ -222,6 +222,75 @@ export function gramsToTroyOz(grams: number): number {
   return grams / 31.1035
 }
 
+// ── Globalny rynek — dane i score regionów ────────────────────────────────────
+
+export interface MarketTickerData {
+  ticker: string
+  name: string
+  price: number
+  change: number         // zmiana 1-dniowa (absolutna)
+  changePercent: number  // zmiana 1-dniowa (%)
+  change1m: number       // zmiana 30-dniowa (%), 0 jeśli niedostępna
+}
+
+export interface GlobalMarketData {
+  commodities: {
+    oil: MarketTickerData     // CL=F
+    gas: MarketTickerData     // NG=F
+    wheat: MarketTickerData   // ZW=F
+    copper: MarketTickerData  // HG=F
+    gold: MarketTickerData    // GC=F
+  }
+  currencies: {
+    EURUSD: MarketTickerData
+    GBPUSD: MarketTickerData
+    CHFUSD: MarketTickerData
+    CADUSD: MarketTickerData
+    AUDUSD: MarketTickerData
+    JPYUSD: MarketTickerData
+    CNYUSD: MarketTickerData
+  }
+  indices: {
+    SP500: MarketTickerData   // ^GSPC
+    DAX: MarketTickerData     // ^GDAXI
+    Nikkei: MarketTickerData  // ^N225
+    WIG20: MarketTickerData   // WIG20.WA
+    FTSE: MarketTickerData    // ^FTSE
+    VIX: MarketTickerData     // ^VIX
+    FXI: MarketTickerData     // China Large Cap ETF
+    EWZ: MarketTickerData     // Brazil / EM ETF
+  }
+  bonds: {
+    US10Y: MarketTickerData   // ^TNX (US 10-year yield)
+  }
+  fetchedAt: string
+}
+
+export interface RegionScoreComponent {
+  name: string
+  rawValue: number       // wartość surowa (np. changePercent)
+  contribution: number   // wkład w score: od -25 do +25
+  weight: number         // waga składnika (suma = 1.0)
+}
+
+export type RegionId = 'usa' | 'europe' | 'poland' | 'asia' | 'latam_em' | 'commodities'
+
+export interface RegionScore {
+  id: RegionId
+  name: string
+  flag: string           // emoji flagi
+  score: number          // 0-100
+  risk: 'low' | 'medium' | 'high'  // >65 low, 40-65 medium, <40 high
+  trend: 'up' | 'down' | 'neutral' // 1-day trend
+  components: RegionScoreComponent[]
+}
+
+export interface GlobalAnalysis {
+  regions: RegionScore[]
+  marketData: GlobalMarketData
+  computedAt: string
+}
+
 // ── News ─────────────────────────────────────────────────────────────────────
 
 export type NewsRegion = 'pl' | 'eu' | 'asia' | 'us' | 'world'

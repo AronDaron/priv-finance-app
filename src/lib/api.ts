@@ -28,6 +28,8 @@ import type {
   NewCashTransaction,
   NewsItem,
   NewsRegion,
+  GlobalAnalysis,
+  RegionId,
 } from './types'
 
 // ─── Deklaracja typów dla window.electronAPI ─────────────────────────────────
@@ -80,6 +82,7 @@ declare global {
         dividends(ticker: string): Promise<DividendEntry[]>
         technicals(ticker: string, period: HistoryPeriod): Promise<TechnicalIndicators>
         assetMeta(ticker: string): Promise<{ region: string; assetType: string; sector: string | null }>
+        globalMarket(): Promise<GlobalAnalysis>
       }
       ai: {
         analyzeStock(ticker: string): Promise<AIReport>
@@ -87,6 +90,9 @@ declare global {
       }
       news: {
         fetchRegion(region: string): Promise<NewsItem[]>
+      }
+      globalAI: {
+        analyzeRegion(regionId: string, newsHeadlines: string[]): Promise<string>
       }
     }
   }
@@ -486,4 +492,21 @@ export async function analyzePortfolio(): Promise<AIReport> {
 export async function fetchNews(region: NewsRegion): Promise<NewsItem[]> {
   if (isElectron()) return window.electronAPI!.news.fetchRegion(region)
   return devApiFetch<NewsItem[]>('/news', { region })
+}
+
+// ─── Global Market Analysis ───────────────────────────────────────────────────
+
+export async function fetchGlobalAnalysis(): Promise<GlobalAnalysis> {
+  if (isElectron()) return window.electronAPI!.finance.globalMarket()
+  return devApiFetch<GlobalAnalysis>('/global-market', {})
+}
+
+export async function analyzeRegionAI(regionId: RegionId, newsHeadlines: string[]): Promise<string> {
+  if (isElectron()) return window.electronAPI!.globalAI.analyzeRegion(regionId, newsHeadlines)
+  const apiKey = await getSetting('openrouter_api_key')
+  return devApiPost<string>('/ai/analyze-region', {
+    regionId,
+    newsHeadlines: JSON.stringify(newsHeadlines),
+    apiKey: apiKey ?? '',
+  })
 }

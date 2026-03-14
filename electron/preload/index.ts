@@ -148,5 +148,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('finance:technicals', ticker, period),
     assetMeta: (ticker: string) =>
       ipcRenderer.invoke('finance:assetMeta', ticker),
-  }
+    globalMarket: () =>
+      ipcRenderer.invoke('finance:globalMarket'),
+  },
+
+  // ── global AI region analysis ─────────────────────────────────────────────
+  globalAI: {
+    analyzeRegion: (regionId: string, newsHeadlines: string[]) =>
+      ipcRenderer.invoke('ai:analyzeRegion', regionId, newsHeadlines),
+  },
 })

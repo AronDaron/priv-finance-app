@@ -10,7 +10,9 @@ import {
   calculateTechnicals,
   fetchAssetMeta,
   fetchPortfolioHistory,
+  fetchGlobalMarketData,
 } from './finance'
+import { computeGlobalScores } from './globalScore'
 import type { HistoryPeriod } from '../../src/lib/types'
 import { gramsToTroyOz } from '../../src/lib/types'
 import {
@@ -38,7 +40,7 @@ import {
   addCashTransaction,
   getCashTransactions,
 } from './database'
-import { analyzeStock, analyzePortfolio, WORKER_MODEL, MANAGER_MODEL } from './ai'
+import { analyzeStock, analyzePortfolio, analyzeRegion, WORKER_MODEL, MANAGER_MODEL } from './ai'
 import { fetchNewsForRegion } from './news'
 import type { NewsRegion } from './news'
 
@@ -215,6 +217,23 @@ function registerIpcHandlers(): void {
   ipcMain.handle('news:fetchRegion', (_event, region: NewsRegion) =>
     fetchNewsForRegion(region)
   )
+
+  // ── global market ─────────────────────────────────────────────────────────
+  ipcMain.handle('finance:globalMarket', async () => {
+    const marketData = await fetchGlobalMarketData()
+    const regions = computeGlobalScores(marketData)
+    return { regions, marketData, computedAt: marketData.fetchedAt }
+  })
+
+  ipcMain.handle('ai:analyzeRegion', async (_event, regionId: string, newsHeadlines: string[]) => {
+    const apiKey = getSetting('openrouter_api_key')
+    if (!apiKey) throw new Error('Brak klucza API OpenRouter. Skonfiguruj go w Ustawieniach.')
+    const marketData = await fetchGlobalMarketData()
+    const regions = computeGlobalScores(marketData)
+    const region = regions.find(r => r.id === regionId)
+    if (!region) throw new Error(`Nieznany region: ${regionId}`)
+    return analyzeRegion({ apiKey, region, marketData, newsHeadlines })
+  })
 
   ipcMain.handle('ai:analyzePortfolio', async () => {
     const apiKey = getSetting('openrouter_api_key')

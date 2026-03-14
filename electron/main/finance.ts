@@ -1,6 +1,7 @@
 import type {
   OHLCCandle, StockQuote, SearchResult,
-  FundamentalData, TechnicalIndicators, DividendEntry, HistoryPeriod
+  FundamentalData, TechnicalIndicators, DividendEntry, HistoryPeriod,
+  GlobalMarketData, MarketTickerData,
 } from '../../src/lib/types'
 import * as ti from 'technicalindicators'
 
@@ -320,4 +321,90 @@ export async function fetchPortfolioHistory(
   // Odcinamy wiodące zera (brak danych na początku okresu dla niektórych tickerów)
   const firstNonZero = result.findIndex(r => r.value > 0)
   return firstNonZero >= 0 ? result.slice(firstNonZero) : result
+}
+
+// ─── Globalny rynek — dane surowców, walut, indeksów ─────────────────────────
+
+async function safeQuote(ticker: string): Promise<MarketTickerData> {
+  try {
+    const q = await fetchQuote(ticker)
+    return {
+      ticker,
+      name: q.name,
+      price: q.price,
+      change: q.change,
+      changePercent: q.changePercent,
+      change1m: 0,
+    }
+  } catch {
+    return { ticker, name: ticker, price: 0, change: 0, changePercent: 0, change1m: 0 }
+  }
+}
+
+async function get1mChange(ticker: string): Promise<number> {
+  try {
+    const history = await fetchHistory(ticker, '1mo')
+    if (history.length < 2) return 0
+    const first = history[0].close
+    const last  = history[history.length - 1].close
+    return first > 0 ? ((last - first) / first) * 100 : 0
+  } catch {
+    return 0
+  }
+}
+
+export async function fetchGlobalMarketData(): Promise<GlobalMarketData> {
+  // Krok 1: wszystkie cytaty równolegle
+  const [
+    oil, gas, wheat, copper, gold,
+    eurusd, gbpusd, chfusd, cadusd, audusd, jpyusd, cnyusd,
+    sp500, dax, nikkei, wig20, ftse, vix, fxi, ewz,
+    us10y,
+  ] = await Promise.all([
+    safeQuote('CL=F'),
+    safeQuote('NG=F'),
+    safeQuote('ZW=F'),
+    safeQuote('HG=F'),
+    safeQuote('GC=F'),
+    safeQuote('EURUSD=X'),
+    safeQuote('GBPUSD=X'),
+    safeQuote('CHFUSD=X'),
+    safeQuote('CADUSD=X'),
+    safeQuote('AUDUSD=X'),
+    safeQuote('JPYUSD=X'),
+    safeQuote('CNYUSD=X'),
+    safeQuote('^GSPC'),
+    safeQuote('^GDAXI'),
+    safeQuote('^N225'),
+    safeQuote('WIG20.WA'),
+    safeQuote('^FTSE'),
+    safeQuote('^VIX'),
+    safeQuote('FXI'),
+    safeQuote('EWZ'),
+    safeQuote('^TNX'),
+  ])
+
+  // Krok 2: zmiana 30-dniowa dla kluczowych indeksów (równolegle)
+  const monthlyKey = ['^GSPC', '^GDAXI', '^N225', 'WIG20.WA', '^FTSE', 'FXI', 'EWZ', 'CL=F', 'GC=F']
+  const monthly = await Promise.all(monthlyKey.map(t => get1mChange(t)))
+  const m: Record<string, number> = {}
+  monthlyKey.forEach((t, i) => { m[t] = monthly[i] })
+
+  sp500.change1m  = m['^GSPC']   ?? 0
+  dax.change1m    = m['^GDAXI']  ?? 0
+  nikkei.change1m = m['^N225']   ?? 0
+  wig20.change1m  = m['WIG20.WA'] ?? 0
+  ftse.change1m   = m['^FTSE']   ?? 0
+  fxi.change1m    = m['FXI']     ?? 0
+  ewz.change1m    = m['EWZ']     ?? 0
+  oil.change1m    = m['CL=F']    ?? 0
+  gold.change1m   = m['GC=F']    ?? 0
+
+  return {
+    commodities: { oil, gas, wheat, copper, gold },
+    currencies:  { EURUSD: eurusd, GBPUSD: gbpusd, CHFUSD: chfusd, CADUSD: cadusd, AUDUSD: audusd, JPYUSD: jpyusd, CNYUSD: cnyusd },
+    indices:     { SP500: sp500, DAX: dax, Nikkei: nikkei, WIG20: wig20, FTSE: ftse, VIX: vix, FXI: fxi, EWZ: ewz },
+    bonds:       { US10Y: us10y },
+    fetchedAt:   new Date().toISOString(),
+  }
 }

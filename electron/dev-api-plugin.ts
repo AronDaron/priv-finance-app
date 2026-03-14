@@ -170,6 +170,29 @@ export function financeDevApiPlugin(): Plugin {
               data = await fetchNewsForRegion(region as import('./main/news').NewsRegion)
               break
             }
+            case '/global-market': {
+              const { fetchGlobalMarketData } = await import('./main/finance')
+              const { computeGlobalScores } = await import('./main/globalScore')
+              const marketData = await fetchGlobalMarketData()
+              const regions = computeGlobalScores(marketData)
+              data = { regions, marketData, computedAt: marketData.fetchedAt }
+              break
+            }
+            case '/ai/analyze-region': {
+              const body = await readBody(req)
+              const { regionId, newsHeadlines: headlinesJson, apiKey: ak } = body
+              if (!regionId) { res.statusCode = 400; res.end(JSON.stringify({ error: 'Brak regionId' })); return }
+              const { fetchGlobalMarketData: fgm } = await import('./main/finance')
+              const { computeGlobalScores: cgs } = await import('./main/globalScore')
+              const { analyzeRegion: ar } = await import('./main/ai')
+              const md = await fgm()
+              const regions = cgs(md)
+              const region = regions.find(r => r.id === regionId)
+              if (!region) { res.statusCode = 400; res.end(JSON.stringify({ error: `Nieznany region: ${regionId}` })); return }
+              const headlines: string[] = headlinesJson ? JSON.parse(headlinesJson) : []
+              data = await ar({ apiKey: ak ?? '', region, marketData: md, newsHeadlines: headlines })
+              break
+            }
             default:
               res.statusCode = 404
               res.end(JSON.stringify({ error: `Nieznany endpoint: ${endpoint}` }))

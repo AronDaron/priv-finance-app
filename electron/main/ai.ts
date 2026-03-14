@@ -1,4 +1,4 @@
-import type { FundamentalData, TechnicalIndicators } from '../../src/lib/types'
+import type { FundamentalData, TechnicalIndicators, GlobalMarketData, RegionScore } from '../../src/lib/types'
 import { gramsToTroyOz } from '../../src/lib/types'
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
@@ -248,4 +248,82 @@ KRYTYCZNE ZASADY — przestrzegaj bezwzględnie:
 4. Rekomendacje zgodne ze strategią portfela (jeśli potrzebne — rebalansowanie, dokupienie, nie sprzedaż bez fundamentalnego powodu)`
 
   return callOpenRouter(MANAGER_MODEL, systemPrompt, userPrompt, apiKey, 8000)
+}
+
+// ─── Analiza regionu (na żądanie) ─────────────────────────────────────────────
+
+export interface RegionAnalysisParams {
+  apiKey: string
+  region: RegionScore
+  marketData: GlobalMarketData
+  newsHeadlines: string[]  // tytuły newsów RSS dla regionu
+}
+
+export async function analyzeRegion(params: RegionAnalysisParams): Promise<string> {
+  const { apiKey, region, marketData, newsHeadlines } = params
+  const m = marketData
+
+  const systemPrompt = `Jesteś analitykiem geopolitycznym i rynkowym. Piszesz zwięzłe analizy po polsku. Używasz markdown: **bold** dla kluczowych wniosków, listy dla punktów. Zawsze kończysz wyraźną oceną potencjału inwestycyjnego.`
+
+  const commoditiesStr = [
+    `Ropa: $${m.commodities.oil.price.toFixed(1)} (${m.commodities.oil.changePercent >= 0 ? '+' : ''}${m.commodities.oil.changePercent.toFixed(2)}% dziś, ${m.commodities.oil.change1m >= 0 ? '+' : ''}${m.commodities.oil.change1m.toFixed(1)}% 30d)`,
+    `Złoto: $${m.commodities.gold.price.toFixed(0)} (${m.commodities.gold.changePercent >= 0 ? '+' : ''}${m.commodities.gold.changePercent.toFixed(2)}% dziś, ${m.commodities.gold.change1m >= 0 ? '+' : ''}${m.commodities.gold.change1m.toFixed(1)}% 30d)`,
+    `Gaz: $${m.commodities.gas.price.toFixed(2)} (${m.commodities.gas.changePercent >= 0 ? '+' : ''}${m.commodities.gas.changePercent.toFixed(2)}% dziś)`,
+    `Miedź: $${m.commodities.copper.price.toFixed(2)} (${m.commodities.copper.changePercent >= 0 ? '+' : ''}${m.commodities.copper.changePercent.toFixed(2)}% dziś)`,
+    `Pszenica: $${m.commodities.wheat.price.toFixed(0)} (${m.commodities.wheat.changePercent >= 0 ? '+' : ''}${m.commodities.wheat.changePercent.toFixed(2)}% dziś)`,
+  ].join('\n')
+
+  const currenciesStr = [
+    `EUR/USD: ${m.currencies.EURUSD.price.toFixed(4)} (${m.currencies.EURUSD.changePercent >= 0 ? '+' : ''}${m.currencies.EURUSD.changePercent.toFixed(2)}%)`,
+    `GBP/USD: ${m.currencies.GBPUSD.price.toFixed(4)} (${m.currencies.GBPUSD.changePercent >= 0 ? '+' : ''}${m.currencies.GBPUSD.changePercent.toFixed(2)}%)`,
+    `CHF/USD: ${m.currencies.CHFUSD.price.toFixed(4)} (${m.currencies.CHFUSD.changePercent >= 0 ? '+' : ''}${m.currencies.CHFUSD.changePercent.toFixed(2)}%)`,
+    `CAD/USD: ${m.currencies.CADUSD.price.toFixed(4)} (${m.currencies.CADUSD.changePercent >= 0 ? '+' : ''}${m.currencies.CADUSD.changePercent.toFixed(2)}%)`,
+    `AUD/USD: ${m.currencies.AUDUSD.price.toFixed(4)} (${m.currencies.AUDUSD.changePercent >= 0 ? '+' : ''}${m.currencies.AUDUSD.changePercent.toFixed(2)}%)`,
+    `JPY/USD: ${m.currencies.JPYUSD.price.toFixed(6)} (${m.currencies.JPYUSD.changePercent >= 0 ? '+' : ''}${m.currencies.JPYUSD.changePercent.toFixed(2)}%)`,
+    `CNY/USD: ${m.currencies.CNYUSD.price.toFixed(4)} (${m.currencies.CNYUSD.changePercent >= 0 ? '+' : ''}${m.currencies.CNYUSD.changePercent.toFixed(2)}%)`,
+  ].join('\n')
+
+  const indicesStr = [
+    `S&P500: ${m.indices.SP500.price.toFixed(0)} (${m.indices.SP500.changePercent >= 0 ? '+' : ''}${m.indices.SP500.changePercent.toFixed(2)}% dziś, ${m.indices.SP500.change1m >= 0 ? '+' : ''}${m.indices.SP500.change1m.toFixed(1)}% 30d)`,
+    `DAX: ${m.indices.DAX.price.toFixed(0)} (${m.indices.DAX.changePercent >= 0 ? '+' : ''}${m.indices.DAX.changePercent.toFixed(2)}% dziś, ${m.indices.DAX.change1m >= 0 ? '+' : ''}${m.indices.DAX.change1m.toFixed(1)}% 30d)`,
+    `Nikkei: ${m.indices.Nikkei.price.toFixed(0)} (${m.indices.Nikkei.changePercent >= 0 ? '+' : ''}${m.indices.Nikkei.changePercent.toFixed(2)}% dziś)`,
+    `WIG20: ${m.indices.WIG20.price.toFixed(0)} (${m.indices.WIG20.changePercent >= 0 ? '+' : ''}${m.indices.WIG20.changePercent.toFixed(2)}% dziś, ${m.indices.WIG20.change1m >= 0 ? '+' : ''}${m.indices.WIG20.change1m.toFixed(1)}% 30d)`,
+    `FTSE100: ${m.indices.FTSE.price.toFixed(0)} (${m.indices.FTSE.changePercent >= 0 ? '+' : ''}${m.indices.FTSE.changePercent.toFixed(2)}% dziś)`,
+    `VIX: ${m.indices.VIX.price.toFixed(1)} (strach: ${m.indices.VIX.price < 15 ? 'niski' : m.indices.VIX.price < 25 ? 'umiarkowany' : m.indices.VIX.price < 35 ? 'wysoki' : 'ekstremalny'})`,
+    `US10Y: ${m.bonds.US10Y.price.toFixed(2)}%`,
+  ].join('\n')
+
+  const scoreComponents = region.components
+    .map(c => `- ${c.name}: ${c.rawValue.toFixed(2)} → wkład ${c.contribution >= 0 ? '+' : ''}${c.contribution.toFixed(1)} pkt`)
+    .join('\n')
+
+  const newsStr = newsHeadlines.length > 0
+    ? `\nNAJNOWSZE NAGŁÓWKI (${region.name}):\n${newsHeadlines.slice(0, 8).map(h => `- ${h}`).join('\n')}`
+    : ''
+
+  const userPrompt = `Przeprowadź analizę potencjału inwestycyjnego regionu: **${region.name} ${region.flag}**
+
+OCENA ALGORYTMICZNA: ${region.score}/100 (ryzyko: ${region.risk === 'low' ? 'niskie' : region.risk === 'medium' ? 'średnie' : 'wysokie'})
+
+SKŁADOWE SCORE:
+${scoreComponents}
+
+DANE RYNKOWE:
+Surowce:
+${commoditiesStr}
+
+Waluty (vs USD):
+${currenciesStr}
+
+Indeksy globalne:
+${indicesStr}
+${newsStr}
+
+Napisz analizę (max 300 słów):
+1. **Kontekst makroekonomiczny** — co drivuje obecną sytuację w regionie
+2. **Szanse inwestycyjne** — gdzie widzisz potencjał
+3. **Główne ryzyka** — geopolityczne, walutowe, surowcowe
+4. **Ocena końcowa** — czy score algorytmu ${region.score}/100 jest adekwatny i co inwestor powinien wiedzieć`
+
+  return callOpenRouter(MANAGER_MODEL, systemPrompt, userPrompt, apiKey, 6000)
 }
