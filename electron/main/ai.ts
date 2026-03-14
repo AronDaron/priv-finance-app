@@ -4,9 +4,10 @@ import { gramsToTroyOz } from '../../src/lib/types'
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 const WORKER_MODEL   = 'google/gemini-3-flash-preview'
 const MANAGER_MODEL  = 'google/gemini-3.1-pro-preview'
+const WORLD_MODEL   = 'google/gemini-3-flash-preview'
 const APP_REFERER    = 'https://finance-portfolio-tracker'
 
-export { WORKER_MODEL, MANAGER_MODEL }
+export { WORKER_MODEL, MANAGER_MODEL, WORLD_MODEL }
 
 // ─── Pomocnicza funkcja HTTP ──────────────────────────────────────────────────
 
@@ -325,5 +326,5 @@ Napisz analizę (max 300 słów):
 3. **Główne ryzyka** — geopolityczne, walutowe, surowcowe
 4. **Ocena końcowa** — czy score algorytmu ${region.score}/100 jest adekwatny i co inwestor powinien wiedzieć`
 
-  return callOpenRouter(MANAGER_MODEL, systemPrompt, userPrompt, apiKey, 6000)
+  return callOpenRouter(WORLD_MODEL, systemPrompt, userPrompt, apiKey, 6000)
 }
