@@ -19,7 +19,15 @@ export interface Portfolio {
   id: number
   name: string
   created_at: string
+  tags?: string[]
 }
+
+export const PORTFOLIO_TAGS = [
+  'IKE', 'IKZE', 'Akumulujący', 'Dywidendowy', 'Spekulacyjny',
+  'Emerytalny', 'Krótkoterminowy', 'Długoterminowy', 'Obligacje',
+  'Surowce', 'Kryptowaluty', 'Zagraniczny', 'Krajowy', 'ESG',
+] as const
+export type PortfolioTag = typeof PORTFOLIO_TAGS[number]
 
 export interface CashAccount {
   id: number

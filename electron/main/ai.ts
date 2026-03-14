@@ -1,8 +1,9 @@
 import type { FundamentalData, TechnicalIndicators } from '../../src/lib/types'
+import { gramsToTroyOz } from '../../src/lib/types'
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 const WORKER_MODEL   = 'google/gemini-3-flash-preview'
-const MANAGER_MODEL  = 'google/gemini-3-flash-preview'
+const MANAGER_MODEL  = 'google/gemini-3.1-pro-preview'
 const APP_REFERER    = 'https://finance-portfolio-tracker'
 
 export { WORKER_MODEL, MANAGER_MODEL }
@@ -13,7 +14,8 @@ async function callOpenRouter(
   model: string,
   systemPrompt: string,
   userPrompt: string,
-  apiKey: string
+  apiKey: string,
+  maxTokens = 8000
 ): Promise<string> {
   if (!apiKey) throw new Error('Brak klucza API OpenRouter. Skonfiguruj go w Ustawieniach.')
 
@@ -30,7 +32,7 @@ async function callOpenRouter(
         { role: 'system', content: systemPrompt },
         { role: 'user',   content: userPrompt  },
       ],
-      max_tokens: 800,
+      max_tokens: maxTokens,
       temperature: 0.3,
     }),
   })
@@ -74,6 +76,7 @@ export interface StockAnalysisParams {
   technicals: TechnicalIndicators
   currentPrice: number
   currency: string
+  gold_grams?: number | null  // >0 = metal fizyczny, null/undefined = giełdowy instrument
 }
 
 function formatPercent(val: number | null): string {
@@ -88,7 +91,7 @@ function formatRecommendationTrend(rt: FundamentalData['recommendationTrend']): 
 }
 
 export async function analyzeStock(params: StockAnalysisParams): Promise<string> {
-  const { ticker, name, apiKey, fundamentals, technicals, currentPrice, currency } = params
+  const { ticker, name, apiKey, fundamentals, technicals, currentPrice, currency, gold_grams } = params
   const {
     pe, eps, dividendYield, marketCap, beta, sector, industry, week52High, week52Low,
     totalRevenue, revenueGrowth, grossMargins, profitMargins, totalDebt, totalCash,
@@ -99,7 +102,7 @@ export async function analyzeStock(params: StockAnalysisParams): Promise<string>
 
   const isEtf = topHoldings != null || fundFamily != null
 
-  const systemPrompt = `Jesteś doświadczonym analitykiem finansowym piszącym zwięzłe raporty inwestycyjne po polsku.`
+  const systemPrompt = `Jesteś doświadczonym analitykiem finansowym piszącym zwięzłe raporty inwestycyjne po polsku. Zawsze pisz pełną analizę z 4 sekcjami używając markdown: **bold** dla wartości, listy dla ryzyk. Nigdy nie skracaj analizy.`
 
   const fundamentalSection = isEtf
     ? `TYP AKTYWA: ETF
@@ -125,7 +128,13 @@ ${numberOfAnalysts ? `\nKONSENSUS ANALITYKÓW (${numberOfAnalysts} analityków):
 - Rekomendacja: ${analystRecommendation?.toUpperCase() ?? 'brak'}${targetMeanPrice ? ` | Cel cenowy: ${targetMeanPrice.toFixed(2)} ${currency}` : ''}` : ''}
 ${nextEarningsDate ? `\nNASTĘPNE WYNIKI: ${nextEarningsDate}` : ''}`
 
-  const userPrompt = `Przeanalizuj ${isEtf ? 'fundusz ETF' : 'spółkę'} ${ticker} (${name}), aktualna cena: ${currentPrice} ${currency}.
+  const isPhysicalMetal = gold_grams != null && gold_grams > 0
+  const metalName = ticker === 'GC=F' ? 'złoto' : ticker === 'SI=F' ? 'srebro' : 'metal'
+  const physicalMetalNote = isPhysicalMetal
+    ? `WAŻNE: Ten ticker (${ticker}) reprezentuje FIZYCZNY ${metalName} (moneta/sztabka), NIE kontrakt terminowy na giełdzie. Zawartość czystego metalu: ${gold_grams}g na sztukę (${gramsToTroyOz(gold_grams!).toFixed(4)} oz troy). Cena futures służy jako proxy ceny spot. Traktuj jako inwestycję w metal fizyczny — brak płynności jak kontrakty, inne ryzyka.\n\n`
+    : ''
+
+  const userPrompt = `${physicalMetalNote}Przeanalizuj ${isEtf ? 'fundusz ETF' : (isPhysicalMetal ? `fizyczny ${metalName}` : 'spółkę')} ${ticker} (${name}), aktualna cena: ${currentPrice} ${currency}.
 
 ${fundamentalSection}
 
@@ -135,12 +144,12 @@ WSKAŹNIKI TECHNICZNE:
 - SMA20/50/200: ${sma20?.toFixed(2) ?? 'brak'} / ${sma50?.toFixed(2) ?? 'brak'} / ${sma200?.toFixed(2) ?? 'brak danych'}
 
 Napisz analizę (max 250 słów) zawierającą:
-1. Krótką ocenę fundamentalną${isEtf ? ' (skład, ekspozycja)' : ' (finanse, wycena, konsensus analityków)'}
-2. Interpretację sygnałów technicznych
+1. ${isPhysicalMetal ? `Ocenę jako inwestycję w fizyczny ${metalName} (koszty przechowywania, spread kupno/sprzedaż, rola w portfelu)` : `Krótką ocenę fundamentalną${isEtf ? ' (skład, ekspozycja)' : ' (finanse, wycena, konsensus analityków)'}`}
+2. Interpretację sygnałów technicznych${isPhysicalMetal ? ' (ceny spot złota/srebra)' : ''}
 3. Główne ryzyka
 4. Rekomendację: KUP / TRZYMAJ / SPRZEDAJ z jednozdaniowym uzasadnieniem`
 
-  return callOpenRouter(WORKER_MODEL, systemPrompt, userPrompt, apiKey)
+  return callOpenRouter(WORKER_MODEL, systemPrompt, userPrompt, apiKey, 15000)
 }
 
 // ─── Manager: analiza całego portfela ────────────────────────────────────────
@@ -156,40 +165,84 @@ export interface PortfolioAnalysisParams {
     currency: string
     portfolioSharePercent: number
     workerReport: string
+    gold_grams?: number | null
   }>
-  totalValueUSD: number
+  totalValuePLN: number
   totalPnlPercent: number
+  portfolios?: Array<{ id: number; name: string; tags?: string[] }>
 }
 
 export async function analyzePortfolio(params: PortfolioAnalysisParams): Promise<string> {
-  const { apiKey, assets, totalValueUSD, totalPnlPercent } = params
+  const { apiKey, assets, totalValuePLN, totalPnlPercent, portfolios } = params
 
-  const systemPrompt = `Jesteś zarządzającym portfelem inwestycyjnym. Piszesz po polsku. Twoje analizy są konkretne i actionable.`
+  const systemPrompt = `Jesteś zarządzającym portfelem inwestycyjnym. Piszesz po polsku. Twoje analizy są konkretne i actionable. Zawsze pisz pełną analizę z 4 sekcjami używając markdown: **bold** dla kluczowych wartości i wniosków, listy punktowane dla rekomendacji i ryzyk. Nigdy nie skracaj analizy.`
 
   const assetLines = assets.map(a => {
     const wartosc = (a.quantity * a.currentPrice).toFixed(2)
     const pnl = (((a.currentPrice - a.purchasePrice) / a.purchasePrice) * 100).toFixed(2)
-    return `- ${a.ticker} (${a.name}): ${a.quantity} szt. × ${a.currentPrice} ${a.currency} = ${wartosc} (${a.portfolioSharePercent.toFixed(1)}% portfela, P&L: ${pnl}%)`
+    let line = `- ${a.ticker} (${a.name}): ${a.quantity} szt. × ${a.currentPrice} ${a.currency} = ${wartosc} (${a.portfolioSharePercent.toFixed(1)}% portfela, P&L: ${pnl}%)`
+    if (a.gold_grams && a.gold_grams > 0) {
+      const totalGrams = a.quantity * a.gold_grams
+      const oz = gramsToTroyOz(totalGrams)
+      line += ` [METAL FIZYCZNY: ${a.gold_grams}g/szt, łącznie ${totalGrams.toFixed(2)}g = ${oz.toFixed(4)} oz troy]`
+    }
+    return line
   }).join('\n')
 
   const reportLines = assets.map(a => `=== ${a.ticker} ===\n${a.workerReport}`).join('\n\n')
 
-  const userPrompt = `Oceń poniższy portfel inwestycyjny.
+  const TAG_INSTRUCTIONS: Record<string, string> = {
+    'IKE': 'konto IKE — brak podatku Belki przy wypłacie po 60. roku życia; unikaj rekomendacji częstego obrotu i likwidacji pozycji',
+    'IKZE': 'konto IKZE — odliczenie od PIT + preferencyjny podatek 10% przy wypłacie; długi horyzont, unikaj rekomendacji wypłat przed emeryturą',
+    'Dywidendowy': 'portfel dywidendowy — priorytetem jest regularny dochód pasywny; nie rekomenduj sprzedaży spółek dywidendowych tylko z powodu przewartościowania technicznego',
+    'Akumulujący': 'portfel akumulujący — reinwestowanie zysków, długi horyzont; preferuj spółki wzrostowe, ETF akumulujące',
+    'Emerytalny': 'portfel emerytalny — bardzo długi horyzont, stabilność kapitału ważniejsza niż krótkoterminowy zysk; unikaj rekomendacji spekulacyjnych',
+    'Spekulacyjny': 'portfel spekulacyjny — akceptowalne wyższe ryzyko i zmienność w zamian za potencjalnie wyższe zyski',
+    'Krótkoterminowy': 'portfel krótkoterminowy — horyzont do 1 roku; płynność i ograniczanie strat są priorytetem',
+    'Długoterminowy': 'portfel długoterminowy — horyzont powyżej 5 lat; krótkoterminowe korekty nie są powodem do sprzedaży',
+    'Obligacje': 'portfel z obligacjami — stabilizacja, hedging inflacji; uwzględnij korelację z akcjami',
+    'Surowce': 'portfel surowcowy — hedge przed inflacją i ryzykiem walutowym',
+    'Zagraniczny': 'portfel zagraniczny — ryzyko walutowe jest kluczowe; uwzględnij w analizie',
+    'Krajowy': 'portfel krajowy (GPW) — ekspozycja na ryzyko polskiej gospodarki i PLN',
+    'ESG': 'portfel ESG — kryteria środowiskowe, społeczne i ładu korporacyjnego są ważne przy rekomendacjach',
+    'Kryptowaluty': 'portfel z kryptowalutami — bardzo wysoka zmienność, inne ryzyka regulacyjne',
+  }
 
+  const portfolioContextSection = portfolios && portfolios.length > 0
+    ? `\nKONTEKST PORTFELI I INSTRUKCJE:\n${portfolios.map(p => {
+        const tags = p.tags ?? []
+        const instructions = tags.map(t => TAG_INSTRUCTIONS[t]).filter(Boolean)
+        return `- ${p.name}: tagi: [${tags.join(', ') || 'brak'}]${instructions.length ? '\n  WAŻNE dla tego portfela: ' + instructions.join('; ') : ''}`
+      }).join('\n')}\n`
+    : ''
+
+  const physicalMetalNote = assets.some(a => a.gold_grams && a.gold_grams > 0)
+    ? `\nUWAGA: Aktywa oznaczone [METAL FIZYCZNY] to fizyczne monety/sztabki, nie kontrakty terminowe. Cena wynika z: (spot USD/oz) × (gramy/31.1035). Uwzględnij brak płynności vs kontrakty.\n`
+    : ''
+
+  const userPrompt = `Oceń poniższy portfel inwestycyjny.
+${portfolioContextSection}${physicalMetalNote}
 SKŁAD PORTFELA (${assets.length} pozycji):
 ${assetLines}
 
-ŁĄCZNA WARTOŚĆ: ~$${totalValueUSD.toFixed(0)} USD
+ŁĄCZNA WARTOŚĆ: ~${totalValuePLN.toFixed(0)} PLN
 ŁĄCZNY P&L: ${totalPnlPercent.toFixed(2)}%
 
 ANALIZY PER SPÓŁKA (wygenerowane przez Worker AI):
 ${reportLines}
 
-Napisz analizę portfela (max 400 słów):
+Napisz analizę portfela (max 400 słów).
+
+KRYTYCZNE ZASADY — przestrzegaj bezwzględnie:
+- Analizy per spółka powyżej są wygenerowane bez kontekstu portfela — ich rekomendacje (KUP/SPRZEDAJ) mogą być sprzeczne z charakterem portfela. Twoim zadaniem jest je ZREINTERPRETOWAĆ przez pryzmat tagów portfela.
+- Dla portfela IKE/IKZE: nigdy nie rekomenduj sprzedaży/likwidacji pozycji — to konto emerytalne z preferencjami podatkowymi, sprzedaż niszczy korzyści podatkowe.
+- Dla portfela Dywidendowy: spółki dywidendowe trzymamy długoterminowo dla dochodu pasywnego — przewartościowanie techniczne (RSI) NIE jest powodem do sprzedaży.
+- Rekomenduj sprzedaż tylko gdy spółka fundamentalnie przestała pasować do strategii portfela (np. spółka dywidendowa odcięła dywidendę).
+
 1. Ocena dywersyfikacji (sektorowa, geograficzna, walutowa)
 2. Profil ryzyka całego portfela
-3. Najsilniejsze i najsłabsze pozycje
-4. Konkretne rekomendacje rebalansowania (jeśli potrzebne)`
+3. Najsilniejsze i najsłabsze pozycje (oceniaj przez pryzmat strategii portfela, nie tylko krótkoterminowych wyników)
+4. Rekomendacje zgodne ze strategią portfela (jeśli potrzebne — rebalansowanie, dokupienie, nie sprzedaż bez fundamentalnego powodu)`
 
-  return callOpenRouter(MANAGER_MODEL, systemPrompt, userPrompt, apiKey)
+  return callOpenRouter(MANAGER_MODEL, systemPrompt, userPrompt, apiKey, 8000)
 }

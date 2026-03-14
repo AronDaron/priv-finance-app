@@ -1,6 +1,7 @@
 import type { Plugin } from 'vite'
 import type { IncomingMessage } from 'http'
 import type { HistoryPeriod } from '../src/lib/types'
+import { gramsToTroyOz } from '../src/lib/types'
 
 function readBody(req: IncomingMessage): Promise<Record<string, string>> {
   return new Promise((resolve, reject) => {
@@ -86,8 +87,9 @@ export function financeDevApiPlugin(): Plugin {
             }
             case '/ai/analyze-stock': {
               const body = await readBody(req)
-              const { ticker: t, apiKey } = body
+              const { ticker: t, apiKey, gold_grams: goldGramsStr } = body
               if (!t) { res.statusCode = 400; res.end(JSON.stringify({ error: 'Brak ticker' })); return }
+              const goldGrams = goldGramsStr ? parseFloat(goldGramsStr) : null
               const ai = await import('./main/ai')
               const [fundamentals, history, quote] = await Promise.all([
                 finance.fetchFundamentals(t),
@@ -99,17 +101,31 @@ export function financeDevApiPlugin(): Plugin {
                 ticker: t, apiKey, name: quote.name,
                 currentPrice: quote.price, currency: quote.currency,
                 fundamentals, technicals,
+                gold_grams: goldGrams,
               })
               data = { report_text, model: ai.WORKER_MODEL, ticker: t }
               break
             }
             case '/ai/analyze-portfolio': {
               const body = await readBody(req)
-              const { tickers, apiKey } = body
-              if (!tickers) { res.statusCode = 400; res.end(JSON.stringify({ error: 'Brak tickers' })); return }
+              const { assets: assetsJson, apiKey } = body
+              if (!assetsJson) { res.statusCode = 400; res.end(JSON.stringify({ error: 'Brak assets' })); return }
               const ai = await import('./main/ai')
-              const tickerList = tickers.split(',').map((s: string) => s.trim()).filter(Boolean)
-              const enrichedAssets = await Promise.all(tickerList.map(async (t: string) => {
+              const assetsList: Array<{ ticker: string; name: string; quantity: number; purchase_price: number; currency: string; gold_grams?: number | null }> =
+                JSON.parse(assetsJson)
+
+              // Pobierz kursy walut — wszystkie wartości będą w PLN
+              const [usdPlnQ, eurPlnQ] = await Promise.all([
+                finance.fetchQuote('USDPLN=X').catch(() => ({ price: 4.0 })),
+                finance.fetchQuote('EURPLN=X').catch(() => ({ price: 4.3 })),
+              ])
+              const usdPln = usdPlnQ.price
+              const eurPln = eurPlnQ.price
+              const toPln = (amount: number, currency: string) =>
+                currency === 'PLN' ? amount : currency === 'USD' ? amount * usdPln : currency === 'EUR' ? amount * eurPln : amount
+
+              const enrichedAssets = await Promise.all(assetsList.map(async (assetFromList) => {
+                const t = assetFromList.ticker
                 const [fundamentals, history, quote] = await Promise.all([
                   finance.fetchFundamentals(t),
                   finance.fetchHistory(t, '1y'),
@@ -120,14 +136,30 @@ export function financeDevApiPlugin(): Plugin {
                   ticker: t, apiKey, name: quote.name,
                   currentPrice: quote.price, currency: quote.currency,
                   fundamentals, technicals,
+                  gold_grams: assetFromList.gold_grams ?? null,
                 })
-                return { ticker: t, name: quote.name, quantity: 1, currentPrice: quote.price,
-                  purchasePrice: quote.price, currency: quote.currency, portfolioSharePercent: 0, workerReport }
+                const ozPerCoin = assetFromList.gold_grams ? gramsToTroyOz(assetFromList.gold_grams) : null
+                const currentPriceUSD = ozPerCoin ? quote.price * ozPerCoin : quote.price
+                const currentPricePLN = toPln(currentPriceUSD, ozPerCoin ? 'USD' : quote.currency)
+                const purchasePricePLN = toPln(assetFromList.purchase_price, assetFromList.currency || 'USD')
+                return {
+                  ticker: t,
+                  name: assetFromList.name || quote.name,
+                  quantity: assetFromList.quantity,
+                  currentPrice: currentPricePLN,
+                  purchasePrice: purchasePricePLN,
+                  currency: 'PLN',
+                  portfolioSharePercent: 0,
+                  workerReport,
+                  gold_grams: assetFromList.gold_grams ?? null,
+                }
               }))
-              const totalValue = enrichedAssets.reduce((s, a) => s + a.currentPrice, 0)
-              enrichedAssets.forEach(a => { a.portfolioSharePercent = (a.currentPrice / totalValue) * 100 })
+              const totalValuePLN = enrichedAssets.reduce((s, a) => s + a.quantity * a.currentPrice, 0)
+              const totalCostPLN = enrichedAssets.reduce((s, a) => s + a.quantity * a.purchasePrice, 0)
+              enrichedAssets.forEach(a => { a.portfolioSharePercent = (a.quantity * a.currentPrice / totalValuePLN) * 100 })
               const report_text = await ai.analyzePortfolio({
-                apiKey, assets: enrichedAssets, totalValueUSD: totalValue, totalPnlPercent: 0,
+                apiKey, assets: enrichedAssets, totalValuePLN,
+                totalPnlPercent: totalCostPLN > 0 ? ((totalValuePLN - totalCostPLN) / totalCostPLN) * 100 : 0,
               })
               data = { report_text, model: ai.MANAGER_MODEL }
               break

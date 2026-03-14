@@ -5,6 +5,7 @@ import { usePortfolio } from '../../contexts/PortfolioContext'
 import AssetRow from './AssetRow'
 import AddAssetModal from './AddAssetModal'
 import CashTransactionModal from './CashTransactionModal'
+import PortfolioTagEditor from './PortfolioTagEditor'
 import LoadingSpinner from '../ui/LoadingSpinner'
 import ErrorMessage from '../ui/ErrorMessage'
 import { formatCurrency } from '../../lib/utils'
@@ -19,7 +20,7 @@ async function getRate(ticker: string): Promise<number> {
 }
 
 export default function PortfolioView() {
-  const { portfolios } = usePortfolio()
+  const { portfolios, refreshPortfolios } = usePortfolio()
   const [assets, setAssets] = useState<PortfolioAsset[]>([])
   const [quotes, setQuotes] = useState<Map<string, StockQuote>>(new Map())
   const [sparklines, setSparklines] = useState<Map<string, number[]>>(new Map())
@@ -27,6 +28,7 @@ export default function PortfolioView() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showAddModal, setShowAddModal] = useState(false)
+  const [editAsset, setEditAsset] = useState<PortfolioAsset | null>(null)
   const [cashModalPortfolioId, setCashModalPortfolioId] = useState<number | null>(null)
   const [usdPln, setUsdPln] = useState(4.0)
   const [eurPln, setEurPln] = useState(4.3)
@@ -91,6 +93,10 @@ export default function PortfolioView() {
     }
   }
 
+  const handleTagsUpdate = (_portfolioId: number, _tags: string[]) => {
+    refreshPortfolios()
+  }
+
   const toPlnRate = (cur: string) => cur === 'PLN' ? 1 : cur === 'USD' ? usdPln : cur === 'EUR' ? eurPln : 1
 
   // Grupuj po portfelach; aktywa bez portfolio_id trafiają do portfolio 1
@@ -122,21 +128,24 @@ export default function PortfolioView() {
       {!loading && !error && (
         <>
           {groups.map(({ portfolio, assets: pfAssets, cashAccounts: pfCash }) => (
-            <div key={portfolio.id} className="mb-8">
-              {/* Nagłówek portfela — pokazuj tylko gdy jest >1 portfel */}
-              {portfolios.length > 1 && (
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-base font-semibold text-finance-green">
-                    {portfolio.name}
-                  </h3>
-                  <button
-                    onClick={() => setCashModalPortfolioId(portfolio.id)}
-                    className="border border-gray-600 text-gray-300 hover:text-white hover:border-gray-400 font-medium px-3 py-1.5 rounded-lg transition-colors text-sm"
-                  >
-                    Wpłata / Wypłata
-                  </button>
+            <div key={portfolio.id} className="mb-8 rounded-xl border border-gray-700/50 p-4 bg-finance-card/30">
+              {/* Nagłówek portfela — zawsze widoczny */}
+              <div className="flex items-center justify-between mb-3 pb-2 border-b border-finance-green/30">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <h3 className="text-base font-semibold text-finance-green">{portfolio.name}</h3>
+                  <PortfolioTagEditor
+                    portfolioId={portfolio.id}
+                    currentTags={portfolio.tags ?? []}
+                    onUpdate={(tags) => handleTagsUpdate(portfolio.id, tags)}
+                  />
                 </div>
-              )}
+                <button
+                  onClick={() => setCashModalPortfolioId(portfolio.id)}
+                  className="border border-gray-600 text-gray-300 hover:text-white hover:border-gray-400 font-medium px-3 py-1.5 rounded-lg transition-colors text-sm flex-shrink-0"
+                >
+                  Wpłata / Wypłata
+                </button>
+              </div>
 
               {/* Gotówka portfela */}
               {pfCash.length > 0 && (
@@ -148,18 +157,6 @@ export default function PortfolioView() {
                       <p className="text-xs text-gray-500">≈ {formatCurrency(acc.balance * toPlnRate(acc.currency), 'PLN')} PLN</p>
                     </div>
                   ))}
-                </div>
-              )}
-
-              {/* Przycisk wpłata gdy tylko jeden portfel */}
-              {portfolios.length === 1 && (
-                <div className="flex justify-end mb-3">
-                  <button
-                    onClick={() => setCashModalPortfolioId(portfolio.id)}
-                    className="border border-gray-600 text-gray-300 hover:text-white hover:border-gray-400 font-medium px-3 py-1.5 rounded-lg transition-colors text-sm"
-                  >
-                    Wpłata / Wypłata
-                  </button>
                 </div>
               )}
 
@@ -195,6 +192,7 @@ export default function PortfolioView() {
                           usdPln={usdPln}
                           eurPln={eurPln}
                           onDelete={() => handleDelete(asset.id)}
+                          onEdit={() => setEditAsset(asset)}
                         />
                       ))}
                     </tbody>
@@ -234,6 +232,7 @@ export default function PortfolioView() {
                         usdPln={usdPln}
                         eurPln={eurPln}
                         onDelete={() => handleDelete(asset.id)}
+                        onEdit={() => setEditAsset(asset)}
                       />
                     ))}
                   </tbody>
@@ -255,6 +254,14 @@ export default function PortfolioView() {
         <AddAssetModal
           onClose={() => setShowAddModal(false)}
           onSuccess={() => { setShowAddModal(false); loadData() }}
+        />
+      )}
+
+      {editAsset !== null && (
+        <AddAssetModal
+          editAsset={editAsset}
+          onClose={() => setEditAsset(null)}
+          onSuccess={() => { setEditAsset(null); loadData() }}
         />
       )}
 

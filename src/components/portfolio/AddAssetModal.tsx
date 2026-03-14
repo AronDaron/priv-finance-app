@@ -1,36 +1,51 @@
 import { useState } from 'react'
-import { addAsset } from '../../lib/api'
+import { addAsset, updateAsset } from '../../lib/api'
 import { StockSearch } from '../StockSearch'
 import { usePortfolio } from '../../contexts/PortfolioContext'
 import { PHYSICAL_METAL_COINS, gramsToTroyOz } from '../../lib/types'
+import type { PortfolioAsset } from '../../lib/types'
 
 interface Props {
   onClose: () => void
   onSuccess: () => void
+  editAsset?: PortfolioAsset
 }
 
-export default function AddAssetModal({ onClose, onSuccess }: Props) {
+export default function AddAssetModal({ onClose, onSuccess, editAsset }: Props) {
+  const isEditMode = !!editAsset
   const { activePortfolioId, portfolios } = usePortfolio()
-  const defaultPortfolioId = activePortfolioId ?? portfolios[0]?.id ?? 1
+  const defaultPortfolioId = editAsset?.portfolio_id ?? activePortfolioId ?? portfolios[0]?.id ?? 1
+
+  // Inicjalizacja stanu formularza — w trybie edycji wypełniamy wartości z editAsset
+  const initCoinId = (): string => {
+    if (!editAsset?.gold_grams) return ''
+    const coin = PHYSICAL_METAL_COINS.find(c => c.ticker === editAsset.ticker && c.pureGrams === editAsset.gold_grams)
+    if (coin) return coin.id
+    if (editAsset.gold_grams > 0) return '__custom__'
+    return ''
+  }
+
   const [form, setForm] = useState({
-    ticker: '',
-    name: '',
-    quantity: '',
-    purchase_price: '',
-    currency: 'USD',
-    purchase_date: new Date().toISOString().split('T')[0],
+    ticker: editAsset?.ticker ?? '',
+    name: editAsset?.name ?? '',
+    quantity: editAsset?.quantity?.toString() ?? '',
+    purchase_price: editAsset?.purchase_price?.toString() ?? '',
+    currency: editAsset?.currency ?? 'USD',
+    purchase_date: editAsset?.purchase_date ?? new Date().toISOString().split('T')[0],
     portfolio_id: defaultPortfolioId,
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Złoto/srebro fizyczne
-  const [selectedCoinId, setSelectedCoinId] = useState<string>('')
-  const [customGrams, setCustomGrams] = useState<string>('')
+  const [selectedCoinId, setSelectedCoinId] = useState<string>(initCoinId())
+  const [customGrams, setCustomGrams] = useState<string>(
+    editAsset?.gold_grams && initCoinId() === '__custom__' ? editAsset.gold_grams.toString() : ''
+  )
 
   const isPhysicalMetal = form.ticker === 'GC=F' || form.ticker === 'SI=F'
   const metalCoins = PHYSICAL_METAL_COINS.filter(c => c.ticker === form.ticker)
   const selectedCoin = metalCoins.find(c => c.id === selectedCoinId) ?? null
-  const isCustomCoin = selectedCoin?.pureGrams === 0
+  const isCustomCoin = selectedCoinId === '__custom__' || selectedCoin?.pureGrams === 0
 
   // Efektywne gramy na monetę (do wyświetlenia i zapisania)
   const effectiveGrams = isCustomCoin
@@ -65,19 +80,31 @@ export default function AddAssetModal({ onClose, onSuccess }: Props) {
     setSaving(true)
     setError(null)
     try {
-      await addAsset({
-        ticker: form.ticker.trim().toUpperCase(),
-        name: form.name.trim() || form.ticker.trim().toUpperCase(),
-        quantity: qty,
-        purchase_price: price,
-        currency: form.currency,
-        purchase_date: form.purchase_date,
-        portfolio_id: form.portfolio_id,
-        gold_grams: (isPhysicalMetal && selectedCoinId !== '__exchange__' && effectiveGrams > 0) ? effectiveGrams : null,
-      })
+      const goldGrams = (isPhysicalMetal && selectedCoinId !== '__exchange__' && effectiveGrams > 0) ? effectiveGrams : null
+      if (isEditMode) {
+        await updateAsset(editAsset.id, {
+          name: form.name.trim() || form.ticker.trim().toUpperCase(),
+          quantity: qty,
+          purchase_price: price,
+          currency: form.currency,
+          purchase_date: form.purchase_date,
+          gold_grams: goldGrams,
+        })
+      } else {
+        await addAsset({
+          ticker: form.ticker.trim().toUpperCase(),
+          name: form.name.trim() || form.ticker.trim().toUpperCase(),
+          quantity: qty,
+          purchase_price: price,
+          currency: form.currency,
+          purchase_date: form.purchase_date,
+          portfolio_id: form.portfolio_id,
+          gold_grams: goldGrams,
+        })
+      }
       onSuccess()
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Błąd podczas dodawania')
+      setError(err instanceof Error ? err.message : 'Błąd podczas zapisywania')
     } finally {
       setSaving(false)
     }
@@ -86,24 +113,30 @@ export default function AddAssetModal({ onClose, onSuccess }: Props) {
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
       <div className="bg-finance-card rounded-2xl p-6 w-full max-w-md mx-4">
-        <h2 className="text-lg font-semibold text-white mb-4">Dodaj aktywo do portfela</h2>
+        <h2 className="text-lg font-semibold text-white mb-4">
+          {isEditMode ? 'Edytuj aktywo' : 'Dodaj aktywo do portfela'}
+        </h2>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-xs text-gray-400 mb-1">Wyszukaj spółkę</label>
-            <StockSearch onSelect={handleSelect} />
-          </div>
+          {!isEditMode && (
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Wyszukaj spółkę</label>
+              <StockSearch onSelect={handleSelect} />
+            </div>
+          )}
           <div>
             <label className="block text-xs text-gray-400 mb-1">Ticker *</label>
             <input
               type="text"
               value={form.ticker}
               onChange={(e) => {
+                if (isEditMode) return
                 setForm((f) => ({ ...f, ticker: e.target.value.toUpperCase() }))
                 setSelectedCoinId('')
                 setCustomGrams('')
               }}
+              disabled={isEditMode}
               placeholder="np. AAPL"
-              className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-finance-green"
+              className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-finance-green disabled:opacity-50 disabled:cursor-not-allowed"
               required
             />
           </div>
@@ -249,7 +282,7 @@ export default function AddAssetModal({ onClose, onSuccess }: Props) {
               disabled={saving}
               className="flex-1 bg-finance-green hover:bg-emerald-600 text-white font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
             >
-              {saving ? 'Dodawanie...' : 'Dodaj'}
+              {saving ? (isEditMode ? 'Zapisywanie...' : 'Dodawanie...') : (isEditMode ? 'Zapisz zmiany' : 'Dodaj')}
             </button>
           </div>
         </form>

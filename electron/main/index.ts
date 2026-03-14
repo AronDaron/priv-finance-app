@@ -12,6 +12,7 @@ import {
   fetchPortfolioHistory,
 } from './finance'
 import type { HistoryPeriod } from '../../src/lib/types'
+import { gramsToTroyOz } from '../../src/lib/types'
 import {
   initDatabase,
   getAllAssets,
@@ -32,6 +33,7 @@ import {
   createPortfolio,
   renamePortfolio,
   deletePortfolio,
+  updatePortfolioTags,
   getCashAccounts,
   addCashTransaction,
   getCashTransactions,
@@ -73,6 +75,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle('db:portfolios:create', (_event, { name }) => createPortfolio(name))
   ipcMain.handle('db:portfolios:rename', (_event, { id, name }) => { renamePortfolio(id, name); return { success: true } })
   ipcMain.handle('db:portfolios:delete', (_event, { id }) => { deletePortfolio(id); return { success: true } })
+  ipcMain.handle('db:portfolios:updateTags', (_event, { id, tags }) => { updatePortfolioTags(id, tags); return { success: true } })
 
   // ── cash ──────────────────────────────────────────────────────────────────
   ipcMain.handle('db:cash:getAccounts', (_event, { portfolioId } = {}) => getCashAccounts(portfolioId))
@@ -182,6 +185,9 @@ function registerIpcHandlers(): void {
     const apiKey = getSetting('openrouter_api_key')
     if (!apiKey) throw new Error('Brak klucza API OpenRouter. Skonfiguruj go w Ustawieniach.')
 
+    // Sprawdź czy ticker to fizyczny metal w portfelu
+    const assetInDb = getAllAssets().find(a => a.ticker === ticker)
+
     const [fundamentals, history, quote] = await Promise.all([
       fetchFundamentals(ticker),
       fetchHistory(ticker, '1y'),
@@ -197,6 +203,7 @@ function registerIpcHandlers(): void {
       currency: quote.currency,
       fundamentals,
       technicals,
+      gold_grams: assetInDb?.gold_grams ?? null,
     })
 
     return addReport({ ticker, model: WORKER_MODEL, report_text: reportText })
@@ -209,6 +216,16 @@ function registerIpcHandlers(): void {
     const assets = getAllAssets()
     if (assets.length === 0) throw new Error('Portfel jest pusty.')
 
+    // Pobierz kursy walut — wszystkie wartości będą w PLN dla spójności
+    const [usdPlnQ, eurPlnQ] = await Promise.all([
+      fetchQuote('USDPLN=X').catch(() => ({ price: 4.0 } as { price: number })),
+      fetchQuote('EURPLN=X').catch(() => ({ price: 4.3 } as { price: number })),
+    ])
+    const usdPln = usdPlnQ.price
+    const eurPln = eurPlnQ.price
+    const toPln = (amount: number, currency: string) =>
+      currency === 'PLN' ? amount : currency === 'USD' ? amount * usdPln : currency === 'EUR' ? amount * eurPln : amount
+
     const enrichedAssets: Array<{
       ticker: string
       name: string
@@ -218,6 +235,7 @@ function registerIpcHandlers(): void {
       currency: string
       portfolioSharePercent: number
       workerReport: string
+      gold_grams: number | null
     }> = []
 
     for (const asset of assets) {
@@ -237,33 +255,46 @@ function registerIpcHandlers(): void {
           currency: quote.currency,
           fundamentals,
           technicals,
+          gold_grams: asset.gold_grams ?? null,
         })
         report = addReport({ ticker: asset.ticker, model: WORKER_MODEL, report_text: reportText })
       }
       const quote = await fetchQuote(asset.ticker)
+      // Dla metali fizycznych: spot USD/oz → cena USD/monetę → PLN/monetę
+      const ozPerCoin = asset.gold_grams ? gramsToTroyOz(asset.gold_grams) : null
+      const currentPriceUSD = ozPerCoin ? quote.price * ozPerCoin : quote.price
+      const currentPricePLN = toPln(currentPriceUSD, ozPerCoin ? 'USD' : quote.currency)
+      const purchasePricePLN = toPln(asset.purchase_price, asset.currency)
       enrichedAssets.push({
         ticker: asset.ticker,
         name: asset.name,
         quantity: asset.quantity,
-        currentPrice: quote.price,
-        purchasePrice: asset.purchase_price,
-        currency: quote.currency,
+        currentPrice: currentPricePLN,
+        purchasePrice: purchasePricePLN,
+        currency: 'PLN',
         portfolioSharePercent: 0,
         workerReport: report.report_text,
+        gold_grams: asset.gold_grams ?? null,
       })
     }
 
-    const totalValue = enrichedAssets.reduce((sum, a) => sum + a.quantity * a.currentPrice, 0)
-    const totalCost  = enrichedAssets.reduce((sum, a) => sum + a.quantity * a.purchasePrice, 0)
+    const totalValuePLN = enrichedAssets.reduce((sum, a) => sum + a.quantity * a.currentPrice, 0)
+    const totalCostPLN  = enrichedAssets.reduce((sum, a) => sum + a.quantity * a.purchasePrice, 0)
     enrichedAssets.forEach(a => {
-      a.portfolioSharePercent = (a.quantity * a.currentPrice / totalValue) * 100
+      a.portfolioSharePercent = (a.quantity * a.currentPrice / totalValuePLN) * 100
     })
 
+    const portfoliosList = getPortfolios()
     const reportText = await analyzePortfolio({
       apiKey,
       assets: enrichedAssets,
-      totalValueUSD: totalValue,
-      totalPnlPercent: ((totalValue - totalCost) / totalCost) * 100,
+      totalValuePLN,
+      totalPnlPercent: totalCostPLN > 0 ? ((totalValuePLN - totalCostPLN) / totalCostPLN) * 100 : 0,
+      portfolios: portfoliosList.map(p => ({
+        id: p.id,
+        name: p.name,
+        tags: p.tags ? JSON.parse(p.tags) : [],
+      })),
     })
 
     return addReport({ ticker: '__PORTFOLIO__', model: MANAGER_MODEL, report_text: reportText })

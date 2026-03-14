@@ -24,6 +24,7 @@ export interface DBPortfolio {
   id: number
   name: string
   created_at: string
+  tags: string | null
 }
 
 export interface DBCashAccount {
@@ -192,6 +193,11 @@ function migrateDatabase(): void {
   }
   if (!cols.find(c => c.name === 'gold_grams')) {
     db.exec(`ALTER TABLE portfolio_assets ADD COLUMN gold_grams REAL`)
+  }
+
+  const portfolioCols = db.prepare("PRAGMA table_info(portfolios)").all() as { name: string }[]
+  if (!portfolioCols.find(c => c.name === 'tags')) {
+    db.exec(`ALTER TABLE portfolios ADD COLUMN tags TEXT`)
   }
 
   // Utwórz domyślny portfel jeśli tabela pusta
@@ -367,6 +373,10 @@ export function createPortfolio(name: string): DBPortfolio {
 
 export function renamePortfolio(id: number, name: string): void {
   db.prepare('UPDATE portfolios SET name = ? WHERE id = ?').run(name, id)
+}
+
+export function updatePortfolioTags(id: number, tags: string[]): void {
+  db.prepare('UPDATE portfolios SET tags = ? WHERE id = ?').run(JSON.stringify(tags), id)
 }
 
 export function deletePortfolio(id: number): void {

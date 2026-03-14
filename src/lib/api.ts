@@ -41,6 +41,7 @@ declare global {
         create(name: string): Promise<Portfolio>
         rename(id: number, name: string): Promise<{ success: boolean }>
         delete(id: number): Promise<{ success: boolean }>
+        updateTags(id: number, tags: string[]): Promise<{ success: boolean }>
       }
       cash: {
         getAccounts(portfolioId?: number): Promise<CashAccount[]>
@@ -138,8 +139,17 @@ function lsEnsureDefaultPortfolio(): Portfolio[] {
 }
 
 export async function getPortfolios(): Promise<Portfolio[]> {
-  if (isElectron()) return window.electronAPI!.portfolios.getAll()
+  if (isElectron()) {
+    const raw = await window.electronAPI!.portfolios.getAll()
+    return raw.map(p => ({ ...p, tags: (p as unknown as { tags: string | null }).tags ? JSON.parse((p as unknown as { tags: string | null }).tags as string) : [] }))
+  }
   return lsEnsureDefaultPortfolio()
+}
+
+export async function updatePortfolioTags(id: number, tags: string[]): Promise<void> {
+  if (isElectron()) { await window.electronAPI!.portfolios.updateTags(id, tags); return }
+  const portfolios = lsGet<Portfolio[]>(LS_KEYS.PORTFOLIOS, [])
+  lsSet(LS_KEYS.PORTFOLIOS, portfolios.map(p => p.id === id ? { ...p, tags } : p))
 }
 
 export async function createPortfolio(name: string): Promise<Portfolio> {
@@ -447,8 +457,11 @@ export async function getPortfolioHistory(portfolioId?: number, period: string =
 export async function analyzeStock(ticker: string): Promise<AIReport> {
   if (isElectron()) return window.electronAPI!.ai.analyzeStock(ticker)
   const apiKey = await getSetting('openrouter_api_key')
+  const assets = await getAssets()
+  const asset = assets.find(a => a.ticker === ticker)
+  const goldGrams = asset?.gold_grams != null ? String(asset.gold_grams) : ''
   const result = await devApiPost<{ report_text: string; model: string; ticker: string }>(
-    '/ai/analyze-stock', { ticker, apiKey: apiKey ?? '' }
+    '/ai/analyze-stock', { ticker, apiKey: apiKey ?? '', gold_grams: goldGrams }
   )
   return addReport({ ticker, model: result.model, report_text: result.report_text })
 }
@@ -457,9 +470,8 @@ export async function analyzePortfolio(): Promise<AIReport> {
   if (isElectron()) return window.electronAPI!.ai.analyzePortfolio()
   const apiKey = await getSetting('openrouter_api_key')
   const assets = await getAssets()
-  const tickers = assets.map(a => a.ticker).join(',')
   const result = await devApiPost<{ report_text: string; model: string }>(
-    '/ai/analyze-portfolio', { tickers, apiKey: apiKey ?? '' }
+    '/ai/analyze-portfolio', { assets: JSON.stringify(assets), apiKey: apiKey ?? '' }
   )
   return addReport({ ticker: '__PORTFOLIO__', model: result.model, report_text: result.report_text })
 }

@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     create: (name: string) => ipcRenderer.invoke('db:portfolios:create', { name }),
     rename: (id: number, name: string) => ipcRenderer.invoke('db:portfolios:rename', { id, name }),
     delete: (id: number) => ipcRenderer.invoke('db:portfolios:delete', { id }),
+    updateTags: (id: number, tags: string[]) =>
+      ipcRenderer.invoke('db:portfolios:updateTags', { id, tags }),
   },
 
   // ── cash ─────────────────────────────────────────────────────────────────
@@ -59,6 +61,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         purchase_price: number
         currency: string
         gold_grams: number | null
+        purchase_date: string
       }>
     ) => ipcRenderer.invoke('db:assets:update', id, updates),
 
