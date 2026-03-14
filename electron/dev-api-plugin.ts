@@ -164,6 +164,12 @@ export function financeDevApiPlugin(): Plugin {
               data = { report_text, model: ai.MANAGER_MODEL }
               break
             }
+            case '/news': {
+              const region = searchParams.get('region') ?? 'world'
+              const { fetchNewsForRegion } = await import('./main/news')
+              data = await fetchNewsForRegion(region as import('./main/news').NewsRegion)
+              break
+            }
             default:
               res.statusCode = 404
               res.end(JSON.stringify({ error: `Nieznany endpoint: ${endpoint}` }))

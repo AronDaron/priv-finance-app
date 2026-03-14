@@ -167,6 +167,18 @@ export interface TechnicalIndicators {
   sma20: number | null
   sma50: number | null
   sma200: number | null
+  bollingerBands: {
+    upper: number
+    middle: number
+    lower: number
+    bandwidth: number  // (upper - lower) / middle * 100
+  } | null
+  atr14: number | null
+  adx14: {
+    adx: number
+    pdi: number  // +DI
+    mdi: number  // -DI
+  } | null
 }
 
 export interface DividendEntry {
@@ -208,4 +220,17 @@ export const PHYSICAL_METAL_COINS: PhysicalMetalCoin[] = [
 // Przelicza gramy na uncje troy
 export function gramsToTroyOz(grams: number): number {
   return grams / 31.1035
+}
+
+// ── News ─────────────────────────────────────────────────────────────────────
+
+export type NewsRegion = 'pl' | 'eu' | 'asia' | 'us' | 'world'
+
+export interface NewsItem {
+  title: string
+  link: string
+  description: string
+  pubDate: string
+  thumbnail: string | null
+  source: string
 }

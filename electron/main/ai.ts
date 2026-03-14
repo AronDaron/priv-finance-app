@@ -98,7 +98,7 @@ export async function analyzeStock(params: StockAnalysisParams): Promise<string>
     analystRecommendation, numberOfAnalysts, targetMeanPrice, earningsGrowth,
     recommendationTrend, nextEarningsDate, topHoldings, fundFamily,
   } = fundamentals
-  const { rsi14, macd, sma20, sma50, sma200 } = technicals
+  const { rsi14, macd, sma20, sma50, sma200, bollingerBands, atr14, adx14 } = technicals
 
   const isEtf = topHoldings != null || fundFamily != null
 
@@ -140,8 +140,11 @@ ${fundamentalSection}
 
 WSKAŹNIKI TECHNICZNE:
 - RSI(14): ${rsi14?.toFixed(1) ?? 'brak'} ${rsiInterpret(rsi14)}
-- MACD: wartość ${macd.value?.toFixed(3) ?? 'brak'}, sygnał ${macd.signal?.toFixed(3) ?? 'brak'}
+- MACD: wartość ${macd.value?.toFixed(3) ?? 'brak'}, sygnał ${macd.signal?.toFixed(3) ?? 'brak'}, histogram ${macd.histogram != null ? (macd.histogram >= 0 ? '+' : '') + macd.histogram.toFixed(3) : 'brak'}
 - SMA20/50/200: ${sma20?.toFixed(2) ?? 'brak'} / ${sma50?.toFixed(2) ?? 'brak'} / ${sma200?.toFixed(2) ?? 'brak danych'}
+- Bollinger Bands(20,2): górne ${bollingerBands?.upper.toFixed(2) ?? 'brak'} / środek ${bollingerBands?.middle.toFixed(2) ?? 'brak'} / dolne ${bollingerBands?.lower.toFixed(2) ?? 'brak'}${bollingerBands ? `, szerokość pasm ${bollingerBands.bandwidth.toFixed(1)}%` : ''}
+- ATR(14): ${atr14?.toFixed(2) ?? 'brak'}${atr14 && currentPrice > 0 ? ` (${((atr14 / currentPrice) * 100).toFixed(2)}% ceny — zmienność dzienna)` : ''}
+- ADX(14): ${adx14?.adx.toFixed(1) ?? 'brak'}${adx14 ? ` (${adx14.adx < 20 ? 'brak trendu' : adx14.adx < 40 ? 'słaby trend' : adx14.adx < 60 ? 'silny trend' : 'bardzo silny trend'}), +DI=${adx14.pdi.toFixed(1)} -DI=${adx14.mdi.toFixed(1)}` : ''}
 
 Napisz analizę (max 250 słów) zawierającą:
 1. ${isPhysicalMetal ? `Ocenę jako inwestycję w fizyczny ${metalName} (koszty przechowywania, spread kupno/sprzedaż, rola w portfelu)` : `Krótką ocenę fundamentalną${isEtf ? ' (skład, ekspozycja)' : ' (finanse, wycena, konsensus analityków)'}`}

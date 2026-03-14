@@ -39,6 +39,8 @@ import {
   getCashTransactions,
 } from './database'
 import { analyzeStock, analyzePortfolio, WORKER_MODEL, MANAGER_MODEL } from './ai'
+import { fetchNewsForRegion } from './news'
+import type { NewsRegion } from './news'
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -208,6 +210,11 @@ function registerIpcHandlers(): void {
 
     return addReport({ ticker, model: WORKER_MODEL, report_text: reportText })
   })
+
+  // ── news (RSS) ────────────────────────────────────────────────────────────
+  ipcMain.handle('news:fetchRegion', (_event, region: NewsRegion) =>
+    fetchNewsForRegion(region)
+  )
 
   ipcMain.handle('ai:analyzePortfolio', async () => {
     const apiKey = getSetting('openrouter_api_key')

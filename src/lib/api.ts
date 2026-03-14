@@ -26,6 +26,8 @@ import type {
   CashAccount,
   CashTransaction,
   NewCashTransaction,
+  NewsItem,
+  NewsRegion,
 } from './types'
 
 // ─── Deklaracja typów dla window.electronAPI ─────────────────────────────────
@@ -82,6 +84,9 @@ declare global {
       ai: {
         analyzeStock(ticker: string): Promise<AIReport>
         analyzePortfolio(): Promise<AIReport>
+      }
+      news: {
+        fetchRegion(region: string): Promise<NewsItem[]>
       }
     }
   }
@@ -474,4 +479,11 @@ export async function analyzePortfolio(): Promise<AIReport> {
     '/ai/analyze-portfolio', { assets: JSON.stringify(assets), apiKey: apiKey ?? '' }
   )
   return addReport({ ticker: '__PORTFOLIO__', model: result.model, report_text: result.report_text })
+}
+
+// ─── News (RSS) ───────────────────────────────────────────────────────────────
+
+export async function fetchNews(region: NewsRegion): Promise<NewsItem[]> {
+  if (isElectron()) return window.electronAPI!.news.fetchRegion(region)
+  return devApiFetch<NewsItem[]>('/news', { region })
 }

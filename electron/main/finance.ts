@@ -208,8 +208,10 @@ export async function fetchAssetMeta(ticker: string): Promise<{ region: string; 
 
 export function calculateTechnicals(candles: OHLCCandle[]): TechnicalIndicators {
   const closes = candles.map(c => c.close)
+  const highs  = candles.map(c => c.high)
+  const lows   = candles.map(c => c.low)
 
-  const rsiResult = ti.RSI.calculate({ values: closes, period: 14 })
+  const rsiResult  = ti.RSI.calculate({ values: closes, period: 14 })
   const macdResult = ti.MACD.calculate({
     values: closes,
     fastPeriod: 12,
@@ -218,11 +220,17 @@ export function calculateTechnicals(candles: OHLCCandle[]): TechnicalIndicators 
     SimpleMAOscillator: false,
     SimpleMASignal: false,
   })
-  const sma20 = ti.SMA.calculate({ values: closes, period: 20 })
-  const sma50 = ti.SMA.calculate({ values: closes, period: 50 })
+  const sma20  = ti.SMA.calculate({ values: closes, period: 20 })
+  const sma50  = ti.SMA.calculate({ values: closes, period: 50 })
   const sma200 = ti.SMA.calculate({ values: closes, period: 200 })
 
+  const bbResult  = ti.BollingerBands.calculate({ values: closes, period: 20, stdDev: 2 })
+  const atrResult = ti.ATR.calculate({ high: highs, low: lows, close: closes, period: 14 })
+  const adxResult = ti.ADX.calculate({ high: highs, low: lows, close: closes, period: 14 })
+
   const lastMacd = macdResult.at(-1) ?? null
+  const lastBB   = bbResult.at(-1) ?? null
+  const lastADX  = adxResult.at(-1) ?? null
 
   return {
     rsi14: rsiResult.at(-1) ?? null,
@@ -231,9 +239,21 @@ export function calculateTechnicals(candles: OHLCCandle[]): TechnicalIndicators 
       signal: lastMacd?.signal ?? null,
       histogram: lastMacd?.histogram ?? null,
     },
-    sma20: sma20.at(-1) ?? null,
-    sma50: sma50.at(-1) ?? null,
-    sma200: sma200.at(-1) ?? null,  // null gdy historia < 200 świec
+    sma20:  sma20.at(-1)  ?? null,
+    sma50:  sma50.at(-1)  ?? null,
+    sma200: sma200.at(-1) ?? null,
+    bollingerBands: lastBB ? {
+      upper:     lastBB.upper,
+      middle:    lastBB.middle,
+      lower:     lastBB.lower,
+      bandwidth: ((lastBB.upper - lastBB.lower) / lastBB.middle) * 100,
+    } : null,
+    atr14: atrResult.at(-1) ?? null,
+    adx14: lastADX ? {
+      adx: lastADX.adx,
+      pdi: lastADX.pdi,
+      mdi: lastADX.mdi,
+    } : null,
   }
 }
 

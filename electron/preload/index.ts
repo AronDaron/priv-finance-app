@@ -126,6 +126,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('ai:analyzePortfolio'),
   },
 
+  // ── news (RSS) ──────────────────────────────────────────────────────────
+  news: {
+    fetchRegion: (region: string) =>
+      ipcRenderer.invoke('news:fetchRegion', region),
+  },
+
   // ── finance (yahoo-finance2 + technicalindicators) ───────────────────────
   finance: {
     quote: (ticker: string) =>
