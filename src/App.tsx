@@ -1,10 +1,11 @@
-import { HashRouter, Routes, Route } from 'react-router-dom'
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import AppLayout from './components/layout/AppLayout'
 import DashboardView from './components/dashboard/DashboardView'
 import PortfolioView from './components/portfolio/PortfolioView'
 import StockDetailView from './components/stock/StockDetailView'
 import SettingsView from './components/settings/SettingsView'
-import AIAnalysisView from './components/ai/AIAnalysisView'
+import PortfolioAnalysisView from './components/ai/PortfolioAnalysisView'
+import StocksAnalysisView from './components/ai/StocksAnalysisView'
 import BenchmarkView from './components/benchmark/BenchmarkView'
 import { PortfolioProvider } from './contexts/PortfolioContext'
 
@@ -19,7 +20,9 @@ export default function App() {
             <Route path="portfolio/:ticker" element={<StockDetailView />} />
             <Route path="stock/:ticker" element={<StockDetailView />} />
             <Route path="settings" element={<SettingsView />} />
-            <Route path="ai" element={<AIAnalysisView />} />
+            <Route path="ai" element={<Navigate to="/ai/portfolio" replace />} />
+            <Route path="ai/portfolio" element={<PortfolioAnalysisView />} />
+            <Route path="ai/stocks" element={<StocksAnalysisView />} />
             <Route path="benchmark" element={<BenchmarkView />} />
           </Route>
         </Routes>
