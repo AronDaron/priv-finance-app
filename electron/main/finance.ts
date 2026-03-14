@@ -359,6 +359,7 @@ export async function fetchGlobalMarketData(): Promise<GlobalMarketData> {
     oil, gas, wheat, copper, gold,
     eurusd, gbpusd, chfusd, cadusd, audusd, jpyusd, cnyusd,
     sp500, dax, nikkei, wig20, ftse, vix, fxi, ewz,
+    asx200, eza, bvsp,
     us10y,
   ] = await Promise.all([
     safeQuote('CL=F'),
@@ -381,29 +382,36 @@ export async function fetchGlobalMarketData(): Promise<GlobalMarketData> {
     safeQuote('^VIX'),
     safeQuote('FXI'),
     safeQuote('EWZ'),
+    safeQuote('^AXJO'),   // Australia ASX 200
+    safeQuote('EZA'),     // iShares MSCI South Africa
+    safeQuote('^BVSP'),   // Bovespa (Brazylia / Ameryka Łacińska)
     safeQuote('^TNX'),
   ])
 
   // Krok 2: zmiana 30-dniowa dla kluczowych indeksów (równolegle)
-  const monthlyKey = ['^GSPC', '^GDAXI', '^N225', 'WIG20.WA', '^FTSE', 'FXI', 'EWZ', 'CL=F', 'GC=F']
+  const monthlyKey = ['^GSPC', '^GDAXI', '^N225', 'WIG20.WA', '^FTSE', 'FXI', 'EWZ', 'CL=F', 'GC=F', 'HG=F', '^AXJO', 'EZA', '^BVSP']
   const monthly = await Promise.all(monthlyKey.map(t => get1mChange(t)))
   const m: Record<string, number> = {}
   monthlyKey.forEach((t, i) => { m[t] = monthly[i] })
 
-  sp500.change1m  = m['^GSPC']   ?? 0
-  dax.change1m    = m['^GDAXI']  ?? 0
-  nikkei.change1m = m['^N225']   ?? 0
-  wig20.change1m  = m['WIG20.WA'] ?? 0
-  ftse.change1m   = m['^FTSE']   ?? 0
-  fxi.change1m    = m['FXI']     ?? 0
-  ewz.change1m    = m['EWZ']     ?? 0
-  oil.change1m    = m['CL=F']    ?? 0
-  gold.change1m   = m['GC=F']    ?? 0
+  sp500.change1m   = m['^GSPC']    ?? 0
+  dax.change1m     = m['^GDAXI']   ?? 0
+  nikkei.change1m  = m['^N225']    ?? 0
+  wig20.change1m   = m['WIG20.WA'] ?? 0
+  ftse.change1m    = m['^FTSE']    ?? 0
+  fxi.change1m     = m['FXI']      ?? 0
+  ewz.change1m     = m['EWZ']      ?? 0
+  oil.change1m     = m['CL=F']     ?? 0
+  gold.change1m    = m['GC=F']     ?? 0
+  copper.change1m  = m['HG=F']     ?? 0
+  asx200.change1m  = m['^AXJO']    ?? 0
+  eza.change1m     = m['EZA']      ?? 0
+  bvsp.change1m    = m['^BVSP']    ?? 0
 
   return {
     commodities: { oil, gas, wheat, copper, gold },
     currencies:  { EURUSD: eurusd, GBPUSD: gbpusd, CHFUSD: chfusd, CADUSD: cadusd, AUDUSD: audusd, JPYUSD: jpyusd, CNYUSD: cnyusd },
-    indices:     { SP500: sp500, DAX: dax, Nikkei: nikkei, WIG20: wig20, FTSE: ftse, VIX: vix, FXI: fxi, EWZ: ewz },
+    indices:     { SP500: sp500, DAX: dax, Nikkei: nikkei, WIG20: wig20, FTSE: ftse, VIX: vix, FXI: fxi, EWZ: ewz, ASX200: asx200, EZA: eza, BVSP: bvsp },
     bonds:       { US10Y: us10y },
     fetchedAt:   new Date().toISOString(),
   }

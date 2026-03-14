@@ -153,11 +153,70 @@ const REGIONS: RegionDef[] = [
         { ...contrib(vixFactor(m.indices.VIX.price) * 18, 18, 0.20), name: 'VIX (ryzyko)' },
         // EM korzysta na surowcach (eksporter)
         { ...contrib(m.commodities.oil.change1m, 12, 0.15), name: 'Ropa (eksport)' },
-        { ...contrib(m.commodities.copper.change1m ?? m.commodities.copper.changePercent, 10, 0.10), name: 'Miedź (eksport)' },
+        { ...contrib(m.commodities.copper.change1m, 10, 0.10), name: 'Miedź (eksport)' },
         // Silny USD = zły dla EM (droższy dług)
         { ...contrib(-m.currencies.EURUSD.changePercent, 1.5, 0.15), name: 'USD (siła, ryzyko)' },
       ]
       return { components, trend1d: m.indices.EWZ.changePercent }
+    },
+  },
+
+  // ── Australia / Oceania ────────────────────────────────────────────────────
+  {
+    id: 'australia',
+    name: 'Australia',
+    flag: '🇦🇺',
+    compute(m) {
+      const components: RegionScoreComponent[] = [
+        { ...contrib(m.indices.ASX200.change1m, 10, 0.35), name: 'ASX200 (30 dni)' },
+        { ...contrib(m.indices.ASX200.changePercent, 3, 0.10), name: 'ASX200 (1 dzień)' },
+        { ...contrib(vixFactor(m.indices.VIX.price) * 18, 18, 0.20), name: 'VIX (globalny)' },
+        { ...contrib(m.currencies.AUDUSD.changePercent, 1.5, 0.15), name: 'AUD/USD (kurs)' },
+        // Australia: eksporter surowców — wyższe ceny = lepiej
+        { ...contrib(m.commodities.gold.change1m, 8, 0.10), name: 'Złoto (eksport)' },
+        { ...contrib(m.commodities.copper.change1m, 10, 0.10), name: 'Miedź (eksport)' },
+      ]
+      return { components, trend1d: m.indices.ASX200.changePercent }
+    },
+  },
+
+  // ── Afryka (proxy: Republika Południowej Afryki) ───────────────────────────
+  {
+    id: 'africa',
+    name: 'Afryka',
+    flag: '🌍',
+    compute(m) {
+      const components: RegionScoreComponent[] = [
+        { ...contrib(m.indices.EZA.change1m, 12, 0.30), name: 'EZA SA (30 dni)' },
+        { ...contrib(m.indices.EZA.changePercent, 3, 0.10), name: 'EZA SA (1 dzień)' },
+        { ...contrib(vixFactor(m.indices.VIX.price) * 18, 18, 0.15), name: 'VIX (ryzyko)' },
+        // Silny USD = gorszy dla Afryki (droższy dług w USD)
+        { ...contrib(-m.currencies.EURUSD.changePercent, 1.5, 0.15), name: 'USD (siła, ryzyko)' },
+        // RPA: eksporter złota i platyny
+        { ...contrib(m.commodities.gold.change1m, 8, 0.20), name: 'Złoto (eksport)' },
+        { ...contrib(m.commodities.copper.change1m, 10, 0.10), name: 'Miedź (eksport)' },
+      ]
+      return { components, trend1d: m.indices.EZA.changePercent }
+    },
+  },
+
+  // ── Ameryka Południowa (proxy: Bovespa — Brazylia) ─────────────────────────
+  {
+    id: 'south_america',
+    name: 'Ameryka Płd.',
+    flag: '🌎',
+    compute(m) {
+      const components: RegionScoreComponent[] = [
+        { ...contrib(m.indices.BVSP.change1m, 12, 0.30), name: 'Bovespa (30 dni)' },
+        { ...contrib(m.indices.BVSP.changePercent, 3, 0.10), name: 'Bovespa (1 dzień)' },
+        { ...contrib(vixFactor(m.indices.VIX.price) * 18, 18, 0.15), name: 'VIX (ryzyko)' },
+        // Silny USD = gorszy dla EM (droższy dług)
+        { ...contrib(-m.currencies.EURUSD.changePercent, 1.5, 0.15), name: 'USD (siła, ryzyko)' },
+        // Brazylia: eksporter ropy i surowców
+        { ...contrib(m.commodities.oil.change1m, 12, 0.20), name: 'Ropa (eksport)' },
+        { ...contrib(m.commodities.copper.change1m, 10, 0.10), name: 'Miedź (eksport)' },
+      ]
+      return { components, trend1d: m.indices.BVSP.changePercent }
     },
   },
 
@@ -169,9 +228,9 @@ const REGIONS: RegionDef[] = [
     compute(m) {
       // Złoto i miedź mają 30d change; dla gazu i pszenicy tylko 1d
       const avgCommodity = (
-        m.commodities.oil.change1m  +
-        m.commodities.gold.change1m +
-        m.commodities.oil.changePercent +
+        m.commodities.oil.change1m    +
+        m.commodities.gold.change1m   +
+        m.commodities.copper.change1m +
         m.commodities.copper.changePercent +
         m.commodities.gas.changePercent +
         m.commodities.wheat.changePercent

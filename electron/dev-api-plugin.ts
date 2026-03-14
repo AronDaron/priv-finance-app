@@ -184,13 +184,14 @@ export function financeDevApiPlugin(): Plugin {
               if (!regionId) { res.statusCode = 400; res.end(JSON.stringify({ error: 'Brak regionId' })); return }
               const { fetchGlobalMarketData: fgm } = await import('./main/finance')
               const { computeGlobalScores: cgs } = await import('./main/globalScore')
-              const { analyzeRegion: ar } = await import('./main/ai')
+              const { analyzeRegion: ar, WORLD_MODEL: wm } = await import('./main/ai')
               const md = await fgm()
               const regions = cgs(md)
               const region = regions.find(r => r.id === regionId)
               if (!region) { res.statusCode = 400; res.end(JSON.stringify({ error: `Nieznany region: ${regionId}` })); return }
               const headlines: string[] = headlinesJson ? JSON.parse(headlinesJson) : []
-              data = await ar({ apiKey: ak ?? '', region, marketData: md, newsHeadlines: headlines })
+              const text = await ar({ apiKey: ak ?? '', region, marketData: md, newsHeadlines: headlines })
+              data = { text, model: wm }
               break
             }
             default:

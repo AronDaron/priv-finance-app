@@ -92,7 +92,7 @@ declare global {
         fetchRegion(region: string): Promise<NewsItem[]>
       }
       globalAI: {
-        analyzeRegion(regionId: string, newsHeadlines: string[]): Promise<string>
+        analyzeRegion(regionId: string, newsHeadlines: string[]): Promise<{ text: string; model: string }>
       }
     }
   }
@@ -501,10 +501,10 @@ export async function fetchGlobalAnalysis(): Promise<GlobalAnalysis> {
   return devApiFetch<GlobalAnalysis>('/global-market', {})
 }
 
-export async function analyzeRegionAI(regionId: RegionId, newsHeadlines: string[]): Promise<string> {
+export async function analyzeRegionAI(regionId: RegionId, newsHeadlines: string[]): Promise<{ text: string; model: string }> {
   if (isElectron()) return window.electronAPI!.globalAI.analyzeRegion(regionId, newsHeadlines)
   const apiKey = await getSetting('openrouter_api_key')
-  return devApiPost<string>('/ai/analyze-region', {
+  return devApiPost<{ text: string; model: string }>('/ai/analyze-region', {
     regionId,
     newsHeadlines: JSON.stringify(newsHeadlines),
     apiKey: apiKey ?? '',

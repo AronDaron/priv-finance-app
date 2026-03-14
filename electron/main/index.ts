@@ -40,7 +40,7 @@ import {
   addCashTransaction,
   getCashTransactions,
 } from './database'
-import { analyzeStock, analyzePortfolio, analyzeRegion, WORKER_MODEL, MANAGER_MODEL } from './ai'
+import { analyzeStock, analyzePortfolio, analyzeRegion, WORKER_MODEL, MANAGER_MODEL, WORLD_MODEL } from './ai'
 import { fetchNewsForRegion } from './news'
 import type { NewsRegion } from './news'
 
@@ -232,7 +232,8 @@ function registerIpcHandlers(): void {
     const regions = computeGlobalScores(marketData)
     const region = regions.find(r => r.id === regionId)
     if (!region) throw new Error(`Nieznany region: ${regionId}`)
-    return analyzeRegion({ apiKey, region, marketData, newsHeadlines })
+    const text = await analyzeRegion({ apiKey, region, marketData, newsHeadlines })
+    return { text, model: WORLD_MODEL }
   })
 
   ipcMain.handle('ai:analyzePortfolio', async () => {

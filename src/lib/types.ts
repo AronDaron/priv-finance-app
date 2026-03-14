@@ -259,6 +259,9 @@ export interface GlobalMarketData {
     VIX: MarketTickerData     // ^VIX
     FXI: MarketTickerData     // China Large Cap ETF
     EWZ: MarketTickerData     // Brazil / EM ETF
+    ASX200: MarketTickerData  // ^AXJO — Australia ASX 200
+    EZA: MarketTickerData     // iShares MSCI South Africa ETF
+    BVSP: MarketTickerData    // ^BVSP — Bovespa (Brazil/South America)
   }
   bonds: {
     US10Y: MarketTickerData   // ^TNX (US 10-year yield)
@@ -273,7 +276,7 @@ export interface RegionScoreComponent {
   weight: number         // waga składnika (suma = 1.0)
 }
 
-export type RegionId = 'usa' | 'europe' | 'poland' | 'asia' | 'latam_em' | 'commodities'
+export type RegionId = 'usa' | 'europe' | 'poland' | 'asia' | 'latam_em' | 'commodities' | 'australia' | 'africa' | 'south_america'
 
 export interface RegionScore {
   id: RegionId

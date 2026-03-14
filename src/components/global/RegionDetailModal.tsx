@@ -1,54 +1,111 @@
 import { useState } from 'react'
-import type { RegionScore, GlobalAnalysis } from '../../lib/types'
+import type { RegionScore } from '../../lib/types'
 import { analyzeRegionAI } from '../../lib/api'
 import { MarkdownRenderer } from '../ai/MarkdownRenderer'
 
-function ComponentBar({ name, contribution, weight }: { name: string; contribution: number; weight: number }) {
+// Metadane składowych: opis + jednostka wartości surowej (jeśli interpretowalana bezpośrednio)
+const COMPONENT_META: Record<string, { desc: string; rawUnit?: string; rawLabel?: string }> = {
+  'S&P500 (30 dni)':       { desc: 'Zmiana indeksu S&P 500 (500 największych spółek USA) w ciągu ostatnich 30 dni. Wzrost = więcej kapitału w rynku, lepsza koniunktura.', rawUnit: '%', rawLabel: 'Zmiana 30d' },
+  'S&P500 (1 dzień)':      { desc: 'Dzienna zmiana S&P 500. Sygnał bieżącego nastroju inwestorów na rynku amerykańskim.', rawUnit: '%', rawLabel: 'Zmiana dziś' },
+  'VIX (strach)':          { desc: 'VIX — indeks zmienności, zwany „indeksem strachu". Niski VIX (<15) = spokój rynków. Wysoki (>30) = panika. Algorytm obniża ocenę regionu gdy VIX rośnie.' },
+  'VIX (globalny)':        { desc: 'VIX — globalny indeks strachu. Panika na rynkach USA przenosi się na cały świat — wysoki VIX oznacza odpływ kapitału z każdego regionu.' },
+  'VIX (ryzyko)':          { desc: 'VIX — indeks zmienności. Wysoki VIX zwiększa awersję do ryzyka i przyspiesza odpływ kapitału z rynków wschodzących i surowców.' },
+  'US10Y Yield':           { desc: 'Rentowność 10-letnich obligacji rządu USA. Powyżej 4–5% oznacza zacieśnienie finansowe — droższa pożyczka dla firm i rządów. Wpływa negatywnie na wyceny akcji globalnie.' },
+  'Ropa (import)':         { desc: 'Zmiana ceny ropy (WTI) w ciągu 30 dni. USA/Europa/Azja importują ropę — droga ropa podnosi koszty produkcji i inflację.', rawUnit: '%', rawLabel: 'Zmiana 30d' },
+  'EUR/USD (siła USD)':    { desc: 'Dzienna zmiana kursu EUR/USD. Wzrost = euro silniejsze = dolar słabszy = lepsza płynność globalna, tańsze surowce dla importerów.', rawUnit: '%', rawLabel: 'Zmiana kursu dziś' },
+  'DAX + FTSE (30 dni)':   { desc: 'Średnia zmiana DAX (Niemcy, 40 spółek) i FTSE 100 (UK, 100 spółek) w ciągu 30 dni. Reprezentuje szeroki rynek akcji Europy Zachodniej.', rawUnit: '%', rawLabel: 'Zmiana 30d (śr.)' },
+  'Indeksy (1 dzień)':     { desc: 'Dzienna zmiana indeksów giełdowych regionu. Szybki sygnał bieżącego nastroju inwestorów.', rawUnit: '%', rawLabel: 'Zmiana dziś (śr.)' },
+  'EUR+GBP+CHF (kurs)':    { desc: 'Średnia dzienna zmiana koszyka walut europejskich (EUR, GBP, CHF) vs USD. Umocnienie euro i funta sygnalizuje lepszą kondycję gospodarki Europy.', rawUnit: '%', rawLabel: 'Zmiana koszyka dziś' },
+  'Gaz (import)':          { desc: 'Dzienna zmiana ceny gazu ziemnego. Europa i Polska importują gaz — wzrost cen zwiększa koszty energii, inflację i ciąży na marżach firm.', rawUnit: '%', rawLabel: 'Zmiana dziś' },
+  'Gaz (1 dzień)':         { desc: 'Dzienna zmiana ceny gazu ziemnego — kluczowego surowca energetycznego. Wahania wpływają na koszty energii w Europie i Azji.', rawUnit: '%', rawLabel: 'Zmiana dziś' },
+  'WIG20 (30 dni)':        { desc: 'Zmiana indeksu WIG20 (20 największych spółek GPW Warszawa) w ciągu 30 dni. Bezpośredni wskaźnik kondycji polskiego rynku akcji.', rawUnit: '%', rawLabel: 'Zmiana 30d' },
+  'WIG20 (1 dzień)':       { desc: 'Dzienna zmiana WIG20. Bieżący nastrój na polskiej giełdzie papierów wartościowych.', rawUnit: '%', rawLabel: 'Zmiana dziś' },
+  'PLN/EUR (kurs)':        { desc: 'Zmiana kursu EUR/USD jako proxy siły PLN — Polska jest silnie powiązana gospodarczo ze strefą euro. Słabe euro = słabszy złoty = droższy import.', rawUnit: '%', rawLabel: 'Zmiana kursu dziś' },
+  'DAX (korelacja)':       { desc: 'Dzienna zmiana DAX (Niemcy). Polska gospodarka jest silnie skorelowana z Niemcami — głównym partnerem handlowym. Słaby DAX często ciągnie GPW w dół.', rawUnit: '%', rawLabel: 'Zmiana dziś' },
+  'Nikkei + FXI (30 dni)': { desc: 'Średnia zmiana Nikkei 225 (Japonia) i FXI (ETF na największe spółki chińskie) w ciągu 30 dni. Reprezentuje dwie największe gospodarki azjatyckie.', rawUnit: '%', rawLabel: 'Zmiana 30d (śr.)' },
+  'JPY+CNY+AUD (kurs)':    { desc: 'Średnia dzienna zmiana koszyka walut azjatyckich (jen, juan, dolar australijski) vs USD. Umocnienie = silniejszy region, więcej kapitału napływa do Azji.', rawUnit: '%', rawLabel: 'Zmiana koszyka dziś' },
+  'Miedź (przemysł)':      { desc: 'Dzienna zmiana ceny miedzi. Azja (głównie Chiny) to największy konsument miedzi — rosnące ceny sygnalizują silny popyt przemysłowy i ożywienie gospodarcze.', rawUnit: '%', rawLabel: 'Zmiana dziś' },
+  'Miedź (1 dzień)':       { desc: 'Dzienna zmiana ceny miedzi. Nazywana „dr. Copper" bo często wyprzedza koniunkturę — wzrost = wzrost popytu przemysłowego.', rawUnit: '%', rawLabel: 'Zmiana dziś' },
+  'Miedź (eksport)':       { desc: 'Zmiana ceny miedzi w ciągu 30 dni. Wiele rynków wschodzących (Brazylia, RPA, Chile) eksportuje miedź — wyższe ceny = wyższe przychody z eksportu.', rawUnit: '%', rawLabel: 'Zmiana 30d' },
+  'EWZ EM (30 dni)':       { desc: 'Zmiana ETF EWZ (iShares MSCI Brazil) w ciągu 30 dni. Szeroki proxy rynków wschodzących i Ameryki Łacińskiej — mierzy apetyt na ryzyko w tym regionie.', rawUnit: '%', rawLabel: 'Zmiana 30d' },
+  'EWZ EM (1 dzień)':      { desc: 'Dzienna zmiana ETF EWZ (Brazil/EM). Bieżący nastrój inwestorów wobec rynków wschodzących.', rawUnit: '%', rawLabel: 'Zmiana dziś' },
+  'Ropa (eksport)':        { desc: 'Zmiana ceny ropy w ciągu 30 dni. Kraje eksportujące ropę (Brazylia, Arabia Saudyjska, Nigeria) korzystają na jej wzroście — wyższe wpływy budżetowe.', rawUnit: '%', rawLabel: 'Zmiana 30d' },
+  'USD (siła, ryzyko)':    { desc: 'Siła dolara (odwrotność EUR/USD). Silny dolar to ryzyko dla rynków wschodzących: droższy dług denominowany w USD i odpływ kapitału z EM do USA.', rawUnit: '%', rawLabel: 'Siła USD dziś' },
+  'Złoto (30 dni)':        { desc: 'Zmiana ceny złota (futures GC=F) w ciągu 30 dni. Wzrost złota sygnalizuje popyt na bezpieczną przystań lub oczekiwania inflacyjne.', rawUnit: '%', rawLabel: 'Zmiana 30d' },
+  'Złoto (eksport)':       { desc: 'Zmiana ceny złota w ciągu 30 dni. Australia i RPA to wiodący producenci złota — wyższe ceny złota bezpośrednio zwiększają wartość ich eksportu.', rawUnit: '%', rawLabel: 'Zmiana 30d' },
+  'Ropa (30 dni)':         { desc: 'Zmiana ceny ropy WTI w ciągu 30 dni. Wpływa na koszty energii i przychody krajów eksportujących surowce energetyczne.', rawUnit: '%', rawLabel: 'Zmiana 30d' },
+  'Pszenica (1 dzień)':    { desc: 'Dzienna zmiana ceny pszenicy (futures ZW=F). Sygnał bezpieczeństwa żywnościowego i kosztów rolniczych — ważne dla krajów eksportujących zboże.', rawUnit: '%', rawLabel: 'Zmiana dziś' },
+  'ASX200 (30 dni)':       { desc: 'Zmiana australijskiego indeksu ASX 200 (200 największych spółek notowanych w Sydney) w ciągu 30 dni. Główny barometr australijskiej gospodarki.', rawUnit: '%', rawLabel: 'Zmiana 30d' },
+  'ASX200 (1 dzień)':      { desc: 'Dzienna zmiana ASX 200. Bieżący nastrój na australijskiej giełdzie — Australia otwiera sesję jako pierwsza spośród głównych rynków.', rawUnit: '%', rawLabel: 'Zmiana dziś' },
+  'AUD/USD (kurs)':        { desc: 'Zmiana kursu dolara australijskiego vs USD. AUD jest walutą surowcową — umacnia się gdy rośnie popyt na rudę żelaza, węgiel i złoto, które Australia eksportuje.', rawUnit: '%', rawLabel: 'Zmiana kursu dziś' },
+  'EZA SA (30 dni)':       { desc: 'Zmiana ETF EZA (iShares MSCI South Africa) w ciągu 30 dni. Proxy rynku akcji Afryki Południowej — największej i najdojrzalszej giełdy kontynentu.', rawUnit: '%', rawLabel: 'Zmiana 30d' },
+  'EZA SA (1 dzień)':      { desc: 'Dzienna zmiana ETF EZA. Bieżący nastrój na rynku afrykańskim — RPA jest bramą dla kapitału inwestycyjnego w całej Afryce.', rawUnit: '%', rawLabel: 'Zmiana dziś' },
+  'Bovespa (30 dni)':      { desc: 'Zmiana brazylijskiego indeksu Bovespa (B3 São Paulo) w ciągu 30 dni. Największa giełda Ameryki Łacińskiej — kluczowy barometr całego regionu.', rawUnit: '%', rawLabel: 'Zmiana 30d' },
+  'Bovespa (1 dzień)':     { desc: 'Dzienna zmiana Bovespa. Bieżący nastrój na rynku latynoamerykańskim.', rawUnit: '%', rawLabel: 'Zmiana dziś' },
+}
+
+function ComponentBar({ name, rawValue, contribution, weight }: {
+  name: string
+  rawValue: number
+  contribution: number
+  weight: number
+}) {
   const isPos = contribution >= 0
-  const maxWidth = 120 // px
+  const maxWidth = 120
   const barWidth = Math.min(Math.abs(contribution) / 25 * maxWidth, maxWidth)
+  const meta = COMPONENT_META[name]
+
   return (
-    <div className="flex items-center gap-3 py-1.5">
-      <div className="w-40 text-xs text-gray-400 truncate flex-shrink-0">{name}</div>
-      <div className="flex items-center gap-1 flex-1">
-        {/* Lewa strona (ujemna) */}
-        <div className="flex-1 flex justify-end">
-          {!isPos && (
-            <div
-              className="h-2 rounded-sm bg-finance-red"
-              style={{ width: barWidth }}
-            />
+    <div className="py-3 border-b border-gray-700/30 last:border-0">
+      {/* Wiersz: nazwa + pasek + score + waga */}
+      <div className="flex items-center gap-3">
+        <div className="w-44 text-xs text-white font-medium flex-shrink-0 leading-tight">{name}</div>
+        <div className="flex items-center gap-1 flex-1">
+          <div className="flex-1 flex justify-end">
+            {!isPos && (
+              <div className="h-2 rounded-sm bg-finance-red" style={{ width: barWidth }} />
+            )}
+          </div>
+          <div className="w-px h-4 bg-gray-600" />
+          <div className="flex-1">
+            {isPos && (
+              <div className="h-2 rounded-sm bg-finance-green" style={{ width: barWidth }} />
+            )}
+          </div>
+        </div>
+        <div className={`w-14 text-xs text-right font-semibold flex-shrink-0 ${isPos ? 'text-finance-green' : 'text-finance-red'}`}>
+          {isPos ? '+' : ''}{contribution.toFixed(1)} pkt
+        </div>
+        <div className="w-8 text-xs text-gray-600 text-right flex-shrink-0">{(weight * 100).toFixed(0)}%</div>
+      </div>
+
+      {/* Opis i wartość surowa */}
+      {meta && (
+        <div className="mt-1.5 pl-0 space-y-0.5">
+          <p className="text-xs text-gray-500 leading-relaxed">{meta.desc}</p>
+          {meta.rawUnit && (
+            <p className="text-xs">
+              <span className="text-gray-600">{meta.rawLabel ?? 'Wartość'}:</span>{' '}
+              <span className={`font-medium ${rawValue >= 0 ? 'text-finance-green' : 'text-finance-red'}`}>
+                {rawValue >= 0 ? '+' : ''}{rawValue.toFixed(2)}{meta.rawUnit}
+              </span>
+              <span className="text-gray-600 ml-2">→ wpływ na score: {isPos ? '+' : ''}{contribution.toFixed(1)} pkt</span>
+            </p>
           )}
         </div>
-        {/* Środek */}
-        <div className="w-px h-4 bg-gray-600" />
-        {/* Prawa strona (pozytywna) */}
-        <div className="flex-1">
-          {isPos && (
-            <div
-              className="h-2 rounded-sm bg-finance-green"
-              style={{ width: barWidth }}
-            />
-          )}
-        </div>
-      </div>
-      <div className={`w-14 text-xs text-right font-medium flex-shrink-0 ${isPos ? 'text-finance-green' : 'text-finance-red'}`}>
-        {isPos ? '+' : ''}{contribution.toFixed(1)}
-      </div>
-      <div className="w-8 text-xs text-gray-600 text-right flex-shrink-0">{(weight * 100).toFixed(0)}%</div>
+      )}
     </div>
   )
 }
 
 interface Props {
   region: RegionScore
-  analysis: GlobalAnalysis
   newsHeadlines: string[]
   onClose: () => void
 }
 
-export default function RegionDetailModal({ region, analysis, newsHeadlines, onClose }: Props) {
-  const [aiText, setAiText] = useState<string | null>(null)
+export default function RegionDetailModal({ region, newsHeadlines, onClose }: Props) {
+  const [aiResult, setAiResult] = useState<{ text: string; model: string } | null>(null)
   const [aiLoading, setAiLoading] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
 
@@ -59,8 +116,8 @@ export default function RegionDetailModal({ region, analysis, newsHeadlines, onC
     setAiLoading(true)
     setAiError(null)
     try {
-      const text = await analyzeRegionAI(region.id, newsHeadlines)
-      setAiText(text)
+      const result = await analyzeRegionAI(region.id, newsHeadlines)
+      setAiResult(result)
     } catch (e: any) {
       setAiError(e.message ?? 'Błąd analizy AI')
     } finally {
@@ -74,7 +131,7 @@ export default function RegionDetailModal({ region, analysis, newsHeadlines, onC
       style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div className="glass-card rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+      <div className="glass-card rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-700/50">
           <div className="flex items-center gap-3">
@@ -107,17 +164,17 @@ export default function RegionDetailModal({ region, analysis, newsHeadlines, onC
           {/* Składowe score */}
           <div>
             <h3 className="text-white font-semibold mb-3 text-sm uppercase tracking-wide">Składowe oceny</h3>
-            <div className="space-y-0.5">
+            <div>
               {region.components.map(c => (
-                <ComponentBar key={c.name} {...c} />
+                <ComponentBar key={c.name} name={c.name} rawValue={c.rawValue} contribution={c.contribution} weight={c.weight} />
               ))}
             </div>
-            <div className="mt-2 flex items-center gap-2 text-xs text-gray-500">
+            <div className="mt-3 flex items-center gap-2 text-xs text-gray-500">
               <div className="w-3 h-2 rounded-sm bg-finance-green" />
               <span>pozytywny wpływ</span>
               <div className="w-3 h-2 rounded-sm bg-finance-red ml-2" />
               <span>negatywny wpływ</span>
-              <span className="ml-auto">Szerokość paska = siła wpływu</span>
+              <span className="ml-auto">Szerokość paska = siła wpływu na score</span>
             </div>
           </div>
 
@@ -125,7 +182,7 @@ export default function RegionDetailModal({ region, analysis, newsHeadlines, onC
           <div>
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-white font-semibold text-sm uppercase tracking-wide">Analiza AI</h3>
-              {!aiText && !aiLoading && (
+              {!aiResult && !aiLoading && (
                 <button
                   onClick={handleAnalyzeAI}
                   className="flex items-center gap-2 bg-finance-green hover:bg-emerald-600 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
@@ -152,19 +209,24 @@ export default function RegionDetailModal({ region, analysis, newsHeadlines, onC
               </div>
             )}
 
-            {aiText && (
+            {aiResult && (
               <div className="bg-gray-800/50 rounded-xl p-4">
-                <MarkdownRenderer content={aiText} />
-                <button
-                  onClick={handleAnalyzeAI}
-                  className="mt-4 text-xs text-gray-500 hover:text-gray-300 transition-colors"
-                >
-                  Regeneruj analizę
-                </button>
+                <MarkdownRenderer content={aiResult.text} />
+                <div className="mt-4 flex items-center justify-between gap-4">
+                  <span className="text-xs text-gray-600 bg-gray-700/40 px-2 py-1 rounded">
+                    Model: {aiResult.model}
+                  </span>
+                  <button
+                    onClick={handleAnalyzeAI}
+                    className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+                  >
+                    Regeneruj analizę
+                  </button>
+                </div>
               </div>
             )}
 
-            {!aiText && !aiLoading && !aiError && (
+            {!aiResult && !aiLoading && !aiError && (
               <div className="text-gray-500 text-sm py-2">
                 Kliknij "Analizuj AI" aby wygenerować szczegółową analizę geopolityczną i inwestycyjną tego regionu z uwzględnieniem newsów i danych rynkowych.
               </div>

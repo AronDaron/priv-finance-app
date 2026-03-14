@@ -9,12 +9,15 @@ import ErrorMessage from '../ui/ErrorMessage'
 
 // Mapowanie regionId → NewsRegion (do pobierania newsów dla AI)
 const REGION_NEWS_MAP: Record<string, NewsRegion> = {
-  usa:        'us',
-  europe:     'eu',
-  poland:     'pl',
-  asia:       'asia',
-  latam_em:   'world',
-  commodities: 'world',
+  usa:          'us',
+  europe:       'eu',
+  poland:       'pl',
+  asia:         'asia',
+  latam_em:     'world',
+  commodities:  'world',
+  australia:    'world',
+  africa:       'world',
+  south_america: 'world',
 }
 
 export default function GlobalView() {
@@ -23,7 +26,6 @@ export default function GlobalView() {
   const [error, setError] = useState<string | null>(null)
   const [selectedRegion, setSelectedRegion] = useState<RegionScore | null>(null)
   const [regionNews, setRegionNews] = useState<string[]>([])
-  const [lastUpdated, setLastUpdated] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -31,7 +33,6 @@ export default function GlobalView() {
     try {
       const data = await fetchGlobalAnalysis()
       setAnalysis(data)
-      setLastUpdated(new Date().toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' }))
     } catch (e: any) {
       setError(e.message ?? 'Błąd pobierania danych')
     } finally {
@@ -95,7 +96,7 @@ export default function GlobalView() {
 
       {/* Kafelki regionów */}
       <div>
-        <p className="text-gray-500 text-xs mb-3 uppercase tracking-wide">Regiony — kliknij aby zobaczyć szczegóły i analizę AI</p>
+        <p className="text-gray-500 text-xs mb-3 uppercase tracking-wide">Regiony i Sektory — kliknij aby zobaczyć szczegóły i analizę AI</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {sorted.map(region => (
             <RegionCard
@@ -108,25 +109,31 @@ export default function GlobalView() {
       </div>
 
       {/* Legenda */}
-      <div className="glass-card rounded-xl p-4 flex flex-wrap gap-6 text-xs text-gray-400">
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full bg-finance-green" />
-          <span>Score ≥65 — niskie ryzyko</span>
+      <div className="glass-card rounded-xl p-4 space-y-3 text-xs text-gray-400">
+        <div className="flex flex-wrap gap-6">
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-finance-green" />
+            <span>Score ≥65 — niskie ryzyko</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-yellow-500" />
+            <span>Score 40–64 — średnie ryzyko</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-finance-red" />
+            <span>Score &lt;40 — wysokie ryzyko</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span>↑↓→</span>
+            <span>Trend 1-dniowy indeksu regionu</span>
+          </div>
+          <div className="ml-auto text-gray-600">
+            Ocena orientacyjna. Nie jest rekomendacją inwestycyjną.
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full bg-yellow-500" />
-          <span>Score 40–64 — średnie ryzyko</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full bg-finance-red" />
-          <span>Score &lt;40 — wysokie ryzyko</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span>↑↓→</span>
-          <span>Trend 1-dniowy indeksu regionu</span>
-        </div>
-        <div className="ml-auto text-gray-600">
-          Ocena orientacyjna. Nie jest rekomendacją inwestycyjną.
+        <div className="border-t border-gray-700/50 pt-2 flex flex-wrap gap-x-6 gap-y-1 text-gray-500">
+          <span><span className="text-gray-400 font-medium">VIX</span> — indeks strachu (zmienność rynku). &lt;15 spokój · 15–25 umiarkowany · 25–35 wysoki · &gt;35 panika. Im wyższy, tym gorzej dla wycen.</span>
+          <span><span className="text-gray-400 font-medium">US10Y</span> — rentowność 10-letnich obligacji USA. Wzrost powyżej 5% oznacza zacieśnienie finansowe i presję na akcje.</span>
         </div>
       </div>
 
@@ -134,7 +141,6 @@ export default function GlobalView() {
       {selectedRegion && (
         <RegionDetailModal
           region={selectedRegion}
-          analysis={analysis}
           newsHeadlines={regionNews}
           onClose={() => { setSelectedRegion(null); setRegionNews([]) }}
         />
