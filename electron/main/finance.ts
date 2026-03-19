@@ -199,7 +199,21 @@ export async function fetchAssetMeta(ticker: string): Promise<{ region: string; 
     else if (quote.quoteType === 'MUTUALFUND') assetType = 'Fundusz'
     else if (quote.quoteType === 'CRYPTOCURRENCY') assetType = 'Krypto'
 
-    const sector: string | null = ap.sector ?? (quote.quoteType === 'ETF' ? 'ETF' : null)
+    const SECTOR_PL: Record<string, string> = {
+      'Basic Materials': 'Surowce podstawowe',
+      'Communication Services': 'Usługi komunikacyjne',
+      'Consumer Cyclical': 'Dobra cykliczne',
+      'Consumer Defensive': 'Dobra podstawowe',
+      'Energy': 'Energetyka',
+      'Financial Services': 'Usługi finansowe',
+      'Healthcare': 'Ochrona zdrowia',
+      'Industrials': 'Przemysł',
+      'Real Estate': 'Nieruchomości',
+      'Technology': 'Technologia',
+      'Utilities': 'Usługi komunalne',
+    }
+    const rawSector: string | null = ap.sector ?? (quote.quoteType === 'ETF' ? 'ETF' : null)
+    const sector = rawSector ? (SECTOR_PL[rawSector] ?? rawSector) : null
 
     return { region, assetType, sector }
   } catch {

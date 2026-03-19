@@ -24,13 +24,14 @@ function CustomTooltip({ active, payload, label }: any) {
   )
 }
 
-export default function PortfolioHistoryChart({ data }: { data: DataPoint[] }) {
+export default function PortfolioHistoryChart({ data, fillHeight = false }: { data: DataPoint[], fillHeight?: boolean }) {
   if (data.length === 0) return null
 
   return (
-    <div className="glass-card rounded-xl p-5">
+    <div className={`glass-card rounded-xl p-5 ${fillHeight ? 'h-full flex flex-col' : ''}`}>
       <h3 className="text-sm font-semibold text-gray-200 mb-4">Historia wartości portfela (PLN)</h3>
-      <ResponsiveContainer width="100%" height={460}>
+      <div className={fillHeight ? 'flex-1 min-h-0' : ''}>
+      <ResponsiveContainer width="100%" height={fillHeight ? '100%' : 460}>
         <AreaChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
           <defs>
             <linearGradient id="portfolioGradient" x1="0" y1="0" x2="0" y2="1">
@@ -67,6 +68,7 @@ export default function PortfolioHistoryChart({ data }: { data: DataPoint[] }) {
           />
         </AreaChart>
       </ResponsiveContainer>
+      </div>
     </div>
   )
 }

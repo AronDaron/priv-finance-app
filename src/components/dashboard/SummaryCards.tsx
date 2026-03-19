@@ -7,6 +7,7 @@ interface Props {
   assetCount: number
   totalAnnualDividend?: number
   cashValuePLN?: number
+  compact?: boolean
 }
 
 const IconWallet = () => (
@@ -104,7 +105,7 @@ interface CardDef {
   icon: React.ReactNode
 }
 
-export default function SummaryCards({ totalValue, totalPnL, totalROI, assetCount, totalAnnualDividend = 0, cashValuePLN = 0 }: Props) {
+export default function SummaryCards({ totalValue, totalPnL, totalROI, assetCount, totalAnnualDividend = 0, cashValuePLN = 0, compact = false }: Props) {
   const pnlPositive = totalPnL >= 0
   const roiPositive = totalROI >= 0
 
@@ -153,8 +154,7 @@ export default function SummaryCards({ totalValue, totalPnL, totalROI, assetCoun
     })
   }
 
-  const cols = cards.length <= 4 ? 4 : cards.length <= 5 ? 5 : 6
-  const gridClass = `grid grid-cols-2 lg:grid-cols-${cols} gap-4`
+  const gridClass = compact ? 'grid grid-cols-2 gap-4' : `grid grid-cols-2 lg:grid-cols-${cards.length <= 4 ? 4 : cards.length <= 5 ? 5 : 6} gap-4`
 
   return (
     <div className={gridClass}>

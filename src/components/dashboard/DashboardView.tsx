@@ -234,14 +234,29 @@ export default function DashboardView() {
         </div>
       ) : (
         <>
-          <SummaryCards
-            totalValue={totalValuePLN}
-            totalPnL={totalPnL}
-            totalROI={totalROI}
-            assetCount={assets.length}
-            totalAnnualDividend={totalAnnualDividendPLN}
-            cashValuePLN={cashValuePLN}
-          />
+          {/* Górna sekcja: karty (lewa połowa) + historia (prawa połowa) */}
+          <div className="grid grid-cols-2 gap-6">
+            <SummaryCards
+              totalValue={totalValuePLN}
+              totalPnL={totalPnL}
+              totalROI={totalROI}
+              assetCount={assets.length}
+              totalAnnualDividend={totalAnnualDividendPLN}
+              cashValuePLN={cashValuePLN}
+              compact
+            />
+            <div className="flex flex-col h-full">
+              <div className="flex items-center gap-2 mb-4">
+                <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Historia</h2>
+                <div className="flex-1 h-px bg-gray-700/50" />
+              </div>
+              <div className="flex-1 min-h-0">
+                <PortfolioHistoryChart data={historyData} fillHeight />
+              </div>
+            </div>
+          </div>
+
+          {/* Dolna sekcja: alokacja (portfel+regiony) + sektory+rodzaj aktywów */}
           <div className="grid grid-cols-2 gap-6 items-start">
             <div>
               <div className="flex items-center gap-2 mb-4">
@@ -251,16 +266,17 @@ export default function DashboardView() {
               <div className="grid grid-cols-2 gap-4">
                 <AllocationPieChart title="Portfel" data={portfolioData} />
                 <AllocationPieChart title="Regiony" data={regionData} />
-                <AllocationPieChart title="Sektory" data={sectorData} />
-                <AllocationPieChart title="Rodzaj aktywów" data={typeData} />
               </div>
             </div>
             <div>
               <div className="flex items-center gap-2 mb-4">
-                <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Historia</h2>
+                <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Struktura</h2>
                 <div className="flex-1 h-px bg-gray-700/50" />
               </div>
-              <PortfolioHistoryChart data={historyData} />
+              <div className="grid grid-cols-2 gap-4">
+                <AllocationPieChart title="Sektory" data={sectorData} />
+                <AllocationPieChart title="Rodzaj aktywów" data={typeData} />
+              </div>
             </div>
           </div>
         </>
