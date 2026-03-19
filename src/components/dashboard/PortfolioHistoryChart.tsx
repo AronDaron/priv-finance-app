@@ -6,46 +6,64 @@ interface DataPoint {
   value: number
 }
 
+function CustomTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null
+  const val = payload[0].value as number
+  const date = new Date(label + 'T12:00:00').toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' })
+  return (
+    <div style={{
+      background: '#0d1117',
+      border: '1px solid rgba(16,185,129,0.35)',
+      borderRadius: 10,
+      padding: '10px 14px',
+      boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+    }}>
+      <p style={{ color: '#6b7280', fontSize: 11, marginBottom: 4 }}>{date}</p>
+      <p style={{ color: '#10b981', fontSize: 15, fontWeight: 700, margin: 0 }}>{formatCurrency(val, 'PLN')}</p>
+    </div>
+  )
+}
+
 export default function PortfolioHistoryChart({ data }: { data: DataPoint[] }) {
   if (data.length === 0) return null
 
   return (
     <div className="glass-card rounded-xl p-5">
-      <h3 className="text-sm font-medium text-gray-400 mb-4">Historia wartości portfela (PLN)</h3>
+      <h3 className="text-sm font-semibold text-gray-200 mb-4">Historia wartości portfela (PLN)</h3>
       <ResponsiveContainer width="100%" height={460}>
         <AreaChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
           <defs>
             <linearGradient id="portfolioGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
-              <stop offset="95%" stopColor="#10b981" stopOpacity={0.02} />
+              <stop offset="0%" stopColor="#10b981" stopOpacity={0.45} />
+              <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
             </linearGradient>
           </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="rgba(75,85,99,0.3)" />
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(75,85,99,0.15)" />
           <XAxis
             dataKey="date"
-            tick={{ fill: '#9ca3af', fontSize: 11 }}
+            tick={{ fill: '#6b7280', fontSize: 11 }}
             tickFormatter={d => new Date(d + 'T12:00:00').toLocaleDateString('pl-PL', { month: 'short', day: 'numeric' })}
             tickCount={6}
+            axisLine={{ stroke: 'rgba(75,85,99,0.2)' }}
+            tickLine={false}
           />
           <YAxis
-            tick={{ fill: '#9ca3af', fontSize: 11 }}
+            tick={{ fill: '#6b7280', fontSize: 11 }}
             tickFormatter={v => `${(v / 1000).toFixed(0)}k`}
             width={50}
+            axisLine={false}
+            tickLine={false}
           />
-          <Tooltip
-            formatter={(val) => [formatCurrency(val as number, 'PLN'), 'Wartość portfela']}
-            labelFormatter={l => new Date(l + 'T12:00:00').toLocaleDateString('pl-PL')}
-            contentStyle={{ background: '#1f2937', border: '1px solid #374151', borderRadius: 8 }}
-            labelStyle={{ color: '#e5e7eb' }}
-          />
+          <Tooltip content={<CustomTooltip />} />
           <Area
             type="monotone"
             dataKey="value"
             stroke="#10b981"
-            strokeWidth={2}
+            strokeWidth={2.5}
+            strokeLinecap="round"
             fill="url(#portfolioGradient)"
             dot={false}
-            activeDot={{ r: 4, fill: '#10b981' }}
+            activeDot={{ r: 5, fill: '#10b981', stroke: '#ffffff', strokeWidth: 2 }}
           />
         </AreaChart>
       </ResponsiveContainer>

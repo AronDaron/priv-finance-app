@@ -61,3 +61,45 @@ input, textarea, [contenteditable] {
   border: 1px solid rgba(16, 185, 129, 0.18);
   box-shadow: 0 4px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
+
+/* Stat cards — kolorowe pasy górne */
+.stat-card {
+  background: linear-gradient(145deg, rgba(31, 41, 55, 0.8) 0%, rgba(17, 24, 39, 0.9) 100%);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(75, 85, 99, 0.25);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  border-top: 3px solid transparent;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+.stat-card:hover {
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+.stat-card-positive {
+  border-top-color: #10b981;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3), 0 0 20px rgba(16, 185, 129, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.stat-card-positive:hover {
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 28px rgba(16, 185, 129, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+.stat-card-negative {
+  border-top-color: #ef4444;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3), 0 0 20px rgba(239, 68, 68, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.stat-card-negative:hover {
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 28px rgba(239, 68, 68, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+.stat-card-neutral {
+  border-top-color: rgba(99, 102, 241, 0.8);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3), 0 0 20px rgba(99, 102, 241, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.stat-card-neutral:hover {
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 28px rgba(99, 102, 241, 0.09), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+.stat-card-gold {
+  border-top-color: rgba(245, 158, 11, 0.9);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3), 0 0 20px rgba(245, 158, 11, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.stat-card-gold:hover {
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 28px rgba(245, 158, 11, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}

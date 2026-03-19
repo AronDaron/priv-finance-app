@@ -84,8 +84,10 @@ export default function StockDetailView() {
               <button
                 key={p}
                 onClick={() => setPeriod(p)}
-                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                  period === p ? 'bg-finance-green text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${
+                  period === p
+                    ? 'bg-finance-green text-white shadow-sm shadow-finance-green/30 ring-2 ring-finance-green/20'
+                    : 'glass-card text-gray-400 hover:text-white'
                 }`}
               >
                 {p}

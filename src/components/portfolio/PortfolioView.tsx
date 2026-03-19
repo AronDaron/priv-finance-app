@@ -116,7 +116,7 @@ export default function PortfolioView() {
         <h2 className="text-lg font-semibold text-white">Portfel</h2>
         <button
           onClick={() => setShowAddModal(true)}
-          className="bg-finance-green hover:bg-emerald-600 text-white font-medium px-4 py-2 rounded-lg transition-colors"
+          className="bg-finance-green hover:bg-emerald-600 text-white font-medium px-4 py-2 rounded-full ring-2 ring-finance-green/20 hover:ring-finance-green/40 transition-all"
         >
           + Dodaj spółkę
         </button>
@@ -128,11 +128,15 @@ export default function PortfolioView() {
       {!loading && !error && (
         <>
           {groups.map(({ portfolio, assets: pfAssets, cashAccounts: pfCash }) => (
-            <div key={portfolio.id} className="mb-8 rounded-xl border border-gray-700/50 p-4 bg-finance-card/30">
+            <div key={portfolio.id} className="mb-8 glass-card rounded-xl overflow-hidden">
+              {/* Kolorowy pasek indigo na górze */}
+              <div style={{ height: 3, background: 'linear-gradient(90deg, #6366f1, #818cf8)', boxShadow: '0 0 8px rgba(99,102,241,0.4)' }} />
+              <div className="p-4">
               {/* Nagłówek portfela — zawsze widoczny */}
-              <div className="flex items-center justify-between mb-3 pb-2 border-b border-finance-green/30">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <h3 className="text-base font-semibold text-finance-green">{portfolio.name}</h3>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">{portfolio.name}</h3>
+                  <div className="flex-1 h-px bg-gray-700/50" />
                   <PortfolioTagEditor
                     portfolioId={portfolio.id}
                     currentTags={portfolio.tags ?? []}
@@ -141,7 +145,7 @@ export default function PortfolioView() {
                 </div>
                 <button
                   onClick={() => setCashModalPortfolioId(portfolio.id)}
-                  className="border border-gray-600 text-gray-300 hover:text-white hover:border-gray-400 font-medium px-3 py-1.5 rounded-lg transition-colors text-sm flex-shrink-0"
+                  className="px-4 py-1.5 rounded-full text-sm font-medium glass-card text-gray-400 hover:text-white transition-all duration-200 flex-shrink-0 ml-3"
                 >
                   Wpłata / Wypłata
                 </button>
@@ -150,13 +154,30 @@ export default function PortfolioView() {
               {/* Gotówka portfela */}
               {pfCash.length > 0 && (
                 <div className="mb-4 flex flex-wrap gap-3">
-                  {pfCash.map(acc => (
-                    <div key={acc.id} className="glass-card rounded-xl px-5 py-4 flex flex-col gap-1">
-                      <p className="text-xs text-gray-400 uppercase tracking-wider">Gotówka {acc.currency}</p>
-                      <p className="text-xl font-bold text-gray-200">{formatCurrency(acc.balance, acc.currency)}</p>
-                      <p className="text-xs text-gray-500">≈ {formatCurrency(acc.balance * toPlnRate(acc.currency), 'PLN')} PLN</p>
-                    </div>
-                  ))}
+                  {pfCash.map(acc => {
+                    const isUsd = acc.currency === 'USD'
+                    const barColor = isUsd ? 'linear-gradient(90deg, #6366f1, #818cf8)' : 'linear-gradient(90deg, #f59e0b, #fbbf24)'
+                    const barShadow = isUsd ? '0 0 8px rgba(99,102,241,0.4)' : '0 0 8px rgba(245,158,11,0.4)'
+                    const iconBg = isUsd ? 'rgba(99,102,241,0.12)' : 'rgba(245,158,11,0.12)'
+                    const iconColor = isUsd ? '#818cf8' : '#f59e0b'
+                    return (
+                      <div key={acc.id} className="glass-card rounded-xl overflow-hidden">
+                        <div style={{ height: 3, background: barColor, boxShadow: barShadow }} />
+                        <div className="p-5">
+                          <div className="flex gap-3 mb-3">
+                            <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: iconBg }}>
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: iconColor }}>
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                            </div>
+                            <p className="text-xs uppercase tracking-widest text-gray-500 mt-1">Gotówka {acc.currency}</p>
+                          </div>
+                          <p className="text-2xl font-bold tabular-nums text-gray-200">{formatCurrency(acc.balance, acc.currency)}</p>
+                          <p className="text-xs text-gray-500 mt-1">≈ {formatCurrency(acc.balance * toPlnRate(acc.currency), 'PLN')} PLN</p>
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
 
@@ -169,7 +190,7 @@ export default function PortfolioView() {
                 <div className="glass-card rounded-xl overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="text-xs text-gray-400 uppercase tracking-wider border-b border-gray-700">
+                      <tr className="text-xs text-gray-500 uppercase tracking-widest border-b border-gray-700/70">
                         <th className="px-4 py-3 text-left">Ticker</th>
                         <th className="px-4 py-3 text-left">Nazwa</th>
                         <th className="px-4 py-3 text-right">Ilość</th>
@@ -199,6 +220,7 @@ export default function PortfolioView() {
                   </table>
                 </div>
               )}
+              </div>{/* /p-4 */}
             </div>
           ))}
 

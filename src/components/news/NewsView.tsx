@@ -65,7 +65,7 @@ function NewsCard({ item }: { item: NewsItem }) {
       href={item.link}
       target="_blank"
       rel="noopener noreferrer"
-      className="flex gap-2 p-3 glass-card rounded-lg hover:bg-white/5 transition-colors group"
+      className="flex gap-2 p-3 glass-card rounded-xl border-l-2 border-transparent hover:border-finance-green/30 hover:bg-white/[0.02] transition-all duration-200 group"
     >
       {/* Miniatura */}
       {item.thumbnail && !imgError ? (
@@ -199,14 +199,17 @@ export default function NewsView() {
       {/* Nagłówek */}
       <div className="flex items-center justify-between gap-4 mb-5 flex-shrink-0">
         <div>
-          <h1 className="text-white text-xl font-bold">Wiadomości</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Wiadomości</h1>
+            <div className="flex-1 h-px bg-gray-700/50" />
+          </div>
           <p className="text-gray-500 text-xs mt-0.5">
             Źródła RSS · {lastRefreshed ? `Odświeżono ${lastRefreshed.toLocaleTimeString('pl-PL', { timeStyle: 'short' })}` : 'Ładowanie...'}
           </p>
         </div>
         <button
           onClick={handleRefresh}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium glass-card text-gray-300 hover:text-white transition-colors"
+          className="flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-medium glass-card text-gray-400 hover:text-white transition-all duration-200"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}

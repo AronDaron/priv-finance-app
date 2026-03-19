@@ -47,13 +47,19 @@ interface Props {
 }
 
 export default function RegionCard({ region, onClick }: Props) {
-  const borderColor = region.risk === 'low' ? 'border-finance-green/30' : region.risk === 'medium' ? 'border-yellow-500/30' : 'border-finance-red/30'
+  const barColor = region.risk === 'low'
+    ? { bg: 'linear-gradient(90deg, #10b981, #34d399)', shadow: '0 0 8px rgba(16,185,129,0.4)' }
+    : region.risk === 'medium'
+    ? { bg: 'linear-gradient(90deg, #eab308, #facc15)', shadow: '0 0 8px rgba(234,179,8,0.4)' }
+    : { bg: 'linear-gradient(90deg, #ef4444, #f87171)', shadow: '0 0 8px rgba(239,68,68,0.4)' }
 
   return (
     <button
       onClick={onClick}
-      className={`glass-card border ${borderColor} rounded-xl p-5 text-left w-full transition-all hover:scale-[1.02] hover:shadow-lg hover:shadow-black/30 active:scale-100`}
+      className="glass-card rounded-xl overflow-hidden text-left w-full transition-all hover:scale-[1.02] hover:shadow-lg hover:shadow-black/30 active:scale-100"
     >
+      <div style={{ height: 3, background: barColor.bg, boxShadow: barColor.shadow }} />
+      <div className="p-5">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-2">
@@ -78,9 +84,10 @@ export default function RegionCard({ region, onClick }: Props) {
         <ScoreArc score={region.score} />
       </div>
 
-      <div className="mt-3 pt-3 border-t border-gray-700/50 text-xs text-gray-500 text-center">
+      <div className="mt-3 pt-3 border-t border-gray-700/50 text-xs text-gray-700 text-center" style={{ fontSize: 10 }}>
         Kliknij aby zobaczyć szczegóły
       </div>
+      </div>{/* /p-5 */}
     </button>
   )
 }

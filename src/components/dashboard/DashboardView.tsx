@@ -177,10 +177,10 @@ export default function DashboardView() {
       <div className="flex items-center gap-2 flex-wrap">
         <button
           onClick={() => setActivePortfolioId(null)}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+          className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${
             activePortfolioId === null
-              ? 'bg-finance-green text-white'
-              : 'glass-card text-gray-300 hover:text-white'
+              ? 'bg-finance-green text-white shadow-sm shadow-finance-green/30 ring-2 ring-finance-green/20'
+              : 'glass-card text-gray-400 hover:text-white hover:border-gray-500'
           }`}
         >
           Wszystkie
@@ -189,10 +189,10 @@ export default function DashboardView() {
           <button
             key={p.id}
             onClick={() => setActivePortfolioId(p.id)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${
               activePortfolioId === p.id
-                ? 'bg-finance-green text-white'
-                : 'glass-card text-gray-300 hover:text-white'
+                ? 'bg-finance-green text-white shadow-sm shadow-finance-green/30 ring-2 ring-finance-green/20'
+                : 'glass-card text-gray-400 hover:text-white hover:border-gray-500'
             }`}
           >
             {p.name}
@@ -207,17 +207,17 @@ export default function DashboardView() {
               onKeyDown={e => { if (e.key === 'Enter') handleCreatePortfolio(); if (e.key === 'Escape') setShowNewPortfolioInput(false) }}
               placeholder="Nazwa portfela"
               autoFocus
-              className="bg-gray-800 border border-gray-600 text-white text-sm px-3 py-2 rounded-lg w-40 focus:outline-none focus:border-finance-green"
+              className="bg-gray-800 border border-gray-600 text-white text-sm px-3 py-2 rounded-full w-40 focus:outline-none focus:border-finance-green focus:ring-1 focus:ring-finance-green/30"
             />
-            <button onClick={handleCreatePortfolio} className="text-finance-green text-sm hover:text-emerald-400">Utwórz</button>
-            <button onClick={() => setShowNewPortfolioInput(false)} className="text-gray-400 text-sm hover:text-white">Anuluj</button>
+            <button onClick={handleCreatePortfolio} className="text-finance-green text-sm hover:text-emerald-400 transition-colors">Utwórz</button>
+            <button onClick={() => setShowNewPortfolioInput(false)} className="text-gray-500 text-sm hover:text-white transition-colors">Anuluj</button>
           </div>
         ) : (
           <button
             onClick={() => setShowNewPortfolioInput(true)}
-            className="px-3 py-2 rounded-lg text-sm font-medium glass-card text-gray-400 hover:text-white transition-colors"
+            className="px-3 py-1.5 rounded-full text-sm font-medium glass-card text-gray-500 hover:text-white border border-dashed border-gray-600 hover:border-finance-green/50 transition-all duration-200"
           >
-            +
+            + nowy
           </button>
         )}
       </div>
@@ -242,14 +242,26 @@ export default function DashboardView() {
             totalAnnualDividend={totalAnnualDividendPLN}
             cashValuePLN={cashValuePLN}
           />
-          <div className="grid grid-cols-2 gap-4 items-start">
-            <div className="grid grid-cols-2 gap-4">
-              <AllocationPieChart title="Alokacja portfela" data={portfolioData} />
-              <AllocationPieChart title="Alokacja Regionalna" data={regionData} />
-              <AllocationPieChart title="Alokacja Sektorowa" data={sectorData} />
-              <AllocationPieChart title="Rodzaj Aktywów" data={typeData} />
+          <div className="grid grid-cols-2 gap-6 items-start">
+            <div>
+              <div className="flex items-center gap-2 mb-4">
+                <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Alokacja</h2>
+                <div className="flex-1 h-px bg-gray-700/50" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <AllocationPieChart title="Portfel" data={portfolioData} />
+                <AllocationPieChart title="Regiony" data={regionData} />
+                <AllocationPieChart title="Sektory" data={sectorData} />
+                <AllocationPieChart title="Rodzaj aktywów" data={typeData} />
+              </div>
             </div>
-            <PortfolioHistoryChart data={historyData} />
+            <div>
+              <div className="flex items-center gap-2 mb-4">
+                <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Historia</h2>
+                <div className="flex-1 h-px bg-gray-700/50" />
+              </div>
+              <PortfolioHistoryChart data={historyData} />
+            </div>
           </div>
         </>
       )}

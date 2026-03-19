@@ -136,7 +136,7 @@ export default function GlobalView() {
           <span className="text-gray-500 text-xs">Dane z: {fetchedAt}</span>
           <button
             onClick={load}
-            className="flex items-center gap-2 glass-card text-gray-300 hover:text-white text-sm px-4 py-2 rounded-lg transition-colors"
+            className="flex items-center gap-2 glass-card text-gray-300 hover:text-white text-sm px-4 py-2 rounded-full transition-all duration-200"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -154,13 +154,13 @@ export default function GlobalView() {
 
       {/* Kafelki sektorów i regionów */}
       <div>
-        <p className="text-gray-500 text-xs mb-3 uppercase tracking-wide">
-          Sektory i Regiony — kliknij aby zobaczyć szczegóły i analizę AI
-        </p>
         <div className="flex gap-4">
           {/* Lewa kolumna: Sektory */}
           <div className="w-[380px] flex-shrink-0 flex flex-col gap-4 border border-gray-700/60 rounded-xl p-4">
-            <p className="text-gray-300 text-xs uppercase tracking-wide font-semibold border-b border-gray-700/50 pb-2">Sektory</p>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Sektory</h2>
+              <div className="flex-1 h-px bg-gray-700/50" />
+            </div>
             {sectors.map(region => (
               <RegionCard
                 key={region.id}
@@ -172,7 +172,10 @@ export default function GlobalView() {
 
           {/* Prawa siatka: Regiony */}
           <div className="flex-1 flex flex-col gap-4 border border-gray-700/60 rounded-xl p-4">
-            <p className="text-gray-300 text-xs uppercase tracking-wide font-semibold border-b border-gray-700/50 pb-2">Regiony</p>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Regiony i Sektory</h2>
+              <div className="flex-1 h-px bg-gray-700/50" />
+            </div>
             <div className="grid grid-cols-2 gap-4">
               {regions.map(region => (
                 <RegionCard

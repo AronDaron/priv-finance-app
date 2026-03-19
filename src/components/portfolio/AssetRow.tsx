@@ -39,7 +39,7 @@ export default function AssetRow({ asset, quote, sparkline, usdPln = 4.0, eurPln
 
   return (
     <tr
-      className="border-b border-gray-800 hover:bg-gray-800/50 transition-colors cursor-pointer"
+      className="border-b border-gray-800 hover:bg-white/[0.03] border-l-2 border-l-transparent hover:border-l-finance-green/40 transition-colors cursor-pointer"
       onClick={() => navigate(`/portfolio/${asset.ticker}`)}
     >
       <td className="px-4 py-3 font-bold text-finance-green">{asset.ticker}</td>
@@ -75,7 +75,7 @@ export default function AssetRow({ asset, quote, sparkline, usdPln = 4.0, eurPln
         <div className="flex items-center justify-center gap-1">
           <button
             onClick={(e) => { e.stopPropagation(); onEdit() }}
-            className="text-gray-400 hover:text-white px-2 py-1.5 rounded transition-colors"
+            className="text-gray-600 hover:text-white hover:bg-white/10 rounded-lg p-1.5 transition-all"
             title="Edytuj"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -85,7 +85,7 @@ export default function AssetRow({ asset, quote, sparkline, usdPln = 4.0, eurPln
           </button>
           <button
             onClick={handleDelete}
-            className="bg-red-900/50 hover:bg-red-800/50 text-finance-red px-2 py-1.5 rounded transition-colors"
+            className="text-gray-600 hover:text-finance-red hover:bg-finance-red/10 rounded-lg p-1.5 transition-all"
             title="Usuń"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
