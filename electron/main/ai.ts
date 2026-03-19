@@ -328,3 +328,63 @@ Napisz analizę (max 300 słów):
 
   return callOpenRouter(WORLD_MODEL, systemPrompt, userPrompt, apiKey, 6000)
 }
+
+// ─── Chat (RAG Agent) ─────────────────────────────────────────────────────────
+
+export interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+async function callOpenRouterMessages(
+  model: string,
+  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+  apiKey: string,
+  maxTokens = 8000
+): Promise<string> {
+  if (!apiKey) throw new Error('Brak klucza API OpenRouter. Skonfiguruj go w Ustawieniach.')
+
+  const res = await fetch(OPENROUTER_URL, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'HTTP-Referer': APP_REFERER,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      max_tokens: maxTokens,
+      temperature: 0.5,
+    }),
+  })
+
+  if (res.status === 401) throw new Error('Nieprawidłowy klucz API OpenRouter.')
+  if (res.status === 429) throw new Error('Przekroczono limit zapytań. Spróbuj za chwilę.')
+  if (res.status >= 500) throw new Error('Błąd serwera OpenRouter. Spróbuj ponownie.')
+  if (!res.ok) throw new Error(`Błąd OpenRouter: ${res.status} ${res.statusText}`)
+
+  const data = await res.json() as {
+    choices?: Array<{ message?: { content?: string } }>
+  }
+  const content = data.choices?.[0]?.message?.content
+  if (!content) throw new Error('Brak treści w odpowiedzi OpenRouter.')
+  return content
+}
+
+/**
+ * Konwersacyjny agent AI z kontekstem portfela.
+ * Przyjmuje gotowy systemContext (zbudowany w index.ts z danych DB + yahoo-finance2)
+ * oraz historię konwersacji i wysyła do OpenRouter.
+ */
+export async function chatWithPortfolio(
+  messages: ChatMessage[],
+  systemContext: string,
+  apiKey: string
+): Promise<string> {
+  const openRouterMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+    { role: 'system', content: systemContext },
+    ...messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+  ]
+  return callOpenRouterMessages(MANAGER_MODEL, openRouterMessages, apiKey, 8000)
+}

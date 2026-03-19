@@ -30,7 +30,10 @@ import type {
   NewsRegion,
   GlobalAnalysis,
   RegionId,
+  ChatMessage,
 } from './types'
+
+export type { ChatMessage }
 
 // ─── Deklaracja typów dla window.electronAPI ─────────────────────────────────
 // TypeScript renderer nie importuje typów Electrona — deklarujemy ręcznie.
@@ -88,6 +91,7 @@ declare global {
       ai: {
         analyzeStock(ticker: string): Promise<AIReport>
         analyzePortfolio(): Promise<AIReport>
+        chat(messages: ChatMessage[]): Promise<string>
       }
       news: {
         fetchRegion(region: string): Promise<NewsItem[]>
@@ -523,6 +527,19 @@ export async function analyzeRegionAI(regionId: RegionId, newsHeadlines: string[
   return devApiPost<{ text: string; model: string }>('/ai/analyze-region', {
     regionId,
     newsHeadlines: JSON.stringify(newsHeadlines),
+    apiKey: apiKey ?? '',
+  })
+}
+
+// ─── AI Chat (RAG Agent) ──────────────────────────────────────────────────────
+
+export async function chatPortfolio(messages: ChatMessage[]): Promise<string> {
+  if (isElectron()) return window.electronAPI!.ai.chat(messages)
+  const apiKey = await getSetting('openrouter_api_key')
+  const assets = await getAssets()
+  return devApiPost<string>('/ai/chat', {
+    messages: JSON.stringify(messages),
+    assets: JSON.stringify(assets),
     apiKey: apiKey ?? '',
   })
 }

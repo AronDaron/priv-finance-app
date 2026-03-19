@@ -185,6 +185,33 @@ function createTables(): void {
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS news_archive (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      title       TEXT NOT NULL,
+      description TEXT,
+      source      TEXT,
+      region      TEXT NOT NULL,
+      pub_date    TEXT,
+      link        TEXT NOT NULL UNIQUE,
+      created_at  TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE VIRTUAL TABLE IF NOT EXISTS news_archive_fts USING fts5(
+      title, description, source, region,
+      content=news_archive,
+      content_rowid=id
+    );
+
+    CREATE TRIGGER IF NOT EXISTS news_archive_ai AFTER INSERT ON news_archive BEGIN
+      INSERT INTO news_archive_fts(rowid, title, description, source, region)
+      VALUES (new.id, new.title, new.description, new.source, new.region);
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS news_archive_ad AFTER DELETE ON news_archive BEGIN
+      INSERT INTO news_archive_fts(news_archive_fts, rowid, title, description, source, region)
+      VALUES ('delete', old.id, old.title, old.description, old.source, old.region);
+    END;
   `)
 }
 
@@ -458,4 +485,61 @@ export function getCashTransactions(portfolioId?: number): DBCashTransaction[] {
       .all(portfolioId) as DBCashTransaction[]
   }
   return db.prepare('SELECT * FROM cash_transactions ORDER BY date DESC').all() as DBCashTransaction[]
+}
+
+// ─── news_archive ──────────────────────────────────────────────────────────────
+
+export interface DBNewsItem {
+  id: number
+  title: string
+  description: string | null
+  source: string | null
+  region: string
+  pub_date: string | null
+  link: string
+  created_at: string
+}
+
+export function archiveNews(
+  items: Array<{ title: string; description?: string | null; source: string; link: string; pubDate?: string | null }>,
+  region: string
+): void {
+  const stmt = db.prepare(`
+    INSERT OR IGNORE INTO news_archive (title, description, source, region, pub_date, link)
+    VALUES (@title, @description, @source, @region, @pub_date, @link)
+  `)
+  const insertMany = db.transaction((rows: typeof items) => {
+    for (const item of rows) {
+      stmt.run({
+        title: item.title,
+        description: item.description ?? null,
+        source: item.source,
+        region,
+        pub_date: item.pubDate ?? null,
+        link: item.link,
+      })
+    }
+  })
+  insertMany(items)
+}
+
+export function searchNews(query: string, limit = 15): DBNewsItem[] {
+  if (!query.trim()) return []
+  try {
+    return db.prepare(`
+      SELECT na.* FROM news_archive na
+      INNER JOIN (
+        SELECT rowid, rank FROM news_archive_fts WHERE news_archive_fts MATCH ?
+      ) fts ON na.id = fts.rowid
+      ORDER BY fts.rank, na.pub_date DESC
+      LIMIT ?
+    `).all(query, limit) as DBNewsItem[]
+  } catch {
+    return []
+  }
+}
+
+export function pruneOldNews(days = 90): void {
+  const cutoff = `-${days} days`
+  db.prepare(`DELETE FROM news_archive WHERE created_at < datetime('now', ?)`).run(cutoff)
 }

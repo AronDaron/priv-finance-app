@@ -70,6 +70,7 @@ const mainLinks = [
 const aiSubLinks = [
   { to: '/ai/portfolio', label: 'Portfel' },
   { to: '/ai/stocks', label: 'Spółki' },
+  { to: '/ai/chat', label: 'Chat' },
 ]
 
 const aiIcon = (

@@ -179,6 +179,108 @@ export function financeDevApiPlugin(): Plugin {
               data = { regions, marketData, computedAt: marketData.fetchedAt, regime }
               break
             }
+            case '/ai/chat': {
+              const body = await readBody(req)
+              const { messages: msgsJson, assets: assetsJson, apiKey: ak } = body
+              if (!msgsJson) { res.statusCode = 400; res.end(JSON.stringify({ error: 'Brak messages' })); return }
+              const ai = await import('./main/ai')
+              const messages: Array<{ role: 'user' | 'assistant'; content: string }> = JSON.parse(msgsJson)
+              const assetsRaw: Array<{ ticker: string; name: string; quantity: number; purchase_price: number; currency: string }> =
+                JSON.parse(assetsJson ?? '[]')
+
+              const [usdPlnQ, eurPlnQ] = await Promise.all([
+                finance.fetchQuote('USDPLN=X').catch(() => ({ price: 4.0 })),
+                finance.fetchQuote('EURPLN=X').catch(() => ({ price: 4.3 })),
+              ])
+              const usdPln = usdPlnQ.price
+              const eurPln = eurPlnQ.price
+              const toPln = (amount: number, currency: string) =>
+                currency === 'PLN' ? amount : currency === 'USD' ? amount * usdPln : currency === 'EUR' ? amount * eurPln : amount
+
+              // Quotes
+              const quoteMap = new Map<string, { price: number; currency: string; changePercent: number }>()
+              await Promise.all(assetsRaw.map(async a => {
+                try {
+                  const q = await finance.fetchQuote(a.ticker)
+                  quoteMap.set(a.ticker, { price: q.price, currency: q.currency, changePercent: q.changePercent })
+                } catch { /* pomiń */ }
+              }))
+
+              // Top 5 tickers by value for price history
+              const top5 = assetsRaw
+                .map(a => { const q = quoteMap.get(a.ticker); const p = q ? toPln(q.price, q.currency) : toPln(a.purchase_price, a.currency); return { ticker: a.ticker, name: a.name, val: p * a.quantity } })
+                .sort((a, b) => b.val - a.val).slice(0, 5).map(a => a.ticker)
+
+              // Monthly OHLCV
+              const priceHistories = new Map<string, Array<{ month: string; open: number; close: number; changePercent: number }>>()
+              await Promise.all(top5.map(async ticker => {
+                try {
+                  const candles = await finance.fetchHistory(ticker, '2y')
+                  const byMonth = new Map<string, typeof candles>()
+                  for (const c of candles) {
+                    const d = new Date(c.time * 1000)
+                    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+                    if (!byMonth.has(key)) byMonth.set(key, [])
+                    byMonth.get(key)!.push(c)
+                  }
+                  priceHistories.set(ticker, Array.from(byMonth.entries())
+                    .sort(([a], [b]) => a.localeCompare(b))
+                    .map(([month, cs]) => ({
+                      month,
+                      open: cs[0].open,
+                      close: cs[cs.length - 1].close,
+                      changePercent: cs[0].open > 0 ? ((cs[cs.length - 1].close - cs[0].open) / cs[0].open) * 100 : 0,
+                    })))
+                } catch { /* pomiń */ }
+              }))
+
+              // Global market
+              let globalData: Awaited<ReturnType<typeof finance.fetchGlobalMarketData>> | null = null
+              try { globalData = await finance.fetchGlobalMarketData() } catch { /* pomiń */ }
+
+              // Build context
+              const today = new Date().toISOString().split('T')[0]
+              const assetLines = assetsRaw.map(a => {
+                const q = quoteMap.get(a.ticker)
+                const price = q?.price ?? a.purchase_price; const curr = q?.currency ?? a.currency
+                const pricePLN = toPln(price, curr); const purchasePLN = toPln(a.purchase_price, a.currency)
+                const pnl = purchasePLN > 0 ? ((pricePLN - purchasePLN) / purchasePLN * 100).toFixed(1) : '0.0'
+                const ch = q ? (q.changePercent >= 0 ? `+${q.changePercent.toFixed(2)}%` : `${q.changePercent.toFixed(2)}%`) : 'N/A'
+                return `  ${a.ticker} (${a.name}): ${a.quantity} szt. × ${price.toFixed(2)} ${curr} | P&L: ${parseFloat(pnl) >= 0 ? '+' : ''}${pnl}% | Dziś: ${ch}`
+              })
+              const totalPLN = assetsRaw.reduce((s, a) => { const q = quoteMap.get(a.ticker); const p = q?.price ?? a.purchase_price; const c = q?.currency ?? a.currency; return s + toPln(p, c) * a.quantity }, 0)
+
+              const histLines: string[] = []
+              for (const [ticker, monthly] of priceHistories) {
+                const asset = assetsRaw.find(a => a.ticker === ticker)
+                histLines.push(`\n${ticker} (${asset?.name ?? ticker}):`)
+                for (const m of monthly) {
+                  const ch = m.changePercent >= 0 ? `+${m.changePercent.toFixed(1)}%` : `${m.changePercent.toFixed(1)}%`
+                  histLines.push(`  ${m.month}: ${m.open.toFixed(2)} → ${m.close.toFixed(2)} (${ch})`)
+                }
+              }
+
+              const macroLines: string[] = []
+              if (globalData) {
+                const m = globalData
+                macroLines.push(`  VIX: ${m.indices.VIX.price.toFixed(1)} | US10Y: ${m.bonds.US10Y.price.toFixed(2)}%`)
+                macroLines.push(`  S&P500: ${m.indices.SP500.price.toFixed(0)} (${m.indices.SP500.changePercent >= 0 ? '+' : ''}${m.indices.SP500.changePercent.toFixed(2)}% dziś, ${m.indices.SP500.change1m >= 0 ? '+' : ''}${m.indices.SP500.change1m.toFixed(1)}% 30d)`)
+                macroLines.push(`  Złoto: $${m.commodities.gold.price.toFixed(0)} (${m.commodities.gold.change1m >= 0 ? '+' : ''}${m.commodities.gold.change1m.toFixed(1)}% 30d)`)
+                macroLines.push(`  EUR/USD: ${m.currencies.EURUSD.price.toFixed(4)} | USD/PLN: ${usdPln.toFixed(2)}`)
+              }
+
+              const systemContext = [
+                `Jesteś asystentem finansowym z dostępem do portfela inwestycyjnego użytkownika. Odpowiadaj po polsku. Data: ${today}.`,
+                '', `=== PORTFEL (${today}) ===`, `Łączna wartość: ~${totalPLN.toFixed(0)} PLN | USD/PLN: ${usdPln.toFixed(2)} | EUR/PLN: ${eurPln.toFixed(2)}`,
+                ...assetLines,
+                ...(histLines.length > 0 ? ['', '=== HISTORIA CEN (miesięczna) ===', ...histLines] : []),
+                ...(macroLines.length > 0 ? ['', '=== MAKROEKONOMIA ===', ...macroLines] : []),
+                '', 'Odpowiadaj konkretnie, powołując się na powyższe dane. Nie wymyślaj liczb których nie masz.',
+              ].join('\n')
+
+              data = await ai.chatWithPortfolio(messages, systemContext, ak ?? '')
+              break
+            }
             case '/ai/analyze-region': {
               const body = await readBody(req)
               const { regionId, newsHeadlines: headlinesJson, apiKey: ak } = body

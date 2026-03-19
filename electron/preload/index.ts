@@ -139,6 +139,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('ai:analyzeStock', ticker),
     analyzePortfolio: () =>
       ipcRenderer.invoke('ai:analyzePortfolio'),
+    chat: (messages: Array<{ role: 'user' | 'assistant'; content: string }>) =>
+      ipcRenderer.invoke('ai:chat', messages),
   },
 
   // ── news (RSS) ──────────────────────────────────────────────────────────

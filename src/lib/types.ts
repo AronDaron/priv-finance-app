@@ -320,3 +320,10 @@ export interface NewsItem {
   thumbnail: string | null
   source: string
 }
+
+// ── AI Chat ───────────────────────────────────────────────────────────────────
+
+export interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
