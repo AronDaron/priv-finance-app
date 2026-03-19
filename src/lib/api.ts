@@ -536,10 +536,11 @@ export async function analyzeRegionAI(regionId: RegionId, newsHeadlines: string[
 export async function chatPortfolio(messages: ChatMessage[]): Promise<string> {
   if (isElectron()) return window.electronAPI!.ai.chat(messages)
   const apiKey = await getSetting('openrouter_api_key')
-  const assets = await getAssets()
+  const [assets, reports] = await Promise.all([getAssets(), getReports()])
   return devApiPost<string>('/ai/chat', {
     messages: JSON.stringify(messages),
     assets: JSON.stringify(assets),
+    reports: JSON.stringify(reports),
     apiKey: apiKey ?? '',
   })
 }

@@ -203,7 +203,7 @@ function buildChatSystemContext(params: {
   const reportLines: string[] = []
   for (const r of aiReports) {
     if (r.ticker === '__PORTFOLIO__') continue
-    const truncated = r.report_text.length > 600 ? r.report_text.slice(0, 600) + '...' : r.report_text
+    const truncated = r.report_text.length > 2000 ? r.report_text.slice(0, 2000) + '...' : r.report_text
     reportLines.push(`\n--- Analiza ${r.ticker} (${r.created_at.slice(0, 10)}) ---\n${truncated}`)
   }
   if (reportLines.length > 0) sections.push('', '=== RAPORTY AI (ostatnie analizy) ===', ...reportLines)

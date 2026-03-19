@@ -181,12 +181,14 @@ export function financeDevApiPlugin(): Plugin {
             }
             case '/ai/chat': {
               const body = await readBody(req)
-              const { messages: msgsJson, assets: assetsJson, apiKey: ak } = body
+              const { messages: msgsJson, assets: assetsJson, reports: reportsJson, apiKey: ak } = body
               if (!msgsJson) { res.statusCode = 400; res.end(JSON.stringify({ error: 'Brak messages' })); return }
               const ai = await import('./main/ai')
               const messages: Array<{ role: 'user' | 'assistant'; content: string }> = JSON.parse(msgsJson)
               const assetsRaw: Array<{ ticker: string; name: string; quantity: number; purchase_price: number; currency: string }> =
                 JSON.parse(assetsJson ?? '[]')
+              const reportsRaw: Array<{ ticker: string; report_text: string; created_at: string }> =
+                JSON.parse(reportsJson ?? '[]')
 
               const [usdPlnQ, eurPlnQ] = await Promise.all([
                 finance.fetchQuote('USDPLN=X').catch(() => ({ price: 4.0 })),
@@ -211,9 +213,28 @@ export function financeDevApiPlugin(): Plugin {
                 .map(a => { const q = quoteMap.get(a.ticker); const p = q ? toPln(q.price, q.currency) : toPln(a.purchase_price, a.currency); return { ticker: a.ticker, name: a.name, val: p * a.quantity } })
                 .sort((a, b) => b.val - a.val).slice(0, 5).map(a => a.ticker)
 
+              // Extract tickers mentioned in the last user question
+              const lastQuestion = [...messages].reverse().find(m => m.role === 'user')?.content ?? ''
+              const IGNORE_WORDS = new Set(['USD', 'PLN', 'EUR', 'GBP', 'CHF', 'JPY', 'ETF', 'AI', 'OK', 'IT', 'PE', 'EPS', 'CEO', 'IPO', 'USA', 'EU', 'UK', 'GDP', 'FED', 'ECB', 'IMF', 'RSI'])
+              const mentionedTickers = [...new Set((lastQuestion.match(/\b[A-Z]{2,5}(?:\.WA)?\b/g) ?? []).filter(t => !IGNORE_WORDS.has(t)))]
+              const portfolioTickerSet = new Set(assetsRaw.map(a => a.ticker))
+              const nonPortfolioTickers = mentionedTickers.filter(t => !portfolioTickerSet.has(t))
+
+              // Fetch quote + fundamentals for non-portfolio tickers mentioned in question
+              const extraDataMap = new Map<string, { quote: Awaited<ReturnType<typeof finance.fetchQuote>>; fundamentals: Awaited<ReturnType<typeof finance.fetchFundamentals>> }>()
+              await Promise.all(nonPortfolioTickers.map(async t => {
+                try {
+                  const [q, f] = await Promise.all([finance.fetchQuote(t), finance.fetchFundamentals(t)])
+                  extraDataMap.set(t, { quote: q, fundamentals: f })
+                } catch { /* pomiń */ }
+              }))
+
+              // All tickers for price history: mentioned + top portfolio, max 7
+              const allHistoryTickers = [...new Set([...mentionedTickers, ...top5])].slice(0, 7)
+
               // Monthly OHLCV
               const priceHistories = new Map<string, Array<{ month: string; open: number; close: number; changePercent: number }>>()
-              await Promise.all(top5.map(async ticker => {
+              await Promise.all(allHistoryTickers.map(async ticker => {
                 try {
                   const candles = await finance.fetchHistory(ticker, '2y')
                   const byMonth = new Map<string, typeof candles>()
@@ -253,11 +274,29 @@ export function financeDevApiPlugin(): Plugin {
               const histLines: string[] = []
               for (const [ticker, monthly] of priceHistories) {
                 const asset = assetsRaw.find(a => a.ticker === ticker)
-                histLines.push(`\n${ticker} (${asset?.name ?? ticker}):`)
+                const extra = extraDataMap.get(ticker)
+                const name = asset?.name ?? extra?.quote.name ?? ticker
+                histLines.push(`\n${ticker} (${name}):`)
                 for (const m of monthly) {
                   const ch = m.changePercent >= 0 ? `+${m.changePercent.toFixed(1)}%` : `${m.changePercent.toFixed(1)}%`
                   histLines.push(`  ${m.month}: ${m.open.toFixed(2)} → ${m.close.toFixed(2)} (${ch})`)
                 }
+              }
+
+              // Fundamentals for non-portfolio tickers mentioned in question
+              const extraFundLines: string[] = []
+              for (const [ticker, { quote: q, fundamentals: f }] of extraDataMap) {
+                extraFundLines.push(`\n${ticker} (${q.name}):`)
+                extraFundLines.push(`  Cena: ${q.price.toFixed(2)} ${q.currency} | Zmiana dziś: ${q.changePercent >= 0 ? '+' : ''}${q.changePercent.toFixed(2)}%`)
+                if (f.pe) extraFundLines.push(`  P/E: ${f.pe.toFixed(2)}`)
+                if (f.eps) extraFundLines.push(`  EPS (TTM): ${f.eps.toFixed(2)}`)
+                if (f.revenueGrowth) extraFundLines.push(`  Przychody YoY: ${(f.revenueGrowth * 100).toFixed(1)}%`)
+                if (f.profitMargins) extraFundLines.push(`  Marża netto: ${(f.profitMargins * 100).toFixed(1)}%`)
+                if (f.targetMeanPrice) extraFundLines.push(`  Cel analityków: ${f.targetMeanPrice.toFixed(2)} ${q.currency} | Rekomendacja: ${f.analystRecommendation ?? 'N/A'}`)
+                if (f.beta) extraFundLines.push(`  Beta: ${f.beta.toFixed(2)}`)
+                if (f.marketCap) extraFundLines.push(`  Kapitalizacja: ${(f.marketCap / 1e9).toFixed(1)}B ${q.currency}`)
+                if (f.week52High && f.week52Low) extraFundLines.push(`  52-tygodniowy zakres: ${f.week52Low.toFixed(2)} – ${f.week52High.toFixed(2)}`)
+                if (f.sector) extraFundLines.push(`  Sektor: ${f.sector}${f.industry ? ` / ${f.industry}` : ''}`)
               }
 
               const macroLines: string[] = []
@@ -269,12 +308,22 @@ export function financeDevApiPlugin(): Plugin {
                 macroLines.push(`  EUR/USD: ${m.currencies.EURUSD.price.toFixed(4)} | USD/PLN: ${usdPln.toFixed(2)}`)
               }
 
+              // AI reports (max 10, up to 2000 chars each, skip portfolio summary)
+              const reportLines: string[] = []
+              const recentReports = reportsRaw.filter(r => r.ticker !== '__PORTFOLIO__').slice(-10)
+              for (const r of recentReports) {
+                const truncated = r.report_text.length > 2000 ? r.report_text.slice(0, 2000) + '...' : r.report_text
+                reportLines.push(`\n--- Analiza ${r.ticker} (${r.created_at.slice(0, 10)}) ---\n${truncated}`)
+              }
+
               const systemContext = [
                 `Jesteś asystentem finansowym z dostępem do portfela inwestycyjnego użytkownika. Odpowiadaj po polsku. Data: ${today}.`,
                 '', `=== PORTFEL (${today}) ===`, `Łączna wartość: ~${totalPLN.toFixed(0)} PLN | USD/PLN: ${usdPln.toFixed(2)} | EUR/PLN: ${eurPln.toFixed(2)}`,
                 ...assetLines,
-                ...(histLines.length > 0 ? ['', '=== HISTORIA CEN (miesięczna) ===', ...histLines] : []),
+                ...(histLines.length > 0 ? ['', '=== HISTORIA CEN (miesięczna, 2 lata) ===', ...histLines] : []),
+                ...(extraFundLines.length > 0 ? ['', '=== FUNDAMENTY SPÓŁEK (z pytania) ===', ...extraFundLines] : []),
                 ...(macroLines.length > 0 ? ['', '=== MAKROEKONOMIA ===', ...macroLines] : []),
+                ...(reportLines.length > 0 ? ['', '=== RAPORTY AI (ostatnie analizy spółek) ===', ...reportLines] : []),
                 '', 'Odpowiadaj konkretnie, powołując się na powyższe dane. Nie wymyślaj liczb których nie masz.',
               ].join('\n')
 
