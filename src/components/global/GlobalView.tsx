@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { fetchGlobalAnalysis, fetchNews } from '../../lib/api'
 import type { GlobalAnalysis, RegionScore, RegionId, NewsRegion, MarketRegime, GlobalMarketData } from '../../lib/types'
-import CommoditiesBar from './CommoditiesBar'
 import RegionCard from './RegionCard'
 import RegionDetailModal from './RegionDetailModal'
 import LoadingSpinner from '../ui/LoadingSpinner'
@@ -146,12 +145,6 @@ export default function GlobalView() {
             Odśwież
           </button>
         </div>
-      </div>
-
-      {/* Pasek surowców i walut */}
-      <div>
-        <p className="text-gray-500 text-xs mb-2 uppercase tracking-wide">Rynek na żywo</p>
-        <CommoditiesBar data={analysis.marketData} />
       </div>
 
       {/* Pasek aktywnego reżimu rynkowego */}
