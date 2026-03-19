@@ -59,6 +59,9 @@ export interface Transaction {
   currency: string
   date: string          // ISO 8601
   notes: string | null
+  fee?: number
+  fee_type?: string     // 'fixed' | 'percent'
+  time?: string | null  // "HH:MM"
 }
 
 export interface AIReport {

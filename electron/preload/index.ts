@@ -85,7 +85,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
       currency: string
       date: string
       notes: string | null
+      fee?: number
+      fee_type?: string
+      time?: string | null
     }) => ipcRenderer.invoke('db:transactions:add', tx),
+
+    update: (id: number, updates: Partial<{
+      type: 'buy' | 'sell'
+      quantity: number
+      price: number
+      currency: string
+      date: string
+      notes: string | null
+      fee: number
+      fee_type: string
+      time: string | null
+    }>) => ipcRenderer.invoke('db:transactions:update', id, updates),
 
     delete: (id: number) =>
       ipcRenderer.invoke('db:transactions:delete', id)

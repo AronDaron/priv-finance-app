@@ -62,6 +62,7 @@ declare global {
         getAll(): Promise<Transaction[]>
         getByTicker(ticker: string): Promise<Transaction[]>
         add(tx: NewTransaction): Promise<Transaction>
+        update(id: number, updates: Partial<NewTransaction>): Promise<Transaction | null>
         delete(id: number): Promise<{ success: boolean }>
       }
       reports: {
@@ -312,6 +313,21 @@ export async function addTransaction(tx: NewTransaction): Promise<Transaction> {
   const newTx: Transaction = { ...tx, id: nextId(txs) }
   lsSet(LS_KEYS.TRANSACTIONS, [...txs, newTx])
   return newTx
+}
+
+export async function updateTransaction(
+  id: number,
+  updates: Partial<NewTransaction>
+): Promise<Transaction | null> {
+  if (isElectron()) {
+    return window.electronAPI!.transactions.update(id, updates)
+  }
+  const txs = lsGet<Transaction[]>(LS_KEYS.TRANSACTIONS, [])
+  const idx = txs.findIndex((t) => t.id === id)
+  if (idx === -1) return null
+  txs[idx] = { ...txs[idx], ...updates }
+  lsSet(LS_KEYS.TRANSACTIONS, txs)
+  return txs[idx]
 }
 
 export async function deleteTransaction(id: number): Promise<void> {

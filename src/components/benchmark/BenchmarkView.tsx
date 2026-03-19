@@ -1,9 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
-import { getHistory, getPortfolioHistory, searchTickers } from '../../lib/api'
-import type { HistoryPeriod } from '../../lib/types'
+import { getHistory, getPortfolioHistory, searchTickers, getTransactions } from '../../lib/api'
+import type { HistoryPeriod, Transaction } from '../../lib/types'
 import { usePortfolio } from '../../contexts/PortfolioContext'
 import BenchmarkChart from './BenchmarkChart'
 import LoadingSpinner from '../ui/LoadingSpinner'
+import PortfolioMetricsCard from './PortfolioMetricsCard'
+import { computePortfolioMetrics } from '../../lib/portfolioMetrics'
+import type { PortfolioMetrics } from '../../lib/portfolioMetrics'
 
 const PRESET_BENCHMARKS = [
   { label: 'S&P 500', ticker: '^GSPC'   },
@@ -58,6 +61,8 @@ export default function BenchmarkView() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [failedTickers, setFailedTickers] = useState<string[]>([])
+  const [metrics, setMetrics] = useState<PortfolioMetrics | null>(null)
+  const [transactions, setTransactions] = useState<Transaction[]>([])
 
   // Wyszukiwarka własnych tickerów
   const [searchQuery, setSearchQuery] = useState('')
@@ -92,6 +97,11 @@ export default function BenchmarkView() {
     setCustomBenchmarks(prev => prev.filter(c => c.ticker !== ticker))
     setSelectedBenchmarks(prev => prev.filter(t => t !== ticker))
   }
+
+  // Jednorazowe pobranie transakcji (potrzebne do MWR)
+  useEffect(() => {
+    getTransactions().then(setTransactions).catch(() => setTransactions([]))
+  }, [])
 
   // Live search z debounce
   useEffect(() => {
@@ -144,9 +154,15 @@ export default function BenchmarkView() {
             data: portfolioHistory,
             color: '#10b981',
           })
+          // Oblicz metryki portfela
+          const currentValue = portfolioHistory[portfolioHistory.length - 1].value
+          setMetrics(computePortfolioMetrics(portfolioHistory, transactions, currentValue))
+        } else {
+          setMetrics(null)
         }
       } catch (e) {
         console.error('Portfolio history error:', e)
+        setMetrics(null)
       }
 
       // Benchmarki
@@ -308,6 +324,67 @@ export default function BenchmarkView() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Metryki portfela */}
+      {!loading && metrics && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">
+              Metryki portfela
+            </h2>
+            <div className="flex-1 h-px bg-gray-700/50" />
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            <PortfolioMetricsCard
+              label="Maks. obsunięcie"
+              value={`${(metrics.maxDrawdown * 100).toFixed(2)}%`}
+              color={metrics.maxDrawdown < -0.1 ? 'red' : 'yellow'}
+              subtext="peak-to-trough"
+            />
+            <PortfolioMetricsCard
+              label="Zwrot roczny (CAGR)"
+              value={`${metrics.annualizedReturn >= 0 ? '+' : ''}${(metrics.annualizedReturn * 100).toFixed(2)}%`}
+              color={metrics.annualizedReturn >= 0 ? 'green' : 'red'}
+              subtext={`za ${metrics.periodDays} dni`}
+            />
+            <PortfolioMetricsCard
+              label="Zmienność roczna"
+              value={`${(metrics.annualizedVolatility * 100).toFixed(2)}%`}
+              color="neutral"
+              subtext="odch. std. × √252"
+            />
+            <PortfolioMetricsCard
+              label="Sharpe Ratio"
+              value={metrics.sharpeRatio !== null ? metrics.sharpeRatio.toFixed(2) : 'N/D'}
+              color={metrics.sharpeRatio !== null && metrics.sharpeRatio > 1 ? 'green' : 'neutral'}
+              subtext="rf = 4.5%"
+            />
+            <PortfolioMetricsCard
+              label="Sortino Ratio"
+              value={metrics.sortinoRatio !== null ? metrics.sortinoRatio.toFixed(2) : 'N/D'}
+              color={metrics.sortinoRatio !== null && metrics.sortinoRatio > 1 ? 'green' : 'neutral'}
+              subtext="tylko ujemne zwroty"
+            />
+            <PortfolioMetricsCard
+              label="TWR"
+              value={`${metrics.twr >= 0 ? '+' : ''}${(metrics.twr * 100).toFixed(2)}%`}
+              color={metrics.twr >= 0 ? 'green' : 'red'}
+              subtext="czas-ważony"
+            />
+            {metrics.mwr !== null && (
+              <PortfolioMetricsCard
+                label="MWR (XIRR)"
+                value={`${metrics.mwr >= 0 ? '+' : ''}${(metrics.mwr * 100).toFixed(2)}%`}
+                color={metrics.mwr >= 0 ? 'green' : 'red'}
+                subtext="pieniądz-ważony (przybliżenie)"
+              />
+            )}
+          </div>
+          <p className="text-xs text-gray-600">
+            * Metryki obliczone dla okresu {period}. MWR wymaga transakcji w bazie — wartości przybliżone (mieszane waluty).
+          </p>
         </div>
       )}
     </div>

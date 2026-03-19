@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { addAsset, updateAsset } from '../../lib/api'
+import { addAsset, updateAsset, addTransaction } from '../../lib/api'
 import { StockSearch } from '../StockSearch'
 import { usePortfolio } from '../../contexts/PortfolioContext'
 import { PHYSICAL_METAL_COINS, gramsToTroyOz } from '../../lib/types'
@@ -33,6 +33,9 @@ export default function AddAssetModal({ onClose, onSuccess, editAsset }: Props) 
     currency: editAsset?.currency ?? 'USD',
     purchase_date: editAsset?.purchase_date ?? new Date().toISOString().split('T')[0],
     portfolio_id: defaultPortfolioId,
+    time: '',
+    fee: '',
+    feeType: 'fixed' as 'fixed' | 'percent',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -101,6 +104,23 @@ export default function AddAssetModal({ onClose, onSuccess, editAsset }: Props) 
           portfolio_id: form.portfolio_id,
           gold_grams: goldGrams,
         })
+        // Auto-zapis do historii transakcji
+        try {
+          await addTransaction({
+            ticker: form.ticker.trim().toUpperCase(),
+            type: 'buy',
+            quantity: qty,
+            price: price,
+            currency: form.currency,
+            date: form.purchase_date,
+            notes: null,
+            fee: parseFloat(form.fee) || 0,
+            fee_type: form.feeType,
+            time: form.time || null,
+          })
+        } catch (txErr) {
+          console.warn('Auto-save transakcji nie powiódł się:', txErr)
+        }
       }
       onSuccess()
     } catch (err: unknown) {
@@ -244,16 +264,52 @@ export default function AddAssetModal({ onClose, onSuccess, editAsset }: Props) 
               <option value="EUR">EUR</option>
             </select>
           </div>
-          <div>
-            <label className="block text-xs text-gray-400 mb-1">Data zakupu</label>
-            <input
-              type="date"
-              value={form.purchase_date}
-              onChange={(e) => setForm((f) => ({ ...f, purchase_date: e.target.value }))}
-              max={new Date().toISOString().split('T')[0]}
-              className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-finance-green"
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Data zakupu</label>
+              <input
+                type="date"
+                value={form.purchase_date}
+                onChange={(e) => setForm((f) => ({ ...f, purchase_date: e.target.value }))}
+                max={new Date().toISOString().split('T')[0]}
+                className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-finance-green"
+              />
+            </div>
+            {!isEditMode && (
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Godzina (opcjonalnie)</label>
+                <input
+                  type="time"
+                  value={form.time}
+                  onChange={(e) => setForm((f) => ({ ...f, time: e.target.value }))}
+                  className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-finance-green"
+                />
+              </div>
+            )}
           </div>
+          {!isEditMode && (
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Prowizja (opcjonalnie)</label>
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.fee}
+                  onChange={(e) => setForm((f) => ({ ...f, fee: e.target.value }))}
+                  placeholder="0.00"
+                  className="flex-1 bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-finance-green"
+                />
+                <button
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, feeType: f.feeType === 'fixed' ? 'percent' : 'fixed' }))}
+                  className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition-colors min-w-[48px]"
+                >
+                  {form.feeType === 'fixed' ? 'PLN' : '%'}
+                </button>
+              </div>
+            </div>
+          )}
           {portfolios.length > 1 && (
             <div>
               <label className="block text-xs text-gray-400 mb-1">Portfel</label>

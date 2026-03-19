@@ -2,14 +2,14 @@ import { useState, useEffect } from 'react'
 import { getTransactions, deleteTransaction } from '../../lib/api'
 import type { Transaction } from '../../lib/types'
 import { formatCurrency } from '../../lib/utils'
-import AddTransactionModal from './AddTransactionModal'
+import EditTransactionModal from './EditTransactionModal'
 import LoadingSpinner from '../ui/LoadingSpinner'
 import ErrorMessage from '../ui/ErrorMessage'
 
 export default function TransactionsView() {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [filterTicker, setFilterTicker] = useState('')
-  const [showAddModal, setShowAddModal] = useState(false)
+  const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -43,16 +43,14 @@ export default function TransactionsView() {
     (tx) => filterTicker === '' || tx.ticker.toLowerCase().includes(filterTicker.toLowerCase())
   )
 
+  const hasFee = transactions.some((tx) => (tx.fee ?? 0) > 0)
+
   return (
     <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-lg font-semibold text-white">Transakcje</h2>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="bg-finance-green hover:bg-emerald-600 text-white font-medium px-4 py-2 rounded-lg transition-colors"
-        >
-          + Dodaj transakcję
-        </button>
+      {/* Nagłówek */}
+      <div className="flex items-center gap-2 mb-6">
+        <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Historia transakcji</h2>
+        <div className="flex-1 h-px bg-gray-700/50" />
       </div>
 
       <div className="mb-4">
@@ -69,29 +67,39 @@ export default function TransactionsView() {
       {error && <ErrorMessage message={error} />}
 
       {!loading && !error && filtered.length === 0 && (
-        <div className="text-center py-20 text-gray-500">Brak transakcji</div>
+        <div className="text-center py-20 text-gray-500">
+          Brak transakcji. Transakcje są tworzone automatycznie przy dodaniu aktywa do portfela.
+        </div>
       )}
 
       {!loading && filtered.length > 0 && (
-        <div className="bg-finance-card rounded-xl border border-gray-700 overflow-x-auto">
+        <div className="glass-card rounded-xl border border-gray-700/50 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-xs text-gray-400 uppercase tracking-wider border-b border-gray-700">
                 <th className="px-4 py-3 text-left">Data</th>
+                <th className="px-4 py-3 text-left">Godz.</th>
                 <th className="px-4 py-3 text-left">Ticker</th>
                 <th className="px-4 py-3 text-center">Typ</th>
                 <th className="px-4 py-3 text-right">Ilość</th>
                 <th className="px-4 py-3 text-right">Cena</th>
                 <th className="px-4 py-3 text-right">Wartość</th>
+                {hasFee && <th className="px-4 py-3 text-right">Prowizja</th>}
                 <th className="px-4 py-3 text-left">Notatki</th>
-                <th className="px-4 py-3 text-center">Akcja</th>
+                <th className="px-4 py-3 text-center">Akcje</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((tx) => (
-                <tr key={tx.id} className="border-b border-gray-800 hover:bg-gray-800/50 transition-colors">
+                <tr
+                  key={tx.id}
+                  className="border-b border-gray-800 hover:bg-white/[0.03] border-l-2 border-l-transparent hover:border-l-finance-green/40 transition-colors"
+                >
                   <td className="px-4 py-3 text-gray-300">
-                    {new Date(tx.date).toLocaleDateString('pl-PL')}
+                    {new Date(tx.date + 'T12:00:00').toLocaleDateString('pl-PL')}
+                  </td>
+                  <td className="px-4 py-3 text-gray-500 text-xs">
+                    {tx.time ?? '—'}
                   </td>
                   <td className="px-4 py-3 font-bold text-finance-green">{tx.ticker}</td>
                   <td className="px-4 py-3 text-center">
@@ -110,20 +118,41 @@ export default function TransactionsView() {
                   <td className="px-4 py-3 text-right text-white">
                     {formatCurrency(tx.quantity * tx.price, tx.currency)}
                   </td>
-                  <td className="px-4 py-3 text-gray-500 max-w-[140px] truncate">
+                  {hasFee && (
+                    <td className="px-4 py-3 text-right text-gray-400">
+                      {(tx.fee ?? 0) > 0
+                        ? tx.fee_type === 'percent'
+                          ? `${tx.fee}%`
+                          : formatCurrency(tx.fee!, tx.currency)
+                        : '—'}
+                    </td>
+                  )}
+                  <td className="px-4 py-3 text-gray-500 max-w-[120px] truncate">
                     {tx.notes ?? '—'}
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <button
-                      onClick={() => handleDelete(tx.id)}
-                      className="bg-red-900/50 hover:bg-red-800/50 text-finance-red px-3 py-1.5 rounded transition-colors"
-                      title="Usuń"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
+                    <div className="flex items-center justify-center gap-1">
+                      <button
+                        onClick={() => setEditingTx(tx)}
+                        className="text-gray-600 hover:text-white hover:bg-white/10 rounded-lg p-1.5 transition-all"
+                        title="Edytuj"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                            d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => handleDelete(tx.id)}
+                        className="text-gray-600 hover:text-finance-red hover:bg-finance-red/10 rounded-lg p-1.5 transition-all"
+                        title="Usuń"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -132,10 +161,11 @@ export default function TransactionsView() {
         </div>
       )}
 
-      {showAddModal && (
-        <AddTransactionModal
-          onClose={() => setShowAddModal(false)}
-          onSuccess={() => { setShowAddModal(false); loadData() }}
+      {editingTx && (
+        <EditTransactionModal
+          transaction={editingTx}
+          onClose={() => setEditingTx(null)}
+          onSuccess={() => { setEditingTx(null); loadData() }}
         />
       )}
     </div>

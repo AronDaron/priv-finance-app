@@ -64,6 +64,9 @@ export interface DBTransaction {
   currency: string
   date: string
   notes: string | null
+  fee: number
+  fee_type: string
+  time: string | null
 }
 
 export interface DBNewPortfolioAsset {
@@ -85,6 +88,9 @@ export interface DBNewTransaction {
   currency: string
   date: string
   notes: string | null
+  fee?: number
+  fee_type?: string
+  time?: string | null
 }
 
 export interface DBAIReport {
@@ -200,6 +206,17 @@ function migrateDatabase(): void {
     db.exec(`ALTER TABLE portfolios ADD COLUMN tags TEXT`)
   }
 
+  const txCols = db.prepare("PRAGMA table_info(transactions)").all() as { name: string }[]
+  if (!txCols.find(c => c.name === 'fee')) {
+    db.exec(`ALTER TABLE transactions ADD COLUMN fee REAL DEFAULT 0`)
+  }
+  if (!txCols.find(c => c.name === 'fee_type')) {
+    db.exec(`ALTER TABLE transactions ADD COLUMN fee_type TEXT DEFAULT 'fixed'`)
+  }
+  if (!txCols.find(c => c.name === 'time')) {
+    db.exec(`ALTER TABLE transactions ADD COLUMN time TEXT`)
+  }
+
   // Utwórz domyślny portfel jeśli tabela pusta
   const count = db.prepare('SELECT COUNT(*) as c FROM portfolios').get() as { c: number }
   if (count.c === 0) {
@@ -294,13 +311,30 @@ export function getTransactionsByTicker(ticker: string): DBTransaction[] {
 
 export function addTransaction(tx: DBNewTransaction): DBTransaction {
   const stmt = db.prepare(`
-    INSERT INTO transactions (ticker, type, quantity, price, currency, date, notes)
-    VALUES (@ticker, @type, @quantity, @price, @currency, @date, @notes)
+    INSERT INTO transactions (ticker, type, quantity, price, currency, date, notes, fee, fee_type, time)
+    VALUES (@ticker, @type, @quantity, @price, @currency, @date, @notes, @fee, @fee_type, @time)
   `)
-  const result = stmt.run(tx)
+  const result = stmt.run({
+    ...tx,
+    fee: tx.fee ?? 0,
+    fee_type: tx.fee_type ?? 'fixed',
+    time: tx.time ?? null,
+  })
   return db
     .prepare('SELECT * FROM transactions WHERE id = ?')
     .get(result.lastInsertRowid) as DBTransaction
+}
+
+export function updateTransaction(
+  id: number,
+  updates: Partial<DBNewTransaction>
+): DBTransaction | null {
+  const fields = Object.keys(updates)
+    .map((k) => `${k} = @${k}`)
+    .join(', ')
+  if (!fields) return db.prepare('SELECT * FROM transactions WHERE id = ?').get(id) as DBTransaction ?? null
+  db.prepare(`UPDATE transactions SET ${fields} WHERE id = @id`).run({ ...updates, id })
+  return db.prepare('SELECT * FROM transactions WHERE id = ?').get(id) as DBTransaction ?? null
 }
 
 export function deleteTransaction(id: number): void {

@@ -24,6 +24,7 @@ import {
   getAllTransactions,
   getTransactionsByTicker,
   addTransaction,
+  updateTransaction,
   deleteTransaction,
   getLatestReportByTicker,
   getAllReports,
@@ -115,6 +116,10 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('db:transactions:add', (_event, tx) => {
     return addTransaction(tx)
+  })
+
+  ipcMain.handle('db:transactions:update', (_event, id, updates) => {
+    return updateTransaction(id, updates)
   })
 
   ipcMain.handle('db:transactions:delete', (_event, id) => {
