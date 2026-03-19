@@ -1,11 +1,63 @@
 import { useState, useEffect, useCallback } from 'react'
 import { fetchGlobalAnalysis, fetchNews } from '../../lib/api'
-import type { GlobalAnalysis, RegionScore, RegionId, NewsRegion } from '../../lib/types'
+import type { GlobalAnalysis, RegionScore, RegionId, NewsRegion, MarketRegime, GlobalMarketData } from '../../lib/types'
 import CommoditiesBar from './CommoditiesBar'
 import RegionCard from './RegionCard'
 import RegionDetailModal from './RegionDetailModal'
 import LoadingSpinner from '../ui/LoadingSpinner'
 import ErrorMessage from '../ui/ErrorMessage'
+
+function RegimeBanner({ regime, marketData }: { regime: MarketRegime; marketData: GlobalMarketData }) {
+  if (regime.vixLevel === 'panic') {
+    return (
+      <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-finance-red/15 border border-finance-red/40 text-finance-red text-sm font-medium">
+        <span>⚠</span>
+        <span>Tryb Paniki — VIX: {marketData.indices.VIX.price.toFixed(1)} — wagi algorytmu przełączone na wskaźniki strachu i płynności</span>
+      </div>
+    )
+  }
+  if (regime.bondStress === 'shock') {
+    return (
+      <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-orange-500/15 border border-orange-500/40 text-orange-400 text-sm font-medium">
+        <span>⚡</span>
+        <span>Szok Obligacyjny — US10Y: {marketData.bonds.US10Y.price.toFixed(2)}% — wagi przesunięte na USD i koszty finansowania</span>
+      </div>
+    )
+  }
+  if (regime.gasShock) {
+    return (
+      <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-yellow-500/15 border border-yellow-500/40 text-yellow-400 text-sm font-medium">
+        <span>🔥</span>
+        <span>Szok Gazowy — Gaz 30d: {marketData.commodities.gas.change1m.toFixed(1)}% — wagi Europy i Azji przesunięte na energię</span>
+      </div>
+    )
+  }
+  if (regime.copperCrash) {
+    return (
+      <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-blue-500/15 border border-blue-500/40 text-blue-400 text-sm font-medium">
+        <span>📉</span>
+        <span>Crash Miedzi — Miedź 30d: {marketData.commodities.copper.change1m.toFixed(1)}% — wagi przesunięte na wskaźniki recesji</span>
+      </div>
+    )
+  }
+  if (regime.oilShock) {
+    return (
+      <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-400 text-sm font-medium">
+        <span>🛢</span>
+        <span>Szok Naftowy — Ropa 30d: {marketData.commodities.oil.change1m.toFixed(1)}% — wagi eksporterów i importerów dostosowane asymetrycznie</span>
+      </div>
+    )
+  }
+  if (regime.goldRally) {
+    return (
+      <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-yellow-400/10 border border-yellow-400/30 text-yellow-300 text-sm font-medium">
+        <span>✨</span>
+        <span>Rally Złota — Złoto 30d: +{marketData.commodities.gold.change1m.toFixed(1)}% — wagi safe haven podwyższone globalnie</span>
+      </div>
+    )
+  }
+  return null
+}
 
 // Mapowanie regionId → NewsRegion (do pobierania newsów dla AI)
 const REGION_NEWS_MAP: Record<string, NewsRegion> = {
@@ -101,6 +153,11 @@ export default function GlobalView() {
         <p className="text-gray-500 text-xs mb-2 uppercase tracking-wide">Rynek na żywo</p>
         <CommoditiesBar data={analysis.marketData} />
       </div>
+
+      {/* Pasek aktywnego reżimu rynkowego */}
+      {analysis.regime && (
+        <RegimeBanner regime={analysis.regime} marketData={analysis.marketData} />
+      )}
 
       {/* Kafelki sektorów i regionów */}
       <div>

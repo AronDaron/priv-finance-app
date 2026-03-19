@@ -289,10 +289,20 @@ export interface RegionScore {
   components: RegionScoreComponent[]
 }
 
+export interface MarketRegime {
+  vixLevel:    'calm' | 'elevated' | 'panic'      // calm: VIX<20, elevated: 20-30, panic: >30
+  bondStress:  'normal' | 'elevated' | 'shock'    // normal: <4%, elevated: 4-5%, shock: >5%
+  oilShock:    boolean                             // |oil.change1m| > 15%
+  goldRally:   boolean                             // gold.change1m > 10%
+  copperCrash: boolean                             // copper.change1m < -10% — sygnał recesji
+  gasShock:    boolean                             // |gas.change1m| > 20% — kryzys energetyczny
+}
+
 export interface GlobalAnalysis {
-  regions: RegionScore[]
+  regions:    RegionScore[]
   marketData: GlobalMarketData
   computedAt: string
+  regime?:    MarketRegime
 }
 
 // ── News ─────────────────────────────────────────────────────────────────────

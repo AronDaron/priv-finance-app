@@ -172,10 +172,11 @@ export function financeDevApiPlugin(): Plugin {
             }
             case '/global-market': {
               const { fetchGlobalMarketData } = await import('./main/finance')
-              const { computeGlobalScores } = await import('./main/globalScore')
+              const { computeGlobalScores, detectMarketRegime } = await import('./main/globalScore')
               const marketData = await fetchGlobalMarketData()
-              const regions = computeGlobalScores(marketData)
-              data = { regions, marketData, computedAt: marketData.fetchedAt }
+              const regime = detectMarketRegime(marketData)
+              const regions = computeGlobalScores(marketData, regime)
+              data = { regions, marketData, computedAt: marketData.fetchedAt, regime }
               break
             }
             case '/ai/analyze-region': {
@@ -183,10 +184,11 @@ export function financeDevApiPlugin(): Plugin {
               const { regionId, newsHeadlines: headlinesJson, apiKey: ak } = body
               if (!regionId) { res.statusCode = 400; res.end(JSON.stringify({ error: 'Brak regionId' })); return }
               const { fetchGlobalMarketData: fgm } = await import('./main/finance')
-              const { computeGlobalScores: cgs } = await import('./main/globalScore')
+              const { computeGlobalScores: cgs, detectMarketRegime: dmr } = await import('./main/globalScore')
               const { analyzeRegion: ar, WORLD_MODEL: wm } = await import('./main/ai')
               const md = await fgm()
-              const regions = cgs(md)
+              const regime = dmr(md)
+              const regions = cgs(md, regime)
               const region = regions.find(r => r.id === regionId)
               if (!region) { res.statusCode = 400; res.end(JSON.stringify({ error: `Nieznany region: ${regionId}` })); return }
               const headlines: string[] = headlinesJson ? JSON.parse(headlinesJson) : []
