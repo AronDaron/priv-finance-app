@@ -1,3 +1,4 @@
+import { PieChart, Pie, Cell, Tooltip } from 'recharts'
 import { formatCurrency, formatMarketCap } from '../../lib/utils'
 import type { FundamentalData } from '../../lib/types'
 
@@ -7,6 +8,69 @@ interface Props {
 
 function pct(val: number | null) {
   return val != null ? `${(val * 100).toFixed(1)}%` : 'N/A'
+}
+
+const DONUT_COLORS: Record<string, string> = {
+  strongBuy:  '#10b981',
+  buy:        '#34d399',
+  hold:       '#fbbf24',
+  sell:       '#f97316',
+  strongSell: '#ef4444',
+}
+
+function RecommendationDonut({ trend }: { trend: NonNullable<FundamentalData['recommendationTrend']> }) {
+  const data = [
+    { key: 'strongBuy',  label: 'Strong Buy',  value: trend.strongBuy },
+    { key: 'buy',        label: 'Buy',          value: trend.buy },
+    { key: 'hold',       label: 'Hold',         value: trend.hold },
+    { key: 'sell',       label: 'Sell',         value: trend.sell },
+    { key: 'strongSell', label: 'Strong Sell',  value: trend.strongSell },
+  ].filter(d => d.value > 0)
+
+  if (data.length === 0) return null
+
+  return (
+    <div className="mt-3 flex items-center gap-3">
+      <PieChart width={110} height={110}>
+        <Pie
+          data={data}
+          cx={50}
+          cy={50}
+          innerRadius={30}
+          outerRadius={48}
+          paddingAngle={2}
+          dataKey="value"
+          strokeWidth={0}
+        >
+          {data.map(d => (
+            <Cell key={d.key} fill={DONUT_COLORS[d.key]} />
+          ))}
+        </Pie>
+        <Tooltip
+          formatter={(val: number, name: string) => [val, name]}
+          contentStyle={{
+            background: '#111827',
+            border: '1px solid rgba(99,102,241,0.3)',
+            borderRadius: 8,
+            fontSize: 11,
+          }}
+          itemStyle={{ color: '#e5e7eb' }}
+        />
+      </PieChart>
+      <div className="space-y-1 flex-1">
+        {data.map(d => (
+          <div key={d.key} className="flex items-center gap-2 text-xs">
+            <span
+              className="w-2 h-2 rounded-sm flex-shrink-0"
+              style={{ background: DONUT_COLORS[d.key] }}
+            />
+            <span className="text-gray-400">{d.label}</span>
+            <span className="text-white font-medium ml-auto">{d.value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 export default function FundamentalsPanel({ fundamentals }: Props) {
@@ -72,31 +136,16 @@ export default function FundamentalsPanel({ fundamentals }: Props) {
           </div>
         )}
 
-        {/* Podstawowe */}
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-            <p className="text-xs text-gray-300 font-semibold uppercase tracking-wider">Wycena</p>
-            <div className="flex-1 h-px bg-gray-700/50" />
-          </div>
-          <div className="space-y-0">
-            {baseRows.map(({ label, value }) => (
-              <div key={label} className="flex justify-between py-2 border-b border-gray-800/60 last:border-0 text-sm">
-                <span className="text-gray-400">{label}</span>
-                <span className="text-white font-medium">{value}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Finanse spółki */}
-        {financialRows.length > 0 && (
+        {/* Wycena + Finanse obok siebie */}
+        <div className={`grid gap-4 ${financialRows.length > 0 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+          {/* Wycena */}
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <p className="text-xs text-gray-300 font-semibold uppercase tracking-wider">Finanse</p>
+              <p className="text-xs text-gray-300 font-semibold uppercase tracking-wider">Wycena</p>
               <div className="flex-1 h-px bg-gray-700/50" />
             </div>
             <div className="space-y-0">
-              {financialRows.map(({ label, value }) => (
+              {baseRows.map(({ label, value }) => (
                 <div key={label} className="flex justify-between py-2 border-b border-gray-800/60 last:border-0 text-sm">
                   <span className="text-gray-400">{label}</span>
                   <span className="text-white font-medium">{value}</span>
@@ -104,9 +153,27 @@ export default function FundamentalsPanel({ fundamentals }: Props) {
               ))}
             </div>
           </div>
-        )}
 
-        {/* Analitycy */}
+          {/* Finanse */}
+          {financialRows.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <p className="text-xs text-gray-300 font-semibold uppercase tracking-wider">Finanse</p>
+                <div className="flex-1 h-px bg-gray-700/50" />
+              </div>
+              <div className="space-y-0">
+                {financialRows.map(({ label, value }) => (
+                  <div key={label} className="flex justify-between py-2 border-b border-gray-800/60 last:border-0 text-sm">
+                    <span className="text-gray-400">{label}</span>
+                    <span className="text-white font-medium">{value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Konsensus analityków — pełna szerokość */}
         {analystRows.length > 0 && (
           <div>
             <div className="flex items-center gap-2 mb-2">
@@ -122,32 +189,10 @@ export default function FundamentalsPanel({ fundamentals }: Props) {
               ))}
             </div>
             {recommendationTrend && (
-              <RecommendationBar trend={recommendationTrend} />
+              <RecommendationDonut trend={recommendationTrend} />
             )}
           </div>
         )}
-      </div>
-    </div>
-  )
-}
-
-function RecommendationBar({ trend }: { trend: NonNullable<FundamentalData['recommendationTrend']> }) {
-  const total = trend.strongBuy + trend.buy + trend.hold + trend.sell + trend.strongSell
-  if (total === 0) return null
-  const pct = (n: number) => `${((n / total) * 100).toFixed(0)}%`
-
-  return (
-    <div className="mt-2">
-      <div className="flex h-2 rounded-full overflow-hidden" style={{ borderRadius: 9999 }}>
-        {trend.strongBuy > 0  && <div style={{ width: pct(trend.strongBuy) }}  className="bg-emerald-500" title={`Strong Buy: ${trend.strongBuy}`} />}
-        {trend.buy > 0        && <div style={{ width: pct(trend.buy) }}        className="bg-green-400"   title={`Buy: ${trend.buy}`} />}
-        {trend.hold > 0       && <div style={{ width: pct(trend.hold) }}       className="bg-yellow-400"  title={`Hold: ${trend.hold}`} />}
-        {trend.sell > 0       && <div style={{ width: pct(trend.sell) }}       className="bg-orange-400"  title={`Sell: ${trend.sell}`} />}
-        {trend.strongSell > 0 && <div style={{ width: pct(trend.strongSell) }} className="bg-red-500"     title={`Strong Sell: ${trend.strongSell}`} />}
-      </div>
-      <div className="flex justify-between text-xs text-gray-500 mt-1">
-        <span>SB:{trend.strongBuy} B:{trend.buy} H:{trend.hold} S:{trend.sell} SS:{trend.strongSell}</span>
-        <span>{total} analityków</span>
       </div>
     </div>
   )

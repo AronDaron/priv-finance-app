@@ -5,15 +5,6 @@ interface Props {
   currentPrice: number
 }
 
-function SectionHeader({ title }: { title: string }) {
-  return (
-    <div className="flex items-center gap-2 mb-4">
-      <h4 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">{title}</h4>
-      <div className="flex-1 h-px bg-gray-700/50" />
-    </div>
-  )
-}
-
 interface StatCardProps {
   label: string
   value: string
@@ -93,11 +84,10 @@ export default function TechnicalsPanel({ technicals, currentPrice }: Props) {
   const bbLabelColor = bbPosition == null ? '' : bbPosition > 80 ? 'text-finance-red' : bbPosition < 20 ? 'text-finance-green' : 'text-gray-400'
 
   return (
-    <div className="glass-card rounded-xl p-5 space-y-5">
+    <div className="glass-card rounded-xl p-5 space-y-4">
       <h3 className="text-lg font-semibold text-white">Wskaźniki techniczne</h3>
 
-      <SectionHeader title="Oscylatory" />
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 gap-3">
         {/* RSI */}
         <StatCard
           label="RSI (14)"
@@ -107,6 +97,28 @@ export default function TechnicalsPanel({ technicals, currentPrice }: Props) {
           barShadow={rsiBarShadow}
           barWidth={rsi14 != null ? Math.min(rsi14, 100) : undefined}
         />
+
+        {/* SMA */}
+        <div className="glass-card rounded-xl overflow-hidden">
+          <div style={{ height: 3, background: 'linear-gradient(90deg, #6366f1, #818cf8)', boxShadow: '0 0 8px rgba(99,102,241,0.4)' }} />
+          <div className="p-4">
+            <p className="text-xs uppercase tracking-widest text-gray-500 mb-2">SMA</p>
+            <div className="space-y-1 text-sm">
+              {[
+                { label: 'SMA20',  value: sma20  },
+                { label: 'SMA50',  value: sma50  },
+                { label: 'SMA200', value: sma200 },
+              ].map(({ label, value }) => (
+                <div key={label} className="flex justify-between items-center">
+                  <span className="text-gray-500">{label}</span>
+                  <span className="text-white">
+                    {value != null ? value.toFixed(2) : 'N/A'}{smaStatus(value)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
 
         {/* MACD */}
         <div className="glass-card rounded-xl overflow-hidden">
@@ -128,57 +140,6 @@ export default function TechnicalsPanel({ technicals, currentPrice }: Props) {
                   {macd.histogram?.toFixed(3) ?? 'N/A'}
                 </span>
               </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ADX */}
-        <div className="glass-card rounded-xl overflow-hidden">
-          <div style={{ height: 3, background: adxBarColor, boxShadow: adxBarShadow }} />
-          <div className="p-4">
-            <p className="text-xs uppercase tracking-widest text-gray-500 mb-2">ADX (14)</p>
-            {adx14 ? (
-              <>
-                <p className={`text-xl font-bold tabular-nums ${adxStrength?.color ?? 'text-gray-300'}`}>
-                  {adx14.adx.toFixed(1)}
-                </p>
-                {adxStrength && <p className={`text-xs mt-1 ${adxStrength.color}`}>{adxStrength.label}</p>}
-                <div className="space-y-1 text-sm mt-2">
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">+DI</span>
-                    <span className="text-finance-green">{adx14.pdi.toFixed(1)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">-DI</span>
-                    <span className="text-finance-red">{adx14.mdi.toFixed(1)}</span>
-                  </div>
-                </div>
-              </>
-            ) : <p className="text-gray-600 text-sm">N/A</p>}
-          </div>
-        </div>
-      </div>
-
-      <SectionHeader title="Średnie kroczące i pasma" />
-      <div className="grid grid-cols-3 gap-3">
-        {/* SMA */}
-        <div className="glass-card rounded-xl overflow-hidden">
-          <div style={{ height: 3, background: 'linear-gradient(90deg, #6366f1, #818cf8)', boxShadow: '0 0 8px rgba(99,102,241,0.4)' }} />
-          <div className="p-4">
-            <p className="text-xs uppercase tracking-widest text-gray-500 mb-2">SMA</p>
-            <div className="space-y-1 text-sm">
-              {[
-                { label: 'SMA20',  value: sma20  },
-                { label: 'SMA50',  value: sma50  },
-                { label: 'SMA200', value: sma200 },
-              ].map(({ label, value }) => (
-                <div key={label} className="flex justify-between items-center">
-                  <span className="text-gray-500">{label}</span>
-                  <span className="text-white">
-                    {value != null ? value.toFixed(2) : 'N/A'}{smaStatus(value)}
-                  </span>
-                </div>
-              ))}
             </div>
           </div>
         </div>
@@ -218,6 +179,32 @@ export default function TechnicalsPanel({ technicals, currentPrice }: Props) {
                   </div>
                 )}
               </div>
+            ) : <p className="text-gray-600 text-sm">N/A</p>}
+          </div>
+        </div>
+
+        {/* ADX */}
+        <div className="glass-card rounded-xl overflow-hidden">
+          <div style={{ height: 3, background: adxBarColor, boxShadow: adxBarShadow }} />
+          <div className="p-4">
+            <p className="text-xs uppercase tracking-widest text-gray-500 mb-2">ADX (14)</p>
+            {adx14 ? (
+              <>
+                <p className={`text-xl font-bold tabular-nums ${adxStrength?.color ?? 'text-gray-300'}`}>
+                  {adx14.adx.toFixed(1)}
+                </p>
+                {adxStrength && <p className={`text-xs mt-1 ${adxStrength.color}`}>{adxStrength.label}</p>}
+                <div className="space-y-1 text-sm mt-2">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">+DI</span>
+                    <span className="text-finance-green">{adx14.pdi.toFixed(1)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">-DI</span>
+                    <span className="text-finance-red">{adx14.mdi.toFixed(1)}</span>
+                  </div>
+                </div>
+              </>
             ) : <p className="text-gray-600 text-sm">N/A</p>}
           </div>
         </div>
