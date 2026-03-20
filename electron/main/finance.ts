@@ -367,7 +367,15 @@ async function get1mChange(ticker: string): Promise<number> {
   }
 }
 
+// ─── Cache globalMarket (TTL 5 min) ──────────────────────────────────────────
+let _globalMarketCache: { data: GlobalMarketData; expiresAt: number } | null = null
+const GLOBAL_MARKET_TTL = 5 * 60 * 1000
+
 export async function fetchGlobalMarketData(): Promise<GlobalMarketData> {
+  if (_globalMarketCache && Date.now() < _globalMarketCache.expiresAt) {
+    return _globalMarketCache.data
+  }
+
   // Krok 1: wszystkie cytaty równolegle
   const [
     oil, gas, wheat, copper, gold,
@@ -426,11 +434,13 @@ export async function fetchGlobalMarketData(): Promise<GlobalMarketData> {
   vwo.change1m     = m['VWO']      ?? 0
   inda.change1m    = m['INDA']     ?? 0
 
-  return {
+  const result: GlobalMarketData = {
     commodities: { oil, gas, wheat, copper, gold },
     currencies:  { EURUSD: eurusd, GBPUSD: gbpusd, CHFUSD: chfusd, CADUSD: cadusd, AUDUSD: audusd, JPYUSD: jpyusd, CNYUSD: cnyusd },
     indices:     { SP500: sp500, DAX: dax, Nikkei: nikkei, WIG20: wig20, FTSE: ftse, VIX: vix, FXI: fxi, ASX200: asx200, EZA: eza, BVSP: bvsp, VWO: vwo, INDA: inda },
     bonds:       { US10Y: us10y },
     fetchedAt:   new Date().toISOString(),
   }
+  _globalMarketCache = { data: result, expiresAt: Date.now() + GLOBAL_MARKET_TTL }
+  return result
 }

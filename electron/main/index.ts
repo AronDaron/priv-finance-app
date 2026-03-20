@@ -12,8 +12,8 @@ import {
   fetchPortfolioHistory,
   fetchGlobalMarketData,
 } from './finance'
-import { computeGlobalScores, detectMarketRegime } from './globalScore'
-import type { HistoryPeriod } from '../../src/lib/types'
+import { computeGlobalScores, detectMarketRegime, buildRegimeSummary } from './globalScore'
+import type { HistoryPeriod, GlobalMarketData, MarketRegime } from '../../src/lib/types'
 import { gramsToTroyOz } from '../../src/lib/types'
 import {
   initDatabase,
@@ -50,9 +50,26 @@ import {
   type DBTransaction,
   type DBAIReport,
 } from './database'
-import { analyzeStock, analyzePortfolio, analyzeRegion, chatWithPortfolio, WORKER_MODEL, MANAGER_MODEL, WORLD_MODEL, type ChatMessage } from './ai'
+import { analyzeStock, analyzePortfolio, analyzeRegion, chatWithPortfolio, WORKER_MODEL, MANAGER_MODEL, WORLD_MODEL, type ChatMessage, type GlobalMacroContext } from './ai'
 import { fetchNewsForRegion } from './news'
 import type { NewsRegion } from './news'
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function buildMacroContext(m: GlobalMarketData, regime: MarketRegime): GlobalMacroContext {
+  return {
+    vix: m.indices.VIX.price,
+    us10y: m.bonds.US10Y.price,
+    sp500Change1m: m.indices.SP500.change1m,
+    oil: { price: m.commodities.oil.price, change1m: m.commodities.oil.change1m },
+    gold: { price: m.commodities.gold.price, change1m: m.commodities.gold.change1m },
+    copper: { change1m: m.commodities.copper.change1m },
+    gas: { change1m: m.commodities.gas.change1m },
+    nikkeiChange1m: m.indices.Nikkei.change1m,
+    ftseChange1m: m.indices.FTSE.change1m,
+    regimeSummary: buildRegimeSummary(regime),
+  }
+}
 
 // ─── Chat RAG helpers ─────────────────────────────────────────────────────────
 
@@ -106,14 +123,15 @@ function buildChatSystemContext(params: {
   transactions: DBTransaction[]
   cashAccounts: DBCashAccount[]
   priceHistories: Map<string, ReturnType<typeof aggregateToMonthly>>
-  globalMarket: { indices: { VIX: { price: number }; SP500: { price: number; changePercent: number; change1m: number }; WIG20: { price: number; changePercent: number; change1m: number }; DAX: { change1m: number; price: number } }; bonds: { US10Y: { price: number } }; commodities: { gold: { price: number; change1m: number }; oil: { price: number; change1m: number } }; currencies: { EURUSD: { price: number } } } | null
+  globalMarket: GlobalMarketData | null
+  regime: MarketRegime | null
   news: DBNewsItem[]
   aiReports: DBAIReport[]
   usdPln: number
   eurPln: number
   today: string
 }): string {
-  const { assets, quotes, portfolios, transactions, cashAccounts, priceHistories, globalMarket, news, aiReports, usdPln, eurPln, today } = params
+  const { assets, quotes, portfolios, transactions, cashAccounts, priceHistories, globalMarket, regime, news, aiReports, usdPln, eurPln, today } = params
   const toPln = (amount: number, currency: string) =>
     currency === 'PLN' ? amount : currency === 'USD' ? amount * usdPln : currency === 'EUR' ? amount * eurPln : amount
 
@@ -181,15 +199,16 @@ function buildChatSystemContext(params: {
   if (globalMarket) {
     const m = globalMarket
     const vixLevel = m.indices.VIX.price < 15 ? 'spokój' : m.indices.VIX.price < 25 ? 'umiarkowany' : m.indices.VIX.price < 35 ? 'wysoki' : 'panika'
+    const ch = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`
+    const regimeLine = regime ? buildRegimeSummary(regime) : null
     sections.push(
       '', '=== MAKROEKONOMIA ===',
       `  VIX: ${m.indices.VIX.price.toFixed(1)} (${vixLevel}) | US10Y: ${m.bonds.US10Y.price.toFixed(2)}%`,
-      `  S&P500: ${m.indices.SP500.price.toFixed(0)} (${m.indices.SP500.changePercent >= 0 ? '+' : ''}${m.indices.SP500.changePercent.toFixed(2)}% dziś, ${m.indices.SP500.change1m >= 0 ? '+' : ''}${m.indices.SP500.change1m.toFixed(1)}% 30d)`,
-      `  WIG20: ${m.indices.WIG20.price.toFixed(0)} (${m.indices.WIG20.changePercent >= 0 ? '+' : ''}${m.indices.WIG20.changePercent.toFixed(2)}% dziś, ${m.indices.WIG20.change1m >= 0 ? '+' : ''}${m.indices.WIG20.change1m.toFixed(1)}% 30d)`,
-      `  DAX: ${m.indices.DAX.price.toFixed(0)} (${m.indices.DAX.change1m >= 0 ? '+' : ''}${m.indices.DAX.change1m.toFixed(1)}% 30d)`,
-      `  Złoto: $${m.commodities.gold.price.toFixed(0)} (${m.commodities.gold.change1m >= 0 ? '+' : ''}${m.commodities.gold.change1m.toFixed(1)}% 30d)`,
-      `  Ropa: $${m.commodities.oil.price.toFixed(1)} (${m.commodities.oil.change1m >= 0 ? '+' : ''}${m.commodities.oil.change1m.toFixed(1)}% 30d)`,
-      `  EUR/USD: ${m.currencies.EURUSD.price.toFixed(4)} | USD/PLN: ${usdPln.toFixed(2)}`
+      `  S&P500: ${m.indices.SP500.price.toFixed(0)} (${m.indices.SP500.changePercent >= 0 ? '+' : ''}${m.indices.SP500.changePercent.toFixed(2)}% dziś, ${ch(m.indices.SP500.change1m)} 30d) | WIG20: ${m.indices.WIG20.price.toFixed(0)} (${ch(m.indices.WIG20.change1m)} 30d)`,
+      `  DAX: ${m.indices.DAX.price.toFixed(0)} (${ch(m.indices.DAX.change1m)} 30d) | Nikkei: ${m.indices.Nikkei.price.toFixed(0)} (${ch(m.indices.Nikkei.change1m)} 30d) | FTSE: ${m.indices.FTSE.price.toFixed(0)} (${ch(m.indices.FTSE.change1m)} 30d)`,
+      `  Ropa: $${m.commodities.oil.price.toFixed(1)} (${ch(m.commodities.oil.change1m)} 30d) | Złoto: $${m.commodities.gold.price.toFixed(0)} (${ch(m.commodities.gold.change1m)} 30d) | Miedź 30d: ${ch(m.commodities.copper.change1m)} | Gaz 30d: ${ch(m.commodities.gas.change1m)}`,
+      `  EUR/USD: ${m.currencies.EURUSD.price.toFixed(4)} | USD/PLN: ${usdPln.toFixed(2)}`,
+      ...(regimeLine ? [`  Reżim rynkowy: ${regimeLine}`] : [])
     )
   }
 
@@ -200,11 +219,14 @@ function buildChatSystemContext(params: {
   }
 
   // --- AI reports ---
+  const portfolioTickers = new Set(assets.map(a => a.ticker))
   const reportLines: string[] = []
   for (const r of aiReports) {
     if (r.ticker === '__PORTFOLIO__') continue
+    const inPortfolio = portfolioTickers.has(r.ticker)
+    const label = inPortfolio ? '(w portfelu)' : '(NIE w portfelu — tylko analiza)'
     const truncated = r.report_text.length > 2000 ? r.report_text.slice(0, 2000) + '...' : r.report_text
-    reportLines.push(`\n--- Analiza ${r.ticker} (${r.created_at.slice(0, 10)}) ---\n${truncated}`)
+    reportLines.push(`\n--- Analiza ${r.ticker} ${label} (${r.created_at.slice(0, 10)}) ---\n${truncated}`)
   }
   if (reportLines.length > 0) sections.push('', '=== RAPORTY AI (ostatnie analizy) ===', ...reportLines)
 
@@ -361,15 +383,18 @@ function registerIpcHandlers(): void {
     const apiKey = getSetting('openrouter_api_key')
     if (!apiKey) throw new Error('Brak klucza API OpenRouter. Skonfiguruj go w Ustawieniach.')
 
-    // Sprawdź czy ticker to fizyczny metal w portfelu
     const assetInDb = getAllAssets().find(a => a.ticker === ticker)
 
-    const [fundamentals, history, quote] = await Promise.all([
+    const [fundamentals, history, quote, marketData] = await Promise.all([
       fetchFundamentals(ticker),
       fetchHistory(ticker, '1y'),
       fetchQuote(ticker),
+      fetchGlobalMarketData().catch(() => null),
     ])
     const technicals = calculateTechnicals(history)
+    const regime = marketData ? detectMarketRegime(marketData) : null
+    const newsItems = searchNews(ticker, 8)
+    const newsHeadlines = newsItems.map(n => `[${n.pub_date?.slice(0, 10) ?? '?'}] ${n.source ?? ''}: ${n.title}`)
 
     const reportText = await analyzeStock({
       ticker,
@@ -380,6 +405,8 @@ function registerIpcHandlers(): void {
       fundamentals,
       technicals,
       gold_grams: assetInDb?.gold_grams ?? null,
+      marketContext: marketData && regime ? buildMacroContext(marketData, regime) : null,
+      newsHeadlines,
     })
 
     return addReport({ ticker, model: WORKER_MODEL, report_text: reportText })
@@ -469,6 +496,8 @@ function registerIpcHandlers(): void {
     const portfolios = getPortfolios()
     const cashAccounts = getCashAccounts()
 
+    const chatRegime = globalMarket ? detectMarketRegime(globalMarket) : null
+
     // Zbuduj system context
     const systemContext = buildChatSystemContext({
       assets,
@@ -477,20 +506,8 @@ function registerIpcHandlers(): void {
       transactions,
       cashAccounts,
       priceHistories,
-      globalMarket: globalMarket ? {
-        indices: {
-          VIX: globalMarket.indices.VIX,
-          SP500: globalMarket.indices.SP500,
-          WIG20: globalMarket.indices.WIG20,
-          DAX: globalMarket.indices.DAX,
-        },
-        bonds: globalMarket.bonds,
-        commodities: {
-          gold: globalMarket.commodities.gold,
-          oil: globalMarket.commodities.oil,
-        },
-        currencies: { EURUSD: globalMarket.currencies.EURUSD },
-      } : null,
+      globalMarket,
+      regime: chatRegime,
       news: relevantNews,
       aiReports,
       usdPln,

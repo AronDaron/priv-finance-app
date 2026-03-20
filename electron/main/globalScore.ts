@@ -412,6 +412,21 @@ const REGIONS: RegionDef[] = [
   },
 ]
 
+// ─── Regime summary (eksportowana — używana przez ai i dev-api-plugin) ────────
+
+export function buildRegimeSummary(regime: MarketRegime): string | null {
+  const parts: string[] = []
+  if (regime.vixLevel === 'panic') parts.push('VIX panika')
+  else if (regime.vixLevel === 'elevated') parts.push('VIX podwyższony')
+  if (regime.bondStress === 'shock') parts.push('szok obligacyjny (US10Y >5%)')
+  else if (regime.bondStress === 'elevated') parts.push('napięcie obligacyjne (US10Y 4-5%)')
+  if (regime.oilShock) parts.push('szok naftowy')
+  if (regime.goldRally) parts.push('rajd złota')
+  if (regime.copperCrash) parts.push('wyprzedaż miedzi')
+  if (regime.gasShock) parts.push('szok gazowy')
+  return parts.length > 0 ? parts.join(', ') : null
+}
+
 // ─── Główna funkcja ───────────────────────────────────────────────────────────
 
 export function computeGlobalScores(marketData: GlobalMarketData, regime?: MarketRegime): RegionScore[] {

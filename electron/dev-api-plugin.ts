@@ -87,21 +87,39 @@ export function financeDevApiPlugin(): Plugin {
             }
             case '/ai/analyze-stock': {
               const body = await readBody(req)
-              const { ticker: t, apiKey, gold_grams: goldGramsStr } = body
+              const { ticker: t, apiKey, gold_grams: goldGramsStr, news_headlines: newsHeadlinesJson } = body
               if (!t) { res.statusCode = 400; res.end(JSON.stringify({ error: 'Brak ticker' })); return }
               const goldGrams = goldGramsStr ? parseFloat(goldGramsStr) : null
+              const newsHeadlines: string[] = newsHeadlinesJson ? JSON.parse(newsHeadlinesJson) : []
               const ai = await import('./main/ai')
-              const [fundamentals, history, quote] = await Promise.all([
+              const { detectMarketRegime, buildRegimeSummary } = await import('./main/globalScore')
+              const [fundamentals, history, quote, marketData] = await Promise.all([
                 finance.fetchFundamentals(t),
                 finance.fetchHistory(t, '1y'),
                 finance.fetchQuote(t),
+                finance.fetchGlobalMarketData().catch(() => null),
               ])
               const technicals = finance.calculateTechnicals(history)
+              const regime = marketData ? detectMarketRegime(marketData) : null
+              const marketContext = marketData && regime ? {
+                vix: marketData.indices.VIX.price,
+                us10y: marketData.bonds.US10Y.price,
+                sp500Change1m: marketData.indices.SP500.change1m,
+                oil: { price: marketData.commodities.oil.price, change1m: marketData.commodities.oil.change1m },
+                gold: { price: marketData.commodities.gold.price, change1m: marketData.commodities.gold.change1m },
+                copper: { change1m: marketData.commodities.copper.change1m },
+                gas: { change1m: marketData.commodities.gas.change1m },
+                nikkeiChange1m: marketData.indices.Nikkei.change1m,
+                ftseChange1m: marketData.indices.FTSE.change1m,
+                regimeSummary: buildRegimeSummary(regime),
+              } : null
               const report_text = await ai.analyzeStock({
                 ticker: t, apiKey, name: quote.name,
                 currentPrice: quote.price, currency: quote.currency,
                 fundamentals, technicals,
                 gold_grams: goldGrams,
+                marketContext,
+                newsHeadlines,
               })
               data = { report_text, model: ai.WORKER_MODEL, ticker: t }
               break
@@ -301,19 +319,30 @@ export function financeDevApiPlugin(): Plugin {
 
               const macroLines: string[] = []
               if (globalData) {
+                const { buildRegimeSummary: brs } = await import('./main/globalScore')
+                const { detectMarketRegime: dmr } = await import('./main/globalScore')
                 const m = globalData
-                macroLines.push(`  VIX: ${m.indices.VIX.price.toFixed(1)} | US10Y: ${m.bonds.US10Y.price.toFixed(2)}%`)
-                macroLines.push(`  S&P500: ${m.indices.SP500.price.toFixed(0)} (${m.indices.SP500.changePercent >= 0 ? '+' : ''}${m.indices.SP500.changePercent.toFixed(2)}% dziś, ${m.indices.SP500.change1m >= 0 ? '+' : ''}${m.indices.SP500.change1m.toFixed(1)}% 30d)`)
-                macroLines.push(`  Złoto: $${m.commodities.gold.price.toFixed(0)} (${m.commodities.gold.change1m >= 0 ? '+' : ''}${m.commodities.gold.change1m.toFixed(1)}% 30d)`)
+                const reg = dmr(m)
+                const ch = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`
+                const vixLevel = m.indices.VIX.price < 15 ? 'spokój' : m.indices.VIX.price < 25 ? 'umiarkowany' : m.indices.VIX.price < 35 ? 'wysoki' : 'panika'
+                macroLines.push(`  VIX: ${m.indices.VIX.price.toFixed(1)} (${vixLevel}) | US10Y: ${m.bonds.US10Y.price.toFixed(2)}%`)
+                macroLines.push(`  S&P500: ${m.indices.SP500.price.toFixed(0)} (${m.indices.SP500.changePercent >= 0 ? '+' : ''}${m.indices.SP500.changePercent.toFixed(2)}% dziś, ${ch(m.indices.SP500.change1m)} 30d) | WIG20: ${m.indices.WIG20.price.toFixed(0)} (${ch(m.indices.WIG20.change1m)} 30d)`)
+                macroLines.push(`  DAX: ${m.indices.DAX.price.toFixed(0)} (${ch(m.indices.DAX.change1m)} 30d) | Nikkei: ${m.indices.Nikkei.price.toFixed(0)} (${ch(m.indices.Nikkei.change1m)} 30d) | FTSE: ${m.indices.FTSE.price.toFixed(0)} (${ch(m.indices.FTSE.change1m)} 30d)`)
+                macroLines.push(`  Ropa: $${m.commodities.oil.price.toFixed(1)} (${ch(m.commodities.oil.change1m)} 30d) | Złoto: $${m.commodities.gold.price.toFixed(0)} (${ch(m.commodities.gold.change1m)} 30d) | Miedź 30d: ${ch(m.commodities.copper.change1m)} | Gaz 30d: ${ch(m.commodities.gas.change1m)}`)
                 macroLines.push(`  EUR/USD: ${m.currencies.EURUSD.price.toFixed(4)} | USD/PLN: ${usdPln.toFixed(2)}`)
+                const regimeLine = brs(reg)
+                if (regimeLine) macroLines.push(`  Reżim rynkowy: ${regimeLine}`)
               }
 
               // AI reports (max 10, up to 2000 chars each, skip portfolio summary)
+              const portfolioTickerSet2 = new Set(assetsRaw.map(a => a.ticker))
               const reportLines: string[] = []
               const recentReports = reportsRaw.filter(r => r.ticker !== '__PORTFOLIO__').slice(-10)
               for (const r of recentReports) {
+                const inPortfolio = portfolioTickerSet2.has(r.ticker)
+                const label = inPortfolio ? '(w portfelu)' : '(NIE w portfelu — tylko analiza)'
                 const truncated = r.report_text.length > 2000 ? r.report_text.slice(0, 2000) + '...' : r.report_text
-                reportLines.push(`\n--- Analiza ${r.ticker} (${r.created_at.slice(0, 10)}) ---\n${truncated}`)
+                reportLines.push(`\n--- Analiza ${r.ticker} ${label} (${r.created_at.slice(0, 10)}) ---\n${truncated}`)
               }
 
               const systemContext = [

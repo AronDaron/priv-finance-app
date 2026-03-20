@@ -4,10 +4,11 @@ import { gramsToTroyOz } from '../../src/lib/types'
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 const WORKER_MODEL   = 'google/gemini-3-flash-preview'
 const MANAGER_MODEL  = 'google/gemini-3.1-pro-preview'
-const WORLD_MODEL   = 'google/gemini-3-flash-preview'
+const WORLD_MODEL    = 'google/gemini-3-flash-preview'
+const CHAT_MODEL     = 'google/gemini-3-flash-preview'
 const APP_REFERER    = 'https://finance-portfolio-tracker'
 
-export { WORKER_MODEL, MANAGER_MODEL, WORLD_MODEL }
+export { WORKER_MODEL, MANAGER_MODEL, WORLD_MODEL, CHAT_MODEL }
 
 // ─── Pomocnicza funkcja HTTP ──────────────────────────────────────────────────
 
@@ -69,6 +70,19 @@ function rsiInterpret(rsi: number | null): string {
 
 // ─── Worker: analiza jednej spółki ───────────────────────────────────────────
 
+export interface GlobalMacroContext {
+  vix: number
+  us10y: number
+  sp500Change1m: number
+  oil: { price: number; change1m: number }
+  gold: { price: number; change1m: number }
+  copper: { change1m: number } | null
+  gas: { change1m: number } | null
+  nikkeiChange1m: number | null
+  ftseChange1m: number | null
+  regimeSummary: string | null
+}
+
 export interface StockAnalysisParams {
   ticker: string
   name: string
@@ -77,7 +91,9 @@ export interface StockAnalysisParams {
   technicals: TechnicalIndicators
   currentPrice: number
   currency: string
-  gold_grams?: number | null  // >0 = metal fizyczny, null/undefined = giełdowy instrument
+  gold_grams?: number | null
+  marketContext?: GlobalMacroContext | null
+  newsHeadlines?: string[]
 }
 
 function formatPercent(val: number | null): string {
@@ -92,7 +108,7 @@ function formatRecommendationTrend(rt: FundamentalData['recommendationTrend']): 
 }
 
 export async function analyzeStock(params: StockAnalysisParams): Promise<string> {
-  const { ticker, name, apiKey, fundamentals, technicals, currentPrice, currency, gold_grams } = params
+  const { ticker, name, apiKey, fundamentals, technicals, currentPrice, currency, gold_grams, marketContext, newsHeadlines } = params
   const {
     pe, eps, dividendYield, marketCap, beta, sector, industry, week52High, week52Low,
     totalRevenue, revenueGrowth, grossMargins, profitMargins, totalDebt, totalCash,
@@ -146,6 +162,14 @@ WSKAŹNIKI TECHNICZNE:
 - Bollinger Bands(20,2): górne ${bollingerBands?.upper.toFixed(2) ?? 'brak'} / środek ${bollingerBands?.middle.toFixed(2) ?? 'brak'} / dolne ${bollingerBands?.lower.toFixed(2) ?? 'brak'}${bollingerBands ? `, szerokość pasm ${bollingerBands.bandwidth.toFixed(1)}%` : ''}
 - ATR(14): ${atr14?.toFixed(2) ?? 'brak'}${atr14 && currentPrice > 0 ? ` (${((atr14 / currentPrice) * 100).toFixed(2)}% ceny — zmienność dzienna)` : ''}
 - ADX(14): ${adx14?.adx.toFixed(1) ?? 'brak'}${adx14 ? ` (${adx14.adx < 20 ? 'brak trendu' : adx14.adx < 40 ? 'słaby trend' : adx14.adx < 60 ? 'silny trend' : 'bardzo silny trend'}), +DI=${adx14.pdi.toFixed(1)} -DI=${adx14.mdi.toFixed(1)}` : ''}
+${newsHeadlines && newsHeadlines.length > 0 ? `
+POWIĄZANE NAGŁÓWKI NEWSÓW:
+${newsHeadlines.map(h => `- ${h}`).join('\n')}` : ''}
+${marketContext ? `
+KONTEKST MAKROEKONOMICZNY:
+- VIX: ${marketContext.vix.toFixed(1)} (${marketContext.vix < 15 ? 'spokój' : marketContext.vix < 25 ? 'umiarkowany' : marketContext.vix < 35 ? 'wysoki' : 'panika'}) | US10Y: ${marketContext.us10y.toFixed(2)}%
+- S&P500 30d: ${marketContext.sp500Change1m >= 0 ? '+' : ''}${marketContext.sp500Change1m.toFixed(1)}%${marketContext.nikkeiChange1m != null ? ` | Nikkei 30d: ${marketContext.nikkeiChange1m >= 0 ? '+' : ''}${marketContext.nikkeiChange1m.toFixed(1)}%` : ''}${marketContext.ftseChange1m != null ? ` | FTSE 30d: ${marketContext.ftseChange1m >= 0 ? '+' : ''}${marketContext.ftseChange1m.toFixed(1)}%` : ''}
+- Ropa: $${marketContext.oil.price.toFixed(1)} (${marketContext.oil.change1m >= 0 ? '+' : ''}${marketContext.oil.change1m.toFixed(1)}% 30d) | Złoto: $${marketContext.gold.price.toFixed(0)} (${marketContext.gold.change1m >= 0 ? '+' : ''}${marketContext.gold.change1m.toFixed(1)}% 30d)${marketContext.copper ? ` | Miedź 30d: ${marketContext.copper.change1m >= 0 ? '+' : ''}${marketContext.copper.change1m.toFixed(1)}%` : ''}${marketContext.gas ? ` | Gaz 30d: ${marketContext.gas.change1m >= 0 ? '+' : ''}${marketContext.gas.change1m.toFixed(1)}%` : ''}${marketContext.regimeSummary ? `\n- Reżim rynkowy: ${marketContext.regimeSummary}` : ''}` : ''}
 
 Napisz analizę (max 250 słów) zawierającą:
 1. ${isPhysicalMetal ? `Ocenę jako inwestycję w fizyczny ${metalName} (koszty przechowywania, spread kupno/sprzedaż, rola w portfelu)` : `Krótką ocenę fundamentalną${isEtf ? ' (skład, ekspozycja)' : ' (finanse, wycena, konsensus analityków)'}`}
@@ -386,5 +410,5 @@ export async function chatWithPortfolio(
     { role: 'system', content: systemContext },
     ...messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
   ]
-  return callOpenRouterMessages(MANAGER_MODEL, openRouterMessages, apiKey, 8000)
+  return callOpenRouterMessages(CHAT_MODEL, openRouterMessages, apiKey, 8000)
 }

@@ -491,8 +491,9 @@ export async function analyzeStock(ticker: string): Promise<AIReport> {
   const assets = await getAssets()
   const asset = assets.find(a => a.ticker === ticker)
   const goldGrams = asset?.gold_grams != null ? String(asset.gold_grams) : ''
+  const newsHeadlines = devNewsCacheSearch(ticker, 8)
   const result = await devApiPost<{ report_text: string; model: string; ticker: string }>(
-    '/ai/analyze-stock', { ticker, apiKey: apiKey ?? '', gold_grams: goldGrams }
+    '/ai/analyze-stock', { ticker, apiKey: apiKey ?? '', gold_grams: goldGrams, news_headlines: JSON.stringify(newsHeadlines) }
   )
   return addReport({ ticker, model: result.model, report_text: result.report_text })
 }
@@ -509,9 +510,38 @@ export async function analyzePortfolio(): Promise<AIReport> {
 
 // ─── News (RSS) ───────────────────────────────────────────────────────────────
 
+const DEV_NEWS_CACHE_KEY = 'dev_news_cache'
+const DEV_NEWS_CACHE_MAX = 400
+
+function devNewsCacheAppend(items: NewsItem[]): void {
+  try {
+    const existing: NewsItem[] = JSON.parse(localStorage.getItem(DEV_NEWS_CACHE_KEY) ?? '[]')
+    const existingLinks = new Set(existing.map(n => n.link))
+    const fresh = items.filter(n => !existingLinks.has(n.link))
+    const merged = [...fresh, ...existing].slice(0, DEV_NEWS_CACHE_MAX)
+    localStorage.setItem(DEV_NEWS_CACHE_KEY, JSON.stringify(merged))
+  } catch { /* pomiń */ }
+}
+
+export function devNewsCacheSearch(ticker: string, limit = 8): string[] {
+  try {
+    const items: NewsItem[] = JSON.parse(localStorage.getItem(DEV_NEWS_CACHE_KEY) ?? '[]')
+    const base = ticker.split('.')[0].toLowerCase()
+    return items
+      .filter(n => {
+        const hay = `${n.title} ${n.description ?? ''}`.toLowerCase()
+        return hay.includes(base)
+      })
+      .slice(0, limit)
+      .map(n => `[${n.pubDate?.slice(0, 10) ?? '?'}] ${n.source ?? ''}: ${n.title}`)
+  } catch { return [] }
+}
+
 export async function fetchNews(region: NewsRegion): Promise<NewsItem[]> {
   if (isElectron()) return window.electronAPI!.news.fetchRegion(region)
-  return devApiFetch<NewsItem[]>('/news', { region })
+  const items = await devApiFetch<NewsItem[]>('/news', { region })
+  devNewsCacheAppend(items)
+  return items
 }
 
 // ─── Global Market Analysis ───────────────────────────────────────────────────
