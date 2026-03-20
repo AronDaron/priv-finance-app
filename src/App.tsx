@@ -11,6 +11,7 @@ import BenchmarkView from './components/benchmark/BenchmarkView'
 import NewsView from './components/news/NewsView'
 import GlobalView from './components/global/GlobalView'
 import TransactionsView from './components/transactions/TransactionsView'
+import SearchView from './components/search/SearchView'
 import { PortfolioProvider } from './contexts/PortfolioContext'
 
 export default function App() {
@@ -23,6 +24,8 @@ export default function App() {
             <Route path="portfolio" element={<PortfolioView />} />
             <Route path="portfolio/:ticker" element={<StockDetailView />} />
             <Route path="stock/:ticker" element={<StockDetailView />} />
+            <Route path="search" element={<SearchView />} />
+            <Route path="search/:ticker" element={<SearchView />} />
             <Route path="settings" element={<SettingsView />} />
             <Route path="ai" element={<Navigate to="/ai/portfolio" replace />} />
             <Route path="ai/portfolio" element={<PortfolioAnalysisView />} />

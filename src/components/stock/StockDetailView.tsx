@@ -13,8 +13,14 @@ import ErrorMessage from '../ui/ErrorMessage'
 
 const PERIODS: HistoryPeriod[] = ['1mo', '3mo', '6mo', '1y', '2y', '5y']
 
-export default function StockDetailView() {
-  const { ticker } = useParams<{ ticker: string }>()
+interface StockDetailViewProps {
+  ticker?: string
+  embedded?: boolean
+}
+
+export default function StockDetailView({ ticker: propTicker, embedded = false }: StockDetailViewProps = {}) {
+  const { ticker: paramTicker } = useParams<{ ticker: string }>()
+  const ticker = propTicker ?? paramTicker
   const navigate = useNavigate()
 
   const [quote, setQuote] = useState<StockQuote | null>(null)
@@ -50,20 +56,22 @@ export default function StockDetailView() {
     Promise.all([getHistory(ticker, period), getTechnicals(ticker, period)])
       .then(([c, t]) => { setCandles(c); setTechnicals(t) })
       .catch(() => {})
-  }, [period])
+  }, [ticker, period])
 
   return (
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
-        <button
-          onClick={() => navigate(-1)}
-          className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          Wstecz
-        </button>
+        {!embedded && (
+          <button
+            onClick={() => navigate(-1)}
+            className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Wstecz
+          </button>
+        )}
         <button
           onClick={() => setShowAddModal(true)}
           className="bg-finance-green hover:bg-emerald-600 text-white font-medium px-4 py-2 rounded-lg transition-colors"
