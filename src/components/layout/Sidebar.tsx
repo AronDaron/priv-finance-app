@@ -1,4 +1,5 @@
 import { NavLink, useLocation } from 'react-router-dom'
+import logoFinance from '../../assets/logo_finance.png'
 
 const mainLinks = [
   {
@@ -101,9 +102,14 @@ export default function Sidebar() {
   return (
     <div className="w-72 flex flex-col" style={{ background: 'linear-gradient(to bottom, rgba(17,24,39,0.9), rgba(10,14,21,0.95))', borderRight: '1px solid rgba(55,65,81,0.4)', backdropFilter: 'blur(4px)' }}>
       <div className="px-6 py-6 border-b border-gray-700/40">
-        <h1 className="text-finance-green font-bold text-xl leading-tight">Finance</h1>
-        <div className="bg-finance-green h-0.5 w-8 mt-1 rounded-full" />
-        <p className="text-gray-500 text-sm mt-1">Portfolio Tracker</p>
+        <div className="flex gap-3" style={{ alignItems: 'center' }}>
+          <img src={logoFinance} alt="Logo" className="w-14 h-14 object-contain" style={{ display: 'block', transform: 'translateY(-1px)' }} />
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', lineHeight: '1.2' }}>
+            <h1 className="text-finance-green font-bold text-xl" style={{ margin: 0 }}>Finance</h1>
+            <p className="text-gray-500 text-sm" style={{ margin: 0 }}>Portfolio Tracker</p>
+            <div className="bg-finance-green h-0.5 mt-1 rounded-full" />
+          </div>
+        </div>
       </div>
       <nav className="flex-1 py-4">
         {mainLinks.map(({ to, label, icon }) => (
