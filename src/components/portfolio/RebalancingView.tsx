@@ -327,30 +327,45 @@ export default function RebalancingView() {
             )}
 
             {suggestions.length > 0 && (
-              <div className="pt-1">
-                {suggestions.map(({ cat, buyPLN, top }) => {
-                  const acc = accentForDiff(cat.currentPct - cat.targetPct)
-                  return (
-                    <div key={cat.key} className="py-4 border-t border-gray-800/60">
-                      {/* Nagłówek kategorii */}
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="text-sm font-semibold text-white">{cat.label}</span>
-                        <span className="text-base font-bold text-finance-green tabular-nums">+{formatCurrency(buyPLN, 'PLN')}</span>
+              <div className="pt-2">
+                {/* Kolumny kategorii w jednej linii */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: `repeat(${suggestions.length}, 1fr)`,
+                  gap: 0,
+                  borderTop: '1px solid rgba(55,65,81,0.5)',
+                }}>
+                  {suggestions.map(({ cat, buyPLN, top }, idx) => {
+                    const acc = accentForDiff(cat.currentPct - cat.targetPct)
+                    return (
+                      <div key={cat.key} style={{
+                        padding: '14px 16px',
+                        borderLeft: idx > 0 ? '1px solid rgba(55,65,81,0.5)' : 'none',
+                      }}>
+                        {/* Nagłówek kolumny */}
+                        <div style={{ marginBottom: 10 }}>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>{cat.label}</span>
+                          <span style={{ fontSize: 14, fontWeight: 700, color: '#10b981', float: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                            +{formatCurrency(buyPLN, 'PLN')}
+                          </span>
+                        </div>
+                        {/* Wiersze tickerów */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          {top.map(({ ticker, name, amt }) => (
+                            <div key={ticker} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ fontSize: 12, fontWeight: 700, color: acc.color, minWidth: 70, flexShrink: 0 }}>{ticker}</span>
+                              <span style={{ fontSize: 12, color: '#9ca3af', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                              <span style={{ fontSize: 12, fontWeight: 600, color: '#10b981', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>+{formatCurrency(amt, 'PLN')}</span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                      {/* Wiersze tickerów */}
-                      <div className="space-y-2">
-                        {top.map(({ ticker, name, amt }) => (
-                          <div key={ticker} className="flex items-center gap-3">
-                            <span className="text-sm font-bold w-24 flex-shrink-0 tabular-nums" style={{ color: acc.color }}>{ticker}</span>
-                            <span className="text-sm text-gray-400 flex-1 truncate">{name}</span>
-                            <span className="text-sm text-finance-green font-semibold tabular-nums flex-shrink-0">+{formatCurrency(amt, 'PLN')}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )
-                })}
-                <p className="text-xs text-gray-600 pt-3 border-t border-gray-800/40">Dokupienie aktywów bez sprzedaży — unika podatku od zysków.</p>
+                    )
+                  })}
+                </div>
+                <p style={{ fontSize: 11, color: '#4b5563', padding: '8px 0 0', borderTop: '1px solid rgba(55,65,81,0.3)', marginTop: 4 }}>
+                  Dokupienie aktywów bez sprzedaży — unika podatku od zysków.
+                </p>
               </div>
             )}
           </div>
