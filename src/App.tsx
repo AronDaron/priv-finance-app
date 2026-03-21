@@ -2,6 +2,8 @@ import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import AppLayout from './components/layout/AppLayout'
 import DashboardView from './components/dashboard/DashboardView'
 import PortfolioView from './components/portfolio/PortfolioView'
+import RebalancingView from './components/portfolio/RebalancingView'
+import CorrelationView from './components/portfolio/CorrelationView'
 import StockDetailView from './components/stock/StockDetailView'
 import SettingsView from './components/settings/SettingsView'
 import PortfolioAnalysisView from './components/ai/PortfolioAnalysisView'
@@ -22,6 +24,8 @@ export default function App() {
           <Route element={<AppLayout />}>
             <Route index element={<DashboardView />} />
             <Route path="portfolio" element={<PortfolioView />} />
+            <Route path="portfolio/rebalancing" element={<RebalancingView />} />
+            <Route path="portfolio/correlation" element={<CorrelationView />} />
             <Route path="portfolio/:ticker" element={<StockDetailView />} />
             <Route path="stock/:ticker" element={<StockDetailView />} />
             <Route path="search" element={<SearchView />} />

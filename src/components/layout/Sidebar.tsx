@@ -14,18 +14,6 @@ const mainLinks = [
     ),
   },
   {
-    to: '/portfolio',
-    label: 'Portfel',
-    icon: (
-      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-          d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z" />
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-          d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2" />
-      </svg>
-    ),
-  },
-  {
     to: '/search',
     label: 'Wyszukaj',
     icon: (
@@ -77,6 +65,21 @@ const mainLinks = [
   },
 ]
 
+const portfolioSubLinks = [
+  { to: '/portfolio', label: 'Portfel' },
+  { to: '/portfolio/rebalancing', label: 'Rebalansowanie' },
+  { to: '/portfolio/correlation', label: 'Korelacja' },
+]
+
+const portfolioIcon = (
+  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+      d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+      d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2" />
+  </svg>
+)
+
 const aiSubLinks = [
   { to: '/ai/portfolio', label: 'Portfel' },
   { to: '/ai/stocks', label: 'Spółki' },
@@ -92,6 +95,7 @@ const aiIcon = (
 
 export default function Sidebar() {
   const location = useLocation()
+  const isPortfolioActive = location.pathname.startsWith('/portfolio')
   const isAiActive = location.pathname.startsWith('/ai')
 
   return (
@@ -119,6 +123,34 @@ export default function Sidebar() {
             <span className="text-base font-medium">{label}</span>
           </NavLink>
         ))}
+
+        {/* Portfel — sekcja z sublinkiami */}
+        <div className="mx-3 mb-1">
+          <div className={`flex items-center gap-4 px-5 py-4 rounded-lg transition-colors ${
+            isPortfolioActive ? 'text-white' : 'text-gray-400'
+          }`}>
+            {portfolioIcon}
+            <span className="text-base font-medium">Portfel</span>
+          </div>
+          <div className="ml-14 flex flex-col gap-0.5">
+            {portfolioSubLinks.map(({ to, label }) => (
+              <NavLink
+                key={to}
+                to={to}
+                end={to === '/portfolio'}
+                className={({ isActive }) =>
+                  `px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    isActive
+                      ? 'text-finance-green bg-finance-green/10'
+                      : 'text-gray-400 hover:text-white hover:bg-white/5'
+                  }`
+                }
+              >
+                {label}
+              </NavLink>
+            ))}
+          </div>
+        </div>
 
         {/* Analiza AI — sekcja z sublinkiami */}
         <div className="mx-3 mb-1">
