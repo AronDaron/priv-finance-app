@@ -5,87 +5,84 @@ import { calcDailyReturns, buildCorrelationMatrix } from '../../lib/correlationM
 import type { CorrelationResult } from '../../lib/correlationMath'
 import LoadingSpinner from '../ui/LoadingSpinner'
 
-const PERIODS: { value: HistoryPeriod; label: string }[] = [
-  { value: '1mo', label: '1M' },
-  { value: '3mo', label: '3M' },
-  { value: '6mo', label: '6M' },
-  { value: '1y', label: '1R' },
-]
+// ─── Kolory heatmapy ──────────────────────────────────────────────────────────
 
 function correlationToColor(value: number): string {
   const v = Math.max(-1, Math.min(1, value))
   if (v >= 0) {
-    // gray (#374151) → red (#ef4444)
     const t = v
-    const r = Math.round(55 + t * (239 - 55))
-    const g = Math.round(65 + t * (68 - 65))
-    const b = Math.round(81 + t * (68 - 81))
-    return `rgb(${r},${g},${b})`
+    return `rgb(${Math.round(55 + t * 184)},${Math.round(65 + t * 3)},${Math.round(81 - t * 13)})`
   } else {
-    // green (#10b981) → gray (#374151)
     const t = -v
-    const r = Math.round(55 + t * (16 - 55))
-    const g = Math.round(65 + t * (185 - 65))
-    const b = Math.round(81 + t * (129 - 81))
-    return `rgb(${r},${g},${b})`
+    return `rgb(${Math.round(55 - t * 39)},${Math.round(65 + t * 120)},${Math.round(81 + t * 48)})`
   }
 }
 
-function generateInsights(result: CorrelationResult): { type: 'warn' | 'good' | 'shield'; text: string }[] {
-  const insights: { type: 'warn' | 'good' | 'shield'; text: string }[] = []
+// ─── Interpretacja ────────────────────────────────────────────────────────────
+
+type InsightType = 'warn' | 'good' | 'shield'
+
+function generateInsights(result: CorrelationResult): { type: InsightType; text: string }[] {
   const { matrix, tickers } = result
   const n = tickers.length
+  const out: { type: InsightType; text: string }[] = []
 
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
-      const corr = matrix[i][j]
-      if (corr > 0.8) {
-        insights.push({ type: 'warn', text: `${tickers[i]} i ${tickers[j]}: wysoka korelacja (${corr.toFixed(2)}) — rozważ redukcję ekspozycji na jeden z nich.` })
-      } else if (corr < -0.3) {
-        insights.push({ type: 'shield', text: `${tickers[i]} i ${tickers[j]}: ujemna korelacja (${corr.toFixed(2)}) — para stabilizuje portfel.` })
-      }
+      const c = matrix[i][j]
+      if (c > 0.8)
+        out.push({ type: 'warn',   text: `${tickers[i]} i ${tickers[j]}: wysoka korelacja (${c.toFixed(2)}) — rozważ redukcję ekspozycji na jeden z nich.` })
+      else if (c < -0.3)
+        out.push({ type: 'shield', text: `${tickers[i]} i ${tickers[j]}: ujemna korelacja (${c.toFixed(2)}) — para stabilizuje portfel w czasie spadków.` })
     }
   }
 
-  // Best diversifier
   const avgAbsCorr = tickers.map((ticker, i) => {
     const others = matrix[i].filter((_, j) => j !== i)
-    if (others.length === 0) return { ticker, avg: 1 }
-    const avg = others.reduce((s, v) => s + Math.abs(v), 0) / others.length
-    return { ticker, avg }
+    return { ticker, avg: others.length ? others.reduce((s, v) => s + Math.abs(v), 0) / others.length : 1 }
   })
   const best = [...avgAbsCorr].sort((a, b) => a.avg - b.avg)[0]
-  if (best && best.avg < 0.4) {
-    insights.push({ type: 'good', text: `${best.ticker} ma niską średnią korelację (${best.avg.toFixed(2)}) — dobry dywersyfikator portfela.` })
-  }
+  if (best && best.avg < 0.4)
+    out.push({ type: 'good', text: `${best.ticker} ma niską średnią korelację (${best.avg.toFixed(2)}) — dobry dywersyfikator portfela.` })
 
-  return insights
+  return out
 }
 
+// ─── Ikony ────────────────────────────────────────────────────────────────────
+
+const INSIGHT_STYLES: Record<InsightType, { border: string; text: string; icon: string }> = {
+  warn:   { border: 'border-red-700/30',          text: 'text-red-300',      icon: '⚠' },
+  shield: { border: 'border-finance-green/30',    text: 'text-emerald-300',  icon: '↔' },
+  good:   { border: 'border-indigo-700/30',       text: 'text-indigo-300',   icon: '✓' },
+}
+
+const PERIODS: { value: HistoryPeriod; label: string }[] = [
+  { value: '1mo', label: '1M' },
+  { value: '3mo', label: '3M' },
+  { value: '6mo', label: '6M' },
+  { value: '1y',  label: '1R' },
+]
+
+// ─── Komponent ────────────────────────────────────────────────────────────────
+
 export default function CorrelationView() {
-  const [assets, setAssets] = useState<PortfolioAsset[]>([])
-  const [period, setPeriod] = useState<HistoryPeriod>('3mo')
-  const [result, setResult] = useState<CorrelationResult | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [assets, setAssets]           = useState<PortfolioAsset[]>([])
+  const [period, setPeriod]           = useState<HistoryPeriod>('3mo')
+  const [result, setResult]           = useState<CorrelationResult | null>(null)
+  const [loading, setLoading]         = useState(false)
   const [loadingAssets, setLoadingAssets] = useState(true)
   const [hoveredCell, setHoveredCell] = useState<{ i: number; j: number } | null>(null)
 
   useEffect(() => {
-    getAssets()
-      .then(list => setAssets(list))
-      .finally(() => setLoadingAssets(false))
+    getAssets().then(setAssets).finally(() => setLoadingAssets(false))
   }, [])
 
   useEffect(() => {
-    const uniqueTickers = [...new Set(assets.map(a => a.ticker))]
-    if (uniqueTickers.length < 2) {
-      setResult(null)
-      return
-    }
-
+    const tickers = [...new Set(assets.map(a => a.ticker))]
+    if (tickers.length < 2) { setResult(null); return }
     setLoading(true)
     Promise.all(
-      uniqueTickers.map(ticker =>
+      tickers.map(ticker =>
         getHistory(ticker, period)
           .then(candles => [ticker, candles] as const)
           .catch(() => [ticker, []] as const)
@@ -93,19 +90,21 @@ export default function CorrelationView() {
     ).then(entries => {
       const returnSeries = new Map<string, number[]>()
       entries.forEach(([ticker, candles]) => {
-        const closes = candles.map(c => c.close).filter(v => v > 0)
-        returnSeries.set(ticker, calcDailyReturns(closes))
+        returnSeries.set(ticker, calcDailyReturns(candles.map(c => c.close).filter(v => v > 0)))
       })
-      setResult(buildCorrelationMatrix(returnSeries, uniqueTickers))
+      setResult(buildCorrelationMatrix(returnSeries, tickers))
     }).finally(() => setLoading(false))
   }, [assets, period])
 
   if (loadingAssets) return <div className="p-6"><LoadingSpinner /></div>
 
-  const uniqueTickers = [...new Set(assets.map(a => a.ticker))]
+  const tickers = [...new Set(assets.map(a => a.ticker))]
+  const insights = result ? generateInsights(result) : []
 
   return (
     <div className="p-6 space-y-6">
+
+      {/* ── Nagłówek + selektor okresu ── */}
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-white">Korelacja aktywów</h2>
         <div className="flex gap-2">
@@ -113,10 +112,10 @@ export default function CorrelationView() {
             <button
               key={p.value}
               onClick={() => setPeriod(p.value)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${
                 period === p.value
-                  ? 'bg-finance-green text-white'
-                  : 'glass-card text-gray-300 hover:text-white'
+                  ? 'bg-finance-green text-white shadow-sm shadow-finance-green/30 ring-2 ring-finance-green/20'
+                  : 'glass-card text-gray-400 hover:text-white'
               }`}
             >
               {p.label}
@@ -125,118 +124,120 @@ export default function CorrelationView() {
         </div>
       </div>
 
-      {uniqueTickers.length < 2 && (
-        <div className="glass-card rounded-xl p-10 text-center text-gray-400">
+      {/* ── Empty state ── */}
+      {tickers.length < 2 && (
+        <div className="glass-card rounded-xl p-12 text-center text-gray-500"
+             style={{ border: '1px solid rgba(75,85,99,0.25)' }}>
           Potrzebujesz minimum 2 aktywów do analizy korelacji.
         </div>
       )}
 
-      {uniqueTickers.length >= 2 && loading && <LoadingSpinner />}
+      {tickers.length >= 2 && loading && <LoadingSpinner />}
 
-      {uniqueTickers.length >= 2 && !loading && result && (
+      {tickers.length >= 2 && !loading && result && (
         <>
+          {/* ── Ostrzeżenie o brakujących danych ── */}
           {result.insufficientData.length > 0 && (
-            <div className="bg-amber-900/30 border border-amber-700/40 rounded-xl px-4 py-3 text-sm text-amber-300">
-              Niewystarczające dane historyczne dla: {result.insufficientData.join(', ')}
+            <div className="flex items-center gap-3 glass-card rounded-xl px-4 py-3 text-sm text-amber-300 border border-amber-700/30">
+              <span>⚠</span>
+              <span>Niewystarczające dane historyczne dla: <strong>{result.insufficientData.join(', ')}</strong></span>
             </div>
           )}
 
-          {/* Heatmapa */}
-          <div className="glass-card rounded-xl p-4 overflow-x-auto">
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: `80px repeat(${result.tickers.length}, minmax(64px, 1fr))`,
-                gap: 3,
-              }}
-            >
-              {/* Górny lewy narożnik */}
-              <div />
-              {/* Nagłówki kolumn */}
-              {result.tickers.map((ticker, j) => (
-                <div key={j} className="text-center text-xs font-bold text-finance-green py-2 px-1 truncate">
-                  {ticker}
-                </div>
-              ))}
+          {/* ── Heatmapa ── */}
+          <div className="glass-card rounded-xl overflow-hidden" style={{ border: '1px solid rgba(75,85,99,0.25)' }}>
+            <div style={{ height: 3, background: 'linear-gradient(90deg,#6366f1,#818cf8)', boxShadow: '0 2px 12px rgba(99,102,241,0.4)' }} />
+            <div className="p-5">
+              <p className="text-xs text-gray-500 uppercase tracking-widest mb-4">
+                Pearson — dzienne stopy zwrotu ({PERIODS.find(p => p.value === period)?.label})
+              </p>
+              <div className="overflow-x-auto">
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: `88px repeat(${result.tickers.length}, minmax(68px, 1fr))`,
+                    gap: 3,
+                  }}
+                >
+                  {/* Lewy górny narożnik */}
+                  <div />
+                  {/* Nagłówki kolumn */}
+                  {result.tickers.map((ticker, j) => (
+                    <div key={j} className="text-center text-xs font-bold text-finance-green py-2 px-1 truncate">
+                      {ticker}
+                    </div>
+                  ))}
 
-              {/* Wiersze */}
-              {result.tickers.map((rowTicker, i) => (
-                <>
-                  {/* Nagłówek wiersza */}
-                  <div key={`h-${i}`} className="flex items-center text-xs font-bold text-finance-green pr-2 truncate">
-                    {rowTicker}
-                  </div>
-                  {/* Komórki */}
-                  {result.tickers.map((_, j) => {
-                    const value = result.matrix[i][j]
-                    const isDiag = i === j
-                    const isHovered = hoveredCell?.i === i && hoveredCell?.j === j
-                    if (isDiag) {
-                      return (
-                        <div
-                          key={`${i}-${j}`}
-                          className="flex items-center justify-center text-lg font-bold rounded-md select-none text-gray-500"
-                          style={{ backgroundColor: '#1f2937', minHeight: 48 }}
-                          title={result.tickers[i]}
-                        >
-                          ×
-                        </div>
-                      )
-                    }
-                    return (
-                      <div
-                        key={`${i}-${j}`}
-                        className={`flex items-center justify-center text-xs font-semibold rounded-md cursor-default transition-opacity select-none
-                          ${isHovered ? 'opacity-75' : ''}`}
-                        style={{
-                          backgroundColor: correlationToColor(value),
-                          minHeight: 48,
-                        }}
-                        onMouseEnter={() => setHoveredCell({ i, j })}
-                        onMouseLeave={() => setHoveredCell(null)}
-                        title={`${result.tickers[i]} / ${result.tickers[j]}: ${value.toFixed(4)}`}
-                      >
-                        <span className="text-white drop-shadow-sm">
-                          {value.toFixed(2)}
-                        </span>
+                  {/* Wiersze */}
+                  {result.tickers.map((rowTicker, i) => (
+                    <>
+                      <div key={`lbl-${i}`} className="flex items-center text-xs font-bold text-finance-green pr-2 truncate">
+                        {rowTicker}
                       </div>
-                    )
-                  })}
-                </>
-              ))}
-            </div>
+                      {result.tickers.map((_, j) => {
+                        const isDiag = i === j
+                        if (isDiag) {
+                          return (
+                            <div key={`${i}-${j}`}
+                                 className="flex items-center justify-center text-base font-bold text-gray-600 rounded-lg select-none"
+                                 style={{ backgroundColor: '#1a2236', minHeight: 52 }}
+                                 title={result.tickers[i]}>
+                              ×
+                            </div>
+                          )
+                        }
+                        const value = result.matrix[i][j]
+                        const isHovered = hoveredCell?.i === i && hoveredCell?.j === j
+                        return (
+                          <div
+                            key={`${i}-${j}`}
+                            className={`flex items-center justify-center text-xs font-semibold rounded-lg
+                                        cursor-default select-none transition-opacity ${isHovered ? 'opacity-70' : ''}`}
+                            style={{ backgroundColor: correlationToColor(value), minHeight: 52 }}
+                            onMouseEnter={() => setHoveredCell({ i, j })}
+                            onMouseLeave={() => setHoveredCell(null)}
+                            title={`${result.tickers[i]} / ${result.tickers[j]}: ${value.toFixed(4)}`}
+                          >
+                            <span className="text-white drop-shadow-sm">{value.toFixed(2)}</span>
+                          </div>
+                        )
+                      })}
+                    </>
+                  ))}
+                </div>
+              </div>
 
-            {/* Legenda */}
-            <div className="mt-4 flex items-center gap-3 text-xs text-gray-400">
-              <span>-1.0</span>
-              <div className="flex-1 h-2 rounded-full" style={{
-                background: 'linear-gradient(to right, #10b981, #374151, #ef4444)'
-              }} />
-              <span>+1.0</span>
+              {/* Legenda */}
+              <div className="mt-5 flex items-center gap-3">
+                <span className="text-xs text-gray-500 tabular-nums">−1.0</span>
+                <div className="flex-1 h-1.5 rounded-full"
+                     style={{ background: 'linear-gradient(to right,#10b981,#374151,#ef4444)' }} />
+                <span className="text-xs text-gray-500 tabular-nums">+1.0</span>
+              </div>
+              <div className="mt-1.5 flex justify-between text-xs text-gray-600">
+                <span>Ujemna (stabilizuje)</span>
+                <span>Brak korelacji</span>
+                <span>Dodatnia (ryzyko skupienia)</span>
+              </div>
             </div>
           </div>
 
-          {/* Panel interpretacji */}
-          {generateInsights(result).length > 0 && (
-            <div className="space-y-2">
-              <h3 className="text-sm font-semibold text-gray-300">Interpretacja</h3>
-              {generateInsights(result).map((insight, idx) => (
-                <div
-                  key={idx}
-                  className={`glass-card rounded-xl px-4 py-3 text-sm flex items-start gap-3 ${
-                    insight.type === 'warn'
-                      ? 'border border-red-700/30 text-red-300'
-                      : insight.type === 'shield'
-                      ? 'border border-finance-green/30 text-emerald-300'
-                      : 'border border-blue-700/30 text-blue-300'
-                  }`}
-                >
-                  <span className="mt-0.5 flex-shrink-0">
-                    {insight.type === 'warn' ? '⚠' : insight.type === 'shield' ? '🛡' : '✓'}
-                  </span>
-                  <span>{insight.text}</span>
-                </div>
-              ))}
+          {/* ── Interpretacja ── */}
+          {insights.length > 0 && (
+            <div className="glass-card rounded-xl overflow-hidden" style={{ border: '1px solid rgba(75,85,99,0.25)' }}>
+              <div style={{ height: 3, background: 'linear-gradient(90deg,#10b981,#34d399)', boxShadow: '0 2px 12px rgba(16,185,129,0.4)' }} />
+              <div className="p-5 space-y-2">
+                <p className="text-xs text-gray-500 uppercase tracking-widest mb-3">Interpretacja</p>
+                {insights.map((insight, idx) => {
+                  const s = INSIGHT_STYLES[insight.type]
+                  return (
+                    <div key={idx} className={`glass-card rounded-xl px-4 py-3 text-sm flex items-start gap-3 border ${s.border} ${s.text}`}>
+                      <span className="flex-shrink-0 mt-0.5 text-base leading-none">{s.icon}</span>
+                      <span>{insight.text}</span>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           )}
         </>

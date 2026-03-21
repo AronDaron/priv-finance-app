@@ -6,395 +6,354 @@ import LoadingSpinner from '../ui/LoadingSpinner'
 
 // ─── Kategorie ────────────────────────────────────────────────────────────────
 
-interface Category {
-  key: string
-  label: string
-}
+interface Category { key: string; label: string }
 
 const CATEGORY_MAP: Record<string, Category> = {
-  // Polskie wartości zwracane przez fetchAssetMeta
-  akcje:    { key: 'equity',    label: 'Akcje' },
-  etf:      { key: 'etf',       label: 'ETF' },
-  fundusz:  { key: 'etf',       label: 'ETF' },
-  złoto:    { key: 'commodity', label: 'Złoto / Surowce' },
-  srebro:   { key: 'commodity', label: 'Złoto / Surowce' },
-  ropa:     { key: 'commodity', label: 'Złoto / Surowce' },
+  akcje: { key: 'equity', label: 'Akcje' }, equity: { key: 'equity', label: 'Akcje' },
+  etf: { key: 'etf', label: 'ETF' }, fundusz: { key: 'etf', label: 'ETF' },
+  złoto: { key: 'commodity', label: 'Złoto / Surowce' },
+  srebro: { key: 'commodity', label: 'Złoto / Surowce' },
+  ropa: { key: 'commodity', label: 'Złoto / Surowce' },
   surowiec: { key: 'commodity', label: 'Złoto / Surowce' },
-  krypto:   { key: 'other',     label: 'Inne' },
-  // Angielskie (fallback)
-  equity:   { key: 'equity',    label: 'Akcje' },
-  commodity:{ key: 'commodity', label: 'Złoto / Surowce' },
-  other:    { key: 'other',     label: 'Inne' },
+  commodity: { key: 'commodity', label: 'Złoto / Surowce' },
+  krypto: { key: 'other', label: 'Inne' }, other: { key: 'other', label: 'Inne' },
 }
 
 function categorizeAsset(ticker: string, assetType: string, goldGrams?: number): Category {
   if (goldGrams != null && goldGrams > 0) return CATEGORY_MAP.złoto
-  if (ticker.endsWith('=F'))             return CATEGORY_MAP.złoto
+  if (ticker.endsWith('=F')) return CATEGORY_MAP.złoto
   return CATEGORY_MAP[assetType.toLowerCase()] ?? CATEGORY_MAP.akcje
 }
 
-// ─── Typy wewnętrzne ──────────────────────────────────────────────────────────
-
 interface CategoryAllocation {
-  key: string
-  label: string
-  currentValuePLN: number
-  currentPct: number
-  targetPct: number
+  key: string; label: string
+  currentValuePLN: number; currentPct: number; targetPct: number
   assets: { asset: PortfolioAsset; valuePLN: number }[]
 }
 
 type Targets = Record<string, number>
 
+// ─── Kolory odchylenia ────────────────────────────────────────────────────────
+
+function accentForDiff(diff: number) {
+  const abs = Math.abs(diff)
+  if (abs <= 3)  return { bar: 'linear-gradient(90deg,#10b981,#34d399)', color: '#10b981', text: 'text-finance-green' }
+  if (abs <= 10) return { bar: 'linear-gradient(90deg,#f59e0b,#fbbf24)', color: '#f59e0b', text: 'text-amber-400' }
+  return           { bar: 'linear-gradient(90deg,#ef4444,#f87171)',   color: '#ef4444', text: 'text-red-400' }
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function toPlnRate(currency: string, usdPln: number, eurPln: number): number {
-  if (currency === 'PLN') return 1
-  if (currency === 'USD') return usdPln
-  if (currency === 'EUR') return eurPln
-  return 1
+function toPlnRate(c: string, usd: number, eur: number) {
+  return c === 'PLN' ? 1 : c === 'USD' ? usd : c === 'EUR' ? eur : 1
 }
-
-function deviationColor(current: number, target: number): string {
-  const diff = Math.abs(current - target)
-  if (diff <= 3)  return '#10b981'
-  if (diff <= 10) return '#f59e0b'
-  return '#ef4444'
-}
-
-async function fetchRate(ticker: string): Promise<number> {
-  try { return (await getQuote(ticker)).price ?? 1 } catch { return 1 }
+async function fetchRate(t: string) {
+  try { return (await getQuote(t)).price ?? 1 } catch { return 1 }
 }
 
 // ─── Komponent ────────────────────────────────────────────────────────────────
 
 export default function RebalancingView() {
-  const [assets, setAssets]               = useState<PortfolioAsset[]>([])
-  const [quotes, setQuotes]               = useState<Map<string, StockQuote>>(new Map())
-  const [cashAccounts, setCashAccounts]   = useState<CashAccount[]>([])
-  const [usdPln, setUsdPln]               = useState(4.0)
-  const [eurPln, setEurPln]               = useState(4.3)
-  const [metaMap, setMetaMap]             = useState<Map<string, string>>(new Map())
-  const [targets, setTargets]             = useState<Targets>({})
-  const [savedTargets, setSavedTargets]   = useState<Targets>({})
-  const [investAmount, setInvestAmount]   = useState('')
-  const [loading, setLoading]             = useState(true)
-  const [saving, setSaving]               = useState(false)
+  const [assets, setAssets]             = useState<PortfolioAsset[]>([])
+  const [quotes, setQuotes]             = useState<Map<string, StockQuote>>(new Map())
+  const [cashAccounts, setCashAccounts] = useState<CashAccount[]>([])
+  const [usdPln, setUsdPln]             = useState(4.0)
+  const [eurPln, setEurPln]             = useState(4.3)
+  const [metaMap, setMetaMap]           = useState<Map<string, string>>(new Map())
+  const [targets, setTargets]           = useState<Targets>({})
+  const [savedTargets, setSavedTargets] = useState<Targets>({})
+  const [investAmount, setInvestAmount] = useState('')
+  const [loading, setLoading]           = useState(true)
+  const [saving, setSaving]             = useState(false)
 
-  // ── Ładowanie danych ──────────────────────────────────────────────────────
   useEffect(() => {
     async function load() {
       setLoading(true)
       try {
         const [list, usd, eur, cash, savedRaw] = await Promise.all([
-          getAssets(),
-          fetchRate('USDPLN=X'),
-          fetchRate('EURPLN=X'),
-          getCashAccounts(),
-          getSetting('rebalancing_targets'),
+          getAssets(), fetchRate('USDPLN=X'), fetchRate('EURPLN=X'),
+          getCashAccounts(), getSetting('rebalancing_targets'),
         ])
-
-        setAssets(list)
-        setUsdPln(usd)
-        setEurPln(eur)
-        setCashAccounts(cash)
-
+        setAssets(list); setUsdPln(usd); setEurPln(eur); setCashAccounts(cash)
         if (savedRaw) {
-          try {
-            const parsed = JSON.parse(savedRaw) as Targets
-            setTargets(parsed)
-            setSavedTargets(parsed)
-          } catch { /* ignoruj zepsute dane */ }
+          try { const p = JSON.parse(savedRaw) as Targets; setTargets(p); setSavedTargets(p) } catch {}
         }
-
-        const uniqueTickers = [...new Set(list.map(a => a.ticker))]
-
-        const [quoteEntries, metaEntries] = await Promise.all([
-          Promise.all(
-            uniqueTickers.map(t =>
-              getQuote(t)
-                .then(q => [t, q] as [string, StockQuote])
-                .catch(() => null)
-            )
-          ),
-          Promise.all(
-            uniqueTickers.map(t =>
-              getAssetMeta(t)
-                .then(m => [t, m.assetType] as [string, string])
-                .catch(() => [t, 'other'] as [string, string])
-            )
-          ),
+        const tickers = [...new Set(list.map(a => a.ticker))]
+        const [qE, mE] = await Promise.all([
+          Promise.all(tickers.map(t => getQuote(t).then(q => [t, q] as [string, StockQuote]).catch(() => null))),
+          Promise.all(tickers.map(t => getAssetMeta(t).then(m => [t, m.assetType] as [string, string]).catch(() => [t, 'akcje'] as [string, string]))),
         ])
-
-        const qMap = new Map<string, StockQuote>()
-        quoteEntries.forEach(e => { if (e) qMap.set(e[0], e[1]) })
-        setQuotes(qMap)
-
-        const mMap = new Map<string, string>()
-        metaEntries.forEach(([t, type]) => mMap.set(t, type))
-        setMetaMap(mMap)
-      } finally {
-        setLoading(false)
-      }
+        const qMap = new Map<string, StockQuote>(); qE.forEach(e => { if (e) qMap.set(e[0], e[1]) }); setQuotes(qMap)
+        const mMap = new Map<string, string>(); mE.forEach(([t, tp]) => mMap.set(t, tp)); setMetaMap(mMap)
+      } finally { setLoading(false) }
     }
     load()
   }, [])
 
-  // ── Obliczanie alokacji ───────────────────────────────────────────────────
   const categories = useMemo<CategoryAllocation[]>(() => {
     const catMap = new Map<string, { label: string; items: { asset: PortfolioAsset; valuePLN: number }[] }>()
-    let totalPLN = 0
-
+    let total = 0
     assets.forEach(asset => {
-      const quote = quotes.get(asset.ticker)
-      const price = quote?.price ?? asset.purchase_price
-      const currency = quote?.currency ?? asset.currency
-      const valuePLN = asset.quantity * price * toPlnRate(currency, usdPln, eurPln)
-      totalPLN += valuePLN
-
-      const rawType = metaMap.get(asset.ticker) ?? 'other'
-      const { key, label } = categorizeAsset(asset.ticker, rawType, asset.gold_grams)
-
+      const q = quotes.get(asset.ticker)
+      const val = asset.quantity * (q?.price ?? asset.purchase_price) * toPlnRate(q?.currency ?? asset.currency, usdPln, eurPln)
+      total += val
+      const { key, label } = categorizeAsset(asset.ticker, metaMap.get(asset.ticker) ?? 'akcje', asset.gold_grams)
       if (!catMap.has(key)) catMap.set(key, { label, items: [] })
-      catMap.get(key)!.items.push({ asset, valuePLN })
+      catMap.get(key)!.items.push({ asset, valuePLN: val })
     })
-
-    return Array.from(catMap.entries())
-      .map(([key, { label, items }]) => {
-        const currentValuePLN = items.reduce((s, i) => s + i.valuePLN, 0)
-        return {
-          key,
-          label,
-          currentValuePLN,
-          currentPct: totalPLN > 0 ? (currentValuePLN / totalPLN) * 100 : 0,
-          targetPct: targets[key] ?? 0,
-          assets: items.sort((a, b) => b.valuePLN - a.valuePLN),
-        }
-      })
-      .sort((a, b) => b.currentValuePLN - a.currentValuePLN)
+    return Array.from(catMap.entries()).map(([key, { label, items }]) => {
+      const val = items.reduce((s, i) => s + i.valuePLN, 0)
+      return { key, label, currentValuePLN: val,
+               currentPct: total > 0 ? (val / total) * 100 : 0,
+               targetPct: targets[key] ?? 0,
+               assets: items.sort((a, b) => b.valuePLN - a.valuePLN) }
+    }).sort((a, b) => b.currentValuePLN - a.currentValuePLN)
   }, [assets, quotes, metaMap, targets, usdPln, eurPln])
 
-  const totalCurrentPLN = useMemo(
-    () => categories.reduce((s, c) => s + c.currentValuePLN, 0),
-    [categories]
-  )
+  const totalPLN       = useMemo(() => categories.reduce((s, c) => s + c.currentValuePLN, 0), [categories])
+  const cashPLN        = useMemo(() => cashAccounts.reduce((s, a) => s + a.balance * toPlnRate(a.currency, usdPln, eurPln), 0), [cashAccounts, usdPln, eurPln])
+  const targetSum      = useMemo(() => Object.values(targets).reduce((s, v) => s + (Number(v) || 0), 0), [targets])
+  const targetsValid   = Math.abs(targetSum - 100) < 0.5
+  const maxDev         = useMemo(() => categories.reduce((m, c) => Math.max(m, Math.abs(c.currentPct - c.targetPct)), 0), [categories])
 
-  const cashAvailablePLN = useMemo(() => {
-    return cashAccounts.reduce((s, acc) => {
-      return s + acc.balance * toPlnRate(acc.currency, usdPln, eurPln)
-    }, 0)
-  }, [cashAccounts, usdPln, eurPln])
-
-  const targetSum = useMemo(
-    () => Object.values(targets).reduce((s, v) => s + (Number(v) || 0), 0),
-    [targets]
-  )
-  const targetsValid = Math.abs(targetSum - 100) < 0.5
-
-  // ── Sugestie zakupów ─────────────────────────────────────────────────────
   const suggestions = useMemo(() => {
     const invest = parseFloat(investAmount) || 0
-    const available = cashAvailablePLN + invest
+    const available = cashPLN + invest
     if (available <= 0 || !targetsValid) return []
-
-    const newTotal = totalCurrentPLN + available
-
-    const gaps = categories
-      .map(cat => ({
-        cat,
-        gap: Math.max(0, (cat.targetPct / 100) * newTotal - cat.currentValuePLN),
-      }))
-      .filter(g => g.gap > 0)
-
+    const newTotal = totalPLN + available
+    const gaps = categories.map(c => ({ cat: c, gap: Math.max(0, (c.targetPct / 100) * newTotal - c.currentValuePLN) })).filter(g => g.gap > 0)
     const totalGap = gaps.reduce((s, g) => s + g.gap, 0)
     if (totalGap === 0) return []
-
     return gaps.map(({ cat, gap }) => {
-      const buyAmount = (gap / totalGap) * available
-      const top = cat.assets.slice(0, 3).map(({ asset, valuePLN }) => {
-        const share = cat.currentValuePLN > 0 ? valuePLN / cat.currentValuePLN : 1 / cat.assets.length
-        return {
-          ticker: asset.ticker,
-          name: asset.name,
-          buyAmountPLN: buyAmount * share,
-        }
-      })
-      return { cat, buyAmountPLN: buyAmount, top }
+      const buy = (gap / totalGap) * available
+      return {
+        cat, buyPLN: buy,
+        top: cat.assets.slice(0, 3).map(({ asset, valuePLN }) => ({
+          ticker: asset.ticker, name: asset.name,
+          amt: buy * (cat.currentValuePLN > 0 ? valuePLN / cat.currentValuePLN : 1 / Math.max(1, cat.assets.length)),
+        })),
+      }
     })
-  }, [categories, totalCurrentPLN, cashAvailablePLN, investAmount, targetsValid])
+  }, [categories, totalPLN, cashPLN, investAmount, targetsValid])
 
-  // ── Zapis ─────────────────────────────────────────────────────────────────
   async function handleSave() {
     if (!targetsValid) return
     setSaving(true)
-    try {
-      await setSetting('rebalancing_targets', JSON.stringify(targets))
-      setSavedTargets({ ...targets })
-    } finally {
-      setSaving(false)
-    }
+    try { await setSetting('rebalancing_targets', JSON.stringify(targets)); setSavedTargets({ ...targets }) }
+    finally { setSaving(false) }
   }
 
-  function handleTargetChange(key: string, raw: string) {
-    setTargets(prev => ({ ...prev, [key]: parseFloat(raw) || 0 }))
-  }
-
-  // ── Render ────────────────────────────────────────────────────────────────
   if (loading) return <div className="p-6"><LoadingSpinner /></div>
 
+  const devAcc = accentForDiff(maxDev)
+
   return (
-    <div className="p-6 space-y-6">
-      <h2 className="text-lg font-semibold text-white">Rebalansowanie</h2>
+    <div className="p-6 space-y-4">
 
-      {/* Alokacja + edycja targetów */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-gray-300">Docelowa alokacja</h3>
-          <div className="flex items-center gap-3">
-            <span className={`text-xs font-medium ${targetsValid ? 'text-finance-green' : 'text-red-400'}`}>
-              Suma: {targetSum.toFixed(1)}%
-            </span>
-            <button
-              onClick={handleSave}
-              disabled={!targetsValid || saving}
-              className="px-4 py-1.5 rounded-full text-sm font-medium bg-finance-green text-white
-                         hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-            >
-              {saving ? 'Zapisuję…' : 'Zapisz'}
-            </button>
-          </div>
+      {/* ── Nagłówek ── */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-white">Rebalansowanie</h2>
+        <div className="flex items-center gap-3">
+          <span className={`text-sm font-medium tabular-nums ${targetsValid ? 'text-finance-green' : 'text-amber-400'}`}>
+            Suma: {targetSum.toFixed(1)}%
+          </span>
+          <button onClick={handleSave} disabled={!targetsValid || saving}
+            className="bg-finance-green hover:bg-emerald-600 text-white text-sm font-medium px-4 py-1.5 rounded-full
+                       ring-2 ring-finance-green/20 hover:ring-finance-green/40 transition-all
+                       disabled:opacity-40 disabled:cursor-not-allowed">
+            {saving ? 'Zapisuję…' : 'Zapisz cele'}
+          </button>
         </div>
+      </div>
 
-        {categories.length === 0 && (
-          <div className="glass-card rounded-xl p-10 text-center text-gray-400">
-            Brak aktywów w portfelu.
-          </div>
-        )}
+      {/* ── Statystyki — 3 mini karty w jednym wierszu ── */}
+      {categories.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+          {[
+            { label: 'Wartość portfela', value: formatCurrency(totalPLN, 'PLN'), bar: 'linear-gradient(90deg,#6366f1,#818cf8)', valueClass: 'text-white' },
+            { label: 'Kategorii',        value: String(categories.length),        bar: 'linear-gradient(90deg,#6366f1,#818cf8)', valueClass: 'text-white' },
+            { label: 'Maks. odchylenie', value: `${maxDev.toFixed(1)}%`,          bar: devAcc.bar, valueClass: devAcc.text },
+          ].map(s => (
+            <div key={s.label} className="glass-card rounded-xl overflow-hidden"
+                 style={{ border: '1px solid rgba(75,85,99,0.25)' }}>
+              <div style={{ height: 3, background: s.bar }} />
+              <div className="px-4 py-3">
+                <p className="text-xs text-gray-500 uppercase tracking-widest mb-1">{s.label}</p>
+                <p className={`text-xl font-bold tabular-nums ${s.valueClass}`}>{s.value}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
+      {/* ── Kategorie ── */}
+      {categories.length === 0 && (
+        <div className="glass-card rounded-xl p-12 text-center text-gray-500">Brak aktywów w portfelu.</div>
+      )}
+
+      <div className="space-y-2">
         {categories.map(cat => {
           const diff = cat.currentPct - cat.targetPct
-          const fillColor = deviationColor(cat.currentPct, cat.targetPct)
-          const hasUnsaved = targets[cat.key] !== savedTargets[cat.key]
+          const acc  = accentForDiff(diff)
+          const unsaved = (targets[cat.key] ?? 0) !== (savedTargets[cat.key] ?? 0)
 
           return (
-            <div key={cat.key} className="glass-card rounded-xl p-4 space-y-3">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-white">{cat.label}</span>
-                  {hasUnsaved && <span className="text-xs text-amber-400">niezapisane</span>}
-                </div>
-                <div className="flex items-center gap-4">
-                  <span className="text-xs text-gray-400">
-                    Obecny: <span className="text-white font-medium">{cat.currentPct.toFixed(1)}%</span>
-                    {' '}({formatCurrency(cat.currentValuePLN, 'PLN')})
-                  </span>
-                  <span className={`text-xs font-medium ${diff > 0 ? 'text-red-400' : diff < 0 ? 'text-amber-400' : 'text-finance-green'}`}>
-                    {diff > 0 ? `+${diff.toFixed(1)}%` : diff < 0 ? `${diff.toFixed(1)}%` : '✓ ok'}
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <span className="text-xs text-gray-500">Cel:</span>
-                    <input
-                      type="number"
-                      min={0}
-                      max={100}
-                      step={1}
-                      value={targets[cat.key] ?? ''}
-                      onChange={e => handleTargetChange(cat.key, e.target.value)}
-                      className="w-16 bg-gray-800 border border-gray-600 rounded-md px-2 py-1 text-sm text-white text-right
-                                 focus:outline-none focus:border-finance-green"
-                    />
-                    <span className="text-xs text-gray-500">%</span>
+            <div key={cat.key} className="glass-card rounded-xl overflow-hidden"
+                 style={{ border: '1px solid rgba(75,85,99,0.25)' }}>
+              {/* Cienki pasek koloru na górze */}
+              <div style={{ height: 3, background: acc.bar }} />
+
+              <div className="px-5 py-4">
+                {/* Wiersz 1: Nazwa + wartość | Odchylenie | Obecny | Cel */}
+                <div className="flex items-center gap-6 mb-4">
+                  {/* Lewa: nazwa kategorii + wartość PLN */}
+                  <div style={{ minWidth: 160 }}>
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className="text-base font-semibold text-white">{cat.label}</span>
+                      {unsaved && <span className="text-xs text-amber-400/80">●</span>}
+                    </div>
+                    <p className="text-xs text-gray-500 tabular-nums">{formatCurrency(cat.currentValuePLN, 'PLN')}</p>
+                  </div>
+
+                  {/* Spacer */}
+                  <div style={{ flex: 1 }} />
+
+                  {/* Odchylenie */}
+                  {cat.targetPct > 0 && (
+                    <span className={`text-sm font-semibold tabular-nums ${acc.text}`}>
+                      {diff > 0 ? '+' : ''}{diff.toFixed(1)}%
+                    </span>
+                  )}
+
+                  {/* Separator */}
+                  <div style={{ width: 1, height: 40, backgroundColor: 'rgba(75,85,99,0.4)' }} />
+
+                  {/* Obecny */}
+                  <div className="text-right" style={{ minWidth: 72 }}>
+                    <p className="text-xs text-gray-500 uppercase tracking-wider mb-0.5">Obecny</p>
+                    <p className="text-2xl font-bold text-white tabular-nums">{cat.currentPct.toFixed(1)}%</p>
+                  </div>
+
+                  {/* Separator */}
+                  <div style={{ width: 1, height: 40, backgroundColor: 'rgba(75,85,99,0.4)' }} />
+
+                  {/* Cel — input */}
+                  <div style={{ minWidth: 80 }}>
+                    <p className="text-xs text-gray-500 uppercase tracking-wider mb-0.5">Cel</p>
+                    <div className="flex items-baseline gap-1">
+                      <input
+                        type="number" min={0} max={100} step={1}
+                        value={targets[cat.key] ?? ''}
+                        onChange={e => setTargets(prev => ({ ...prev, [cat.key]: parseFloat(e.target.value) || 0 }))}
+                        style={{ width: 64, background: '#1f2937', border: '1px solid rgba(75,85,99,0.6)', borderRadius: 8,
+                                 padding: '2px 8px', fontSize: 22, fontWeight: 700, color: '#fff',
+                                 textAlign: 'right', outline: 'none' }}
+                      />
+                      <span className="text-sm text-gray-500">%</span>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Pasek postępu */}
-              <div className="relative h-2.5 bg-gray-700 rounded-full overflow-visible">
-                {/* Marker celu */}
-                {cat.targetPct > 0 && (
-                  <div
-                    className="absolute top-[-2px] h-[18px] w-0.5 bg-white/60 rounded z-10"
-                    style={{ left: `${Math.min(cat.targetPct, 100)}%` }}
-                  />
-                )}
-                {/* Fill obecny */}
-                <div
-                  className="h-full rounded-full transition-all duration-300"
-                  style={{ width: `${Math.min(cat.currentPct, 100)}%`, backgroundColor: fillColor }}
-                />
-              </div>
+                {/* Wiersz 2: Pasek postępu */}
+                <div className="relative mb-3" style={{ height: 10, background: '#1f2937', borderRadius: 9999 }}>
+                  {cat.targetPct > 0 && (
+                    <div style={{
+                      position: 'absolute', top: -5, height: 20, width: 2, borderRadius: 9999, zIndex: 10,
+                      left: `${Math.min(cat.targetPct, 100)}%`,
+                      backgroundColor: acc.color, opacity: 0.8,
+                    }} />
+                  )}
+                  <div style={{
+                    height: '100%', borderRadius: 9999,
+                    width: `${Math.min(cat.currentPct, 100)}%`,
+                    background: acc.bar,
+                    transition: 'width 0.5s',
+                  }} />
+                </div>
 
-              {/* Top aktywa w kategorii */}
-              <div className="flex flex-wrap gap-2 pt-0.5">
-                {cat.assets.map(({ asset, valuePLN }) => (
-                  <span key={asset.ticker} className="text-xs px-2 py-0.5 rounded-full bg-gray-700/60 text-gray-300">
-                    {asset.ticker} {totalCurrentPLN > 0 ? ((valuePLN / totalCurrentPLN) * 100).toFixed(1) : '0'}%
-                  </span>
-                ))}
+                {/* Wiersz 3: Tickery */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 20px' }}>
+                  {cat.assets.map(({ asset, valuePLN }) => (
+                    <span key={asset.ticker} style={{ fontSize: 13 }}>
+                      <span style={{ fontWeight: 600, color: acc.color }}>{asset.ticker}</span>
+                      <span style={{ color: '#6b7280', marginLeft: 5 }}>
+                        {totalPLN > 0 ? ((valuePLN / totalPLN) * 100).toFixed(1) : '0'}%
+                      </span>
+                    </span>
+                  ))}
+                </div>
               </div>
             </div>
           )
         })}
       </div>
 
-      {/* Sugestie zakupów */}
+      {/* ── Sugestie zakupów ── */}
       {categories.length > 0 && (
-        <div className="glass-card rounded-xl p-4 space-y-4">
-          <h3 className="text-sm font-semibold text-gray-300">Sugestie zakupów</h3>
-
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-400">Gotówka w portfelu:</span>
-              <span className="text-sm font-medium text-white">{formatCurrency(cashAvailablePLN, 'PLN')}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-400">Dodatkowa inwestycja (PLN):</span>
-              <input
-                type="number"
-                min={0}
-                value={investAmount}
-                onChange={e => setInvestAmount(e.target.value)}
-                placeholder="0"
-                className="w-28 bg-gray-800 border border-gray-600 rounded-md px-3 py-1.5 text-sm text-white
-                           focus:outline-none focus:border-finance-green"
-              />
-            </div>
-          </div>
-
-          {!targetsValid && (
-            <p className="text-xs text-amber-400">Ustaw docelową alokację sumującą do 100%, żeby zobaczyć sugestie.</p>
-          )}
-
-          {targetsValid && suggestions.length === 0 && (cashAvailablePLN + (parseFloat(investAmount) || 0)) > 0 && (
-            <p className="text-xs text-finance-green">Portfel jest już zbliżony do docelowej alokacji.</p>
-          )}
-
-          {targetsValid && suggestions.length === 0 && (cashAvailablePLN + (parseFloat(investAmount) || 0)) <= 0 && (
-            <p className="text-xs text-gray-500">Wprowadź kwotę do zainwestowania, żeby zobaczyć sugestie.</p>
-          )}
-
-          {suggestions.length > 0 && (
-            <div className="space-y-3">
-              {suggestions.map(({ cat, buyAmountPLN, top }) => (
-                <div key={cat.key} className="border border-gray-700/50 rounded-xl p-3 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold text-white">{cat.label}</span>
-                    <span className="text-sm font-bold text-finance-green">+{formatCurrency(buyAmountPLN, 'PLN')}</span>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {top.map(({ ticker, name, buyAmountPLN: amt }) => (
-                      <div key={ticker} className="flex flex-col px-3 py-1.5 rounded-lg bg-gray-800/60">
-                        <span className="text-xs font-bold text-white">{ticker}</span>
-                        <span className="text-xs text-gray-400 truncate max-w-[120px]">{name}</span>
-                        <span className="text-xs text-finance-green font-medium">+{formatCurrency(amt, 'PLN')}</span>
-                      </div>
-                    ))}
-                  </div>
+        <div className="glass-card rounded-xl overflow-hidden" style={{ border: '1px solid rgba(75,85,99,0.25)' }}>
+          <div style={{ height: 2, background: 'linear-gradient(90deg,#6366f1,#818cf8)' }} />
+          <div className="px-5 py-4 space-y-3">
+            {/* Nagłówek + inputy w jednej linii */}
+            <div className="flex items-center gap-6 flex-wrap">
+              <span className="text-sm font-semibold text-white">Sugestie zakupów</span>
+              <div className="flex items-center gap-2 text-xs text-gray-400">
+                <span>Gotówka:</span>
+                <span className="font-medium text-white tabular-nums">{formatCurrency(cashPLN, 'PLN')}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-400">+ Inwestycja:</span>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number" min={0} value={investAmount}
+                    onChange={e => setInvestAmount(e.target.value)}
+                    placeholder="0"
+                    className="w-24 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-sm text-white
+                               focus:outline-none focus:border-finance-green tabular-nums"
+                  />
+                  <span className="text-xs text-gray-500">PLN</span>
                 </div>
-              ))}
-              <p className="text-xs text-gray-500">Sugestie preferują zakupy (bez sprzedaży — unika podatku od zysków).</p>
+              </div>
             </div>
-          )}
+
+            {/* Stany / wyniki */}
+            {!targetsValid && (
+              <p className="text-xs text-amber-400">Ustaw cele sumujące do 100% żeby zobaczyć sugestie.</p>
+            )}
+            {targetsValid && suggestions.length === 0 && (cashPLN + (parseFloat(investAmount) || 0)) <= 0 && (
+              <p className="text-xs text-gray-500">Wprowadź kwotę do zainwestowania.</p>
+            )}
+            {targetsValid && suggestions.length === 0 && (cashPLN + (parseFloat(investAmount) || 0)) > 0 && (
+              <p className="text-xs text-finance-green">Portfel jest zbliżony do celu.</p>
+            )}
+
+            {suggestions.length > 0 && (
+              <div className="pt-1">
+                {suggestions.map(({ cat, buyPLN, top }) => {
+                  const acc = accentForDiff(cat.currentPct - cat.targetPct)
+                  return (
+                    <div key={cat.key} className="py-4 border-t border-gray-800/60">
+                      {/* Nagłówek kategorii */}
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-sm font-semibold text-white">{cat.label}</span>
+                        <span className="text-base font-bold text-finance-green tabular-nums">+{formatCurrency(buyPLN, 'PLN')}</span>
+                      </div>
+                      {/* Wiersze tickerów */}
+                      <div className="space-y-2">
+                        {top.map(({ ticker, name, amt }) => (
+                          <div key={ticker} className="flex items-center gap-3">
+                            <span className="text-sm font-bold w-24 flex-shrink-0 tabular-nums" style={{ color: acc.color }}>{ticker}</span>
+                            <span className="text-sm text-gray-400 flex-1 truncate">{name}</span>
+                            <span className="text-sm text-finance-green font-semibold tabular-nums flex-shrink-0">+{formatCurrency(amt, 'PLN')}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })}
+                <p className="text-xs text-gray-600 pt-3 border-t border-gray-800/40">Dokupienie aktywów bez sprzedaży — unika podatku od zysków.</p>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
