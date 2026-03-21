@@ -266,6 +266,7 @@ export interface GlobalMarketData {
     BVSP: MarketTickerData    // ^BVSP — Bovespa (Brazil/South America)
     VWO: MarketTickerData     // Vanguard FTSE Emerging Markets ETF (szeroki proxy EM)
     INDA: MarketTickerData    // iShares MSCI India ETF
+    EWJ: MarketTickerData     // iShares MSCI Japan ETF (USD-denominated)
   }
   bonds: {
     US10Y: MarketTickerData   // ^TNX (US 10-year yield)
@@ -298,7 +299,8 @@ export interface MarketRegime {
   oilShock:    boolean                             // |oil.change1m| > 15%
   goldRally:   boolean                             // gold.change1m > 10%
   copperCrash: boolean                             // copper.change1m < -10% — sygnał recesji
-  gasShock:    boolean                             // |gas.change1m| > 20% — kryzys energetyczny
+  gasSpike:    boolean                             // gas.change1m > +20% — kryzys energetyczny (drogi gaz)
+  gasCrash:    boolean                             // gas.change1m < -20% — załamanie popytu na gaz
 }
 
 export interface GlobalAnalysis {

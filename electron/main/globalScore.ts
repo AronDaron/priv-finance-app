@@ -7,6 +7,20 @@ import type { GlobalMarketData, RegionScore, RegionId, RegionScoreComponent, Mar
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+// Syntetyczny indeks siły USD (przybliżenie DXY z dostępnych par walutowych)
+// DXY: EUR 57.6%, JPY 13.6%, GBP 11.9%, CAD 9.1%, CHF 3.6%
+// Wszystkie pary XxUSD → USD rośnie gdy te pary spadają → negujemy
+function computeUSDStrength(m: GlobalMarketData): number {
+  const sum = 0.576 + 0.136 + 0.119 + 0.091 + 0.036
+  const weighted =
+    0.576 * m.currencies.EURUSD.changePercent +
+    0.136 * m.currencies.JPYUSD.changePercent +
+    0.119 * m.currencies.GBPUSD.changePercent +
+    0.091 * m.currencies.CADUSD.changePercent +
+    0.036 * m.currencies.CHFUSD.changePercent
+  return -(weighted / sum)
+}
+
 function norm(value: number, range: number): number {
   return Math.max(-1, Math.min(1, value / range))
 }
@@ -66,7 +80,8 @@ export function detectMarketRegime(m: GlobalMarketData): MarketRegime {
     oilShock:    Math.abs(m.commodities.oil.change1m) > 15,
     goldRally:   m.commodities.gold.change1m > 10,
     copperCrash: m.commodities.copper.change1m < -10,
-    gasShock:    Math.abs(m.commodities.gas.change1m) > 20,
+    gasSpike:    m.commodities.gas.change1m > 20,
+    gasCrash:    m.commodities.gas.change1m < -20,
   }
 }
 
@@ -98,16 +113,19 @@ const REGIONS: RegionDef[] = [
       if (regime.oilShock)    { w.oil *= 1.5; w.ret30 *= 0.9 }
       if (regime.goldRally)   { w.vix *= 1.3; w.ret30 *= 0.8; w.eur *= 0.9 }
       if (regime.copperCrash) { w.vix *= 1.5; w.us10y *= 1.3; w.ret30 *= 0.5 }
-      if (regime.gasShock)    { w.oil *= 1.2; w.ret30 *= 0.9 }
+      // NA jest eksporterem gazu — spike lekko pozytywny (energia droga), crash lekko negatywny
+      if (regime.gasSpike)    { w.oil *= 1.3; w.ret30 *= 0.85 }
+      if (regime.gasCrash)    { w.oil *= 1.1; w.ret30 *= 0.9 }
 
       const nw = normalizeWeights(w)
+      const usdStr = computeUSDStrength(m)
       const components: RegionScoreComponent[] = [
         { ...contrib(m.indices.SP500.change1m,         10,  nw.ret30), name: 'S&P500 (30 dni)' },
         { ...contrib(m.indices.SP500.changePercent,     3,  nw.ret1d), name: 'S&P500 (1 dzień)' },
         { ...contribNorm(m.indices.VIX.price,  vixFactor(m.indices.VIX.price),   nw.vix),   name: 'VIX (strach)' },
         { ...contribNorm(m.bonds.US10Y.price,  us10yFactor(m.bonds.US10Y.price), nw.us10y), name: 'US10Y Yield' },
         { ...contrib(m.commodities.oil.change1m,       15,  nw.oil), name: 'Ropa (eksport/prod.)' },
-        { ...contrib(m.currencies.EURUSD.changePercent, 1.5, nw.eur), name: 'EUR/USD (płynność)' },
+        { ...contribNorm(usdStr, -norm(usdStr, 1.5),  nw.eur), name: 'USD (siła, płynność)' },
       ]
       return { components, trend1d: m.indices.SP500.changePercent }
     },
@@ -138,7 +156,9 @@ const REGIONS: RegionDef[] = [
       if (regime.oilShock)    { w.oil *= 2.0; w.ret30 *= 0.7; w.vix *= 1.3 }
       if (regime.goldRally)   { w.vix *= 1.3; w.ret30 *= 0.8; w.currencies *= 0.9 }
       if (regime.copperCrash) { w.ret30 *= 0.5; w.vix *= 1.5; w.gas *= 0.8 }
-      if (regime.gasShock)    { w.gas *= 3.5; w.ret30 *= 0.4; w.vix *= 1.5 }
+      // Europa: importer gazu — spike katastrofalny, crash umiarkowanie pozytywny
+      if (regime.gasSpike)    { w.gas *= 3.5; w.ret30 *= 0.4; w.vix *= 1.5 }
+      if (regime.gasCrash)    { w.gas *= 2.0; w.ret30 *= 0.85 }
 
       const nw = normalizeWeights(w)
       const components: RegionScoreComponent[] = [
@@ -159,8 +179,9 @@ const REGIONS: RegionDef[] = [
     name: 'Azja',
     flag: '🌏',
     compute(m, regime) {
-      const avgIndex = (m.indices.Nikkei.change1m + m.indices.FXI.change1m + m.indices.INDA.change1m) / 3
-      const avgIdx1d = (m.indices.Nikkei.changePercent + m.indices.FXI.changePercent + m.indices.INDA.changePercent) / 3
+      // EWJ (iShares MSCI Japan ETF) zamiast Nikkei — USD-denominated, porównywalne z FXI i INDA
+      const avgIndex = (m.indices.EWJ.change1m + m.indices.FXI.change1m + m.indices.INDA.change1m) / 3
+      const avgIdx1d = (m.indices.EWJ.changePercent + m.indices.FXI.changePercent + m.indices.INDA.changePercent) / 3
       const currencyBasket = (m.currencies.JPYUSD.changePercent + m.currencies.CNYUSD.changePercent) / 2
 
       let w = { ret30: 0.30, ret1d: 0.10, vix: 0.15, currencies: 0.20, copper: 0.15, oil: 0.10 }
@@ -174,11 +195,13 @@ const REGIONS: RegionDef[] = [
       if (regime.oilShock)    { w.oil *= 2.0; w.ret30 *= 0.6; w.vix *= 1.3 }
       if (regime.goldRally)   { w.vix *= 1.3; w.currencies *= 1.1; w.ret30 *= 0.8 }
       if (regime.copperCrash) { w.copper *= 2.5; w.ret30 *= 0.3; w.vix *= 1.5 }
-      if (regime.gasShock)    { w.vix *= 1.5; w.currencies *= 1.3; w.ret30 *= 0.5 }
+      // Azja: importer gazu — spike zwiększa koszty i zmienność, crash łagodna ulga
+      if (regime.gasSpike)    { w.vix *= 1.5; w.currencies *= 1.3; w.ret30 *= 0.5 }
+      if (regime.gasCrash)    { w.currencies *= 1.1; w.ret30 *= 0.95 }
 
       const nw = normalizeWeights(w)
       const components: RegionScoreComponent[] = [
-        { ...contrib(avgIndex,       10,  nw.ret30),     name: 'Nikkei+FXI+INDA (30 dni)' },
+        { ...contrib(avgIndex,       10,  nw.ret30),     name: 'EWJ+FXI+INDA (30 dni)' },
         { ...contrib(avgIdx1d,        3,  nw.ret1d),     name: 'Indeksy (1 dzień)' },
         { ...contribNorm(m.indices.VIX.price, vixFactor(m.indices.VIX.price), nw.vix), name: 'VIX (globalny)' },
         { ...contrib(currencyBasket, 1.5, nw.currencies), name: 'JPY+CNY (kurs)' },
@@ -195,7 +218,8 @@ const REGIONS: RegionDef[] = [
     name: 'Rynki Wschodzące',
     flag: '🌎',
     compute(m, regime) {
-      let w = { ret30: 0.35, ret1d: 0.10, vix: 0.20, oil: 0.15, copper: 0.05, usd: 0.15 }
+      // Zmniejszony ret30 (VWO mocno pokrywa się z Azją) — większy nacisk na surowce i USD
+      let w = { ret30: 0.25, ret1d: 0.08, vix: 0.20, oil: 0.18, copper: 0.14, usd: 0.15 }
 
       if (regime.vixLevel === 'panic')         { w.ret30 *= 0.15; w.ret1d *= 0.7; w.vix *= 2.0; w.usd *= 1.8 }
       else if (regime.vixLevel === 'elevated') { w.ret30 *= 0.5; w.vix *= 1.5; w.usd *= 1.3 }
@@ -206,16 +230,18 @@ const REGIONS: RegionDef[] = [
       if (regime.oilShock)    { w.oil *= 1.5; w.ret30 *= 0.8 }
       if (regime.goldRally)   { w.vix *= 1.2; w.usd *= 1.2; w.ret30 *= 0.8 }
       if (regime.copperCrash) { w.copper *= 2.0; w.usd *= 1.5; w.ret30 *= 0.3 }
-      if (regime.gasShock)    { w.vix *= 1.2; w.ret30 *= 0.8 }
+      if (regime.gasSpike)    { w.vix *= 1.2; w.ret30 *= 0.8 }
+      if (regime.gasCrash)    { w.ret30 *= 0.9 }
 
       const nw = normalizeWeights(w)
+      const usdStr = computeUSDStrength(m)
       const components: RegionScoreComponent[] = [
         { ...contrib(m.indices.VWO.change1m,       12,  nw.ret30),  name: 'VWO EM (30 dni)' },
         { ...contrib(m.indices.VWO.changePercent,   3,  nw.ret1d),  name: 'VWO EM (1 dzień)' },
         { ...contribNorm(m.indices.VIX.price, vixFactor(m.indices.VIX.price), nw.vix), name: 'VIX (ryzyko)' },
         { ...contrib(m.commodities.oil.change1m,   12,  nw.oil),    name: 'Ropa (eksport)' },
         { ...contrib(m.commodities.copper.change1m, 10, nw.copper), name: 'Miedź (eksport)' },
-        { ...contrib(-m.currencies.EURUSD.changePercent, 1.5, nw.usd), name: 'USD (siła, ryzyko)' },
+        { ...contribNorm(usdStr, -norm(usdStr, 1.5), nw.usd), name: 'USD (siła, ryzyko)' },
       ]
       return { components, trend1d: m.indices.VWO.changePercent }
     },
@@ -258,7 +284,10 @@ const REGIONS: RegionDef[] = [
       if (regime.oilShock)    { w.vix *= 1.3; w.sp500 *= 0.8; w.dax *= 0.8; w.nikkei *= 0.8; w.ftse *= 0.8 }
       if (regime.goldRally)   { w.vix *= 1.3; w.us10y *= 1.2; w.sp500 *= 0.8; w.dax *= 0.8; w.nikkei *= 0.8; w.ftse *= 0.8 }
       if (regime.copperCrash) { w.vix *= 1.5; w.us10y *= 1.3; w.sp500 *= 0.4; w.dax *= 0.4; w.nikkei *= 0.4; w.ftse *= 0.4; w.asx *= 0.4 }
-      if (regime.gasShock)    { w.vix *= 1.5; w.sp500 *= 0.6; w.dax *= 0.6; w.nikkei *= 0.6; w.ftse *= 0.6; w.asx *= 0.6 }
+      // Spike gazowy: DM Europe/Asia cierpią — obniżamy wagi indeksów
+      if (regime.gasSpike)    { w.vix *= 1.5; w.sp500 *= 0.7; w.dax *= 0.5; w.nikkei *= 0.6; w.ftse *= 0.6; w.asx *= 0.7 }
+      // Crash gazu: ogólna ulga dla importerów — łagodna korekta
+      if (regime.gasCrash)    { w.sp500 *= 0.9; w.dax *= 1.1; w.nikkei *= 1.0; w.ftse *= 1.0 }
 
       const nw = normalizeWeights(w)
       const components: RegionScoreComponent[] = [
@@ -292,7 +321,9 @@ const REGIONS: RegionDef[] = [
       if (regime.oilShock)    { w.copper *= 1.3; w.gold *= 1.2; w.ret30 *= 0.9 }
       if (regime.goldRally)   { w.gold *= 2.0; w.ret30 *= 0.8 }
       if (regime.copperCrash) { w.copper *= 2.5; w.ret30 *= 0.3; w.aud *= 1.2 }
-      if (regime.gasShock)    { w.vix *= 1.2; w.ret30 *= 0.9 }
+      // Australia: LNG eksporter — spike gazowy lekko pozytywny, crash lekko negatywny
+      if (regime.gasSpike)    { w.gold *= 1.1; w.ret30 *= 0.95 }
+      if (regime.gasCrash)    { w.vix *= 1.1; w.ret30 *= 0.9 }
 
       const nw = normalizeWeights(w)
       const components: RegionScoreComponent[] = [
@@ -324,14 +355,16 @@ const REGIONS: RegionDef[] = [
       if (regime.oilShock)    { w.gold *= 1.2; w.copper *= 1.2; w.ret30 *= 0.8 }
       if (regime.goldRally)   { w.gold *= 2.5; w.ret30 *= 0.7; w.vix *= 1.2 }
       if (regime.copperCrash) { w.copper *= 2.0; w.gold *= 1.5; w.ret30 *= 0.3 }
-      if (regime.gasShock)    { w.vix *= 1.2; w.ret30 *= 0.9 }
+      if (regime.gasSpike)    { w.vix *= 1.2; w.ret30 *= 0.9 }
+      if (regime.gasCrash)    { w.ret30 *= 0.95 }
 
       const nw = normalizeWeights(w)
+      const usdStr = computeUSDStrength(m)
       const components: RegionScoreComponent[] = [
         { ...contrib(m.indices.EZA.change1m,          12,  nw.ret30), name: 'EZA SA (30 dni)' },
         { ...contrib(m.indices.EZA.changePercent,       3,  nw.ret1d), name: 'EZA SA (1 dzień)' },
         { ...contribNorm(m.indices.VIX.price, vixFactor(m.indices.VIX.price), nw.vix), name: 'VIX (ryzyko)' },
-        { ...contrib(-m.currencies.EURUSD.changePercent, 1.5, nw.usd),    name: 'USD (siła, ryzyko)' },
+        { ...contribNorm(usdStr, -norm(usdStr, 1.5), nw.usd), name: 'USD (siła, ryzyko)' },
         { ...contrib(m.commodities.gold.change1m,       8,   nw.gold),   name: 'Złoto (eksport)' },
         { ...contrib(m.commodities.copper.change1m,     10,  nw.copper), name: 'Miedź (eksport)' },
       ]
@@ -356,14 +389,17 @@ const REGIONS: RegionDef[] = [
       if (regime.oilShock)    { w.oil *= 2.5; w.ret30 *= 0.8 }
       if (regime.goldRally)   { w.vix *= 1.2; w.ret30 *= 0.8 }
       if (regime.copperCrash) { w.copper *= 2.5; w.ret30 *= 0.3 }
-      if (regime.gasShock)    { w.oil *= 1.2; w.ret30 *= 0.9 }
+      // LatAm: mieszany — eksporter LNG (Brazylia, Trynidad), ale wysokie koszty importu pozostałych
+      if (regime.gasSpike)    { w.oil *= 1.2; w.ret30 *= 0.9 }
+      if (regime.gasCrash)    { w.ret30 *= 0.95 }
 
       const nw = normalizeWeights(w)
+      const usdStr = computeUSDStrength(m)
       const components: RegionScoreComponent[] = [
         { ...contrib(m.indices.BVSP.change1m,          12,  nw.ret30),  name: 'Bovespa (30 dni)' },
         { ...contrib(m.indices.BVSP.changePercent,       3,  nw.ret1d),  name: 'Bovespa (1 dzień)' },
         { ...contribNorm(m.indices.VIX.price, vixFactor(m.indices.VIX.price), nw.vix), name: 'VIX (ryzyko)' },
-        { ...contrib(-m.currencies.EURUSD.changePercent, 1.5, nw.usd),    name: 'USD (siła, ryzyko)' },
+        { ...contribNorm(usdStr, -norm(usdStr, 1.5), nw.usd), name: 'USD (siła, ryzyko)' },
         { ...contrib(m.commodities.oil.change1m,        12,  nw.oil),    name: 'Ropa (eksport)' },
         { ...contrib(m.commodities.copper.change1m,     10,  nw.copper), name: 'Miedź (eksport)' },
       ]
@@ -396,7 +432,9 @@ const REGIONS: RegionDef[] = [
       if (regime.oilShock)    { w.oil *= 2.5 }
       if (regime.goldRally)   { w.gold *= 2.5 }
       if (regime.copperCrash) { w.copper *= 2.5; w.oil *= 0.8 }
-      if (regime.gasShock)    { w.gas *= 3.5 }
+      // Surowce: spike i crash gazu oba mocno amplifikują wagę gazu (sygnał jest silny w obu kierunkach)
+      if (regime.gasSpike)    { w.gas *= 3.5 }
+      if (regime.gasCrash)    { w.gas *= 3.0 }
 
       const nw = normalizeWeights(w)
       const components: RegionScoreComponent[] = [
@@ -423,7 +461,8 @@ export function buildRegimeSummary(regime: MarketRegime): string | null {
   if (regime.oilShock) parts.push('szok naftowy')
   if (regime.goldRally) parts.push('rajd złota')
   if (regime.copperCrash) parts.push('wyprzedaż miedzi')
-  if (regime.gasShock) parts.push('szok gazowy')
+  if (regime.gasSpike) parts.push('szok gazowy (wzrost cen)')
+  if (regime.gasCrash) parts.push('załamanie gazu (spadek cen)')
   return parts.length > 0 ? parts.join(', ') : null
 }
 

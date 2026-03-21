@@ -23,11 +23,19 @@ function RegimeBanner({ regime, marketData }: { regime: MarketRegime; marketData
       </div>
     )
   }
-  if (regime.gasShock) {
+  if (regime.gasSpike) {
     return (
       <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-yellow-500/15 border border-yellow-500/40 text-yellow-400 text-sm font-medium">
         <span>🔥</span>
-        <span>Szok Gazowy — Gaz 30d: {marketData.commodities.gas.change1m.toFixed(1)}% — wagi Europy i Azji przesunięte na energię</span>
+        <span>Szok Gazowy (wzrost cen) — Gaz 30d: +{marketData.commodities.gas.change1m.toFixed(1)}% — wagi Europy i Azji przesunięte na koszty energii</span>
+      </div>
+    )
+  }
+  if (regime.gasCrash) {
+    return (
+      <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-cyan-500/15 border border-cyan-500/40 text-cyan-400 text-sm font-medium">
+        <span>📉</span>
+        <span>Taniejący gaz — Gaz 30d: {marketData.commodities.gas.change1m.toFixed(1)}% — Europa i Azja zyskują na tańszym imporcie energii</span>
       </div>
     )
   }

@@ -381,7 +381,7 @@ export async function fetchGlobalMarketData(): Promise<GlobalMarketData> {
     oil, gas, wheat, copper, gold,
     eurusd, gbpusd, chfusd, cadusd, audusd, jpyusd, cnyusd,
     sp500, dax, nikkei, wig20, ftse, vix, fxi,
-    asx200, eza, bvsp, vwo, inda,
+    asx200, eza, bvsp, vwo, inda, ewj,
     us10y,
   ] = await Promise.all([
     safeQuote('CL=F'),
@@ -408,11 +408,12 @@ export async function fetchGlobalMarketData(): Promise<GlobalMarketData> {
     safeQuote('^BVSP'),   // Bovespa (Brazylia / Ameryka Łacińska)
     safeQuote('VWO'),     // Vanguard FTSE Emerging Markets ETF (szeroki proxy EM)
     safeQuote('INDA'),    // iShares MSCI India ETF
+    safeQuote('EWJ'),     // iShares MSCI Japan ETF (USD-denominated)
     safeQuote('^TNX'),
   ])
 
   // Krok 2: zmiana 30-dniowa dla kluczowych indeksów (równolegle)
-  const monthlyKey = ['^GSPC', '^GDAXI', '^N225', 'WIG20.WA', '^FTSE', 'FXI', 'CL=F', 'GC=F', 'HG=F', 'NG=F', 'ZW=F', '^AXJO', 'EZA', '^BVSP', 'VWO', 'INDA']
+  const monthlyKey = ['^GSPC', '^GDAXI', '^N225', 'WIG20.WA', '^FTSE', 'FXI', 'CL=F', 'GC=F', 'HG=F', 'NG=F', 'ZW=F', '^AXJO', 'EZA', '^BVSP', 'VWO', 'INDA', 'EWJ']
   const monthly = await Promise.all(monthlyKey.map(t => get1mChange(t)))
   const m: Record<string, number> = {}
   monthlyKey.forEach((t, i) => { m[t] = monthly[i] })
@@ -433,11 +434,12 @@ export async function fetchGlobalMarketData(): Promise<GlobalMarketData> {
   wheat.change1m   = m['ZW=F']     ?? 0
   vwo.change1m     = m['VWO']      ?? 0
   inda.change1m    = m['INDA']     ?? 0
+  ewj.change1m     = m['EWJ']      ?? 0
 
   const result: GlobalMarketData = {
     commodities: { oil, gas, wheat, copper, gold },
     currencies:  { EURUSD: eurusd, GBPUSD: gbpusd, CHFUSD: chfusd, CADUSD: cadusd, AUDUSD: audusd, JPYUSD: jpyusd, CNYUSD: cnyusd },
-    indices:     { SP500: sp500, DAX: dax, Nikkei: nikkei, WIG20: wig20, FTSE: ftse, VIX: vix, FXI: fxi, ASX200: asx200, EZA: eza, BVSP: bvsp, VWO: vwo, INDA: inda },
+    indices:     { SP500: sp500, DAX: dax, Nikkei: nikkei, WIG20: wig20, FTSE: ftse, VIX: vix, FXI: fxi, ASX200: asx200, EZA: eza, BVSP: bvsp, VWO: vwo, INDA: inda, EWJ: ewj },
     bonds:       { US10Y: us10y },
     fetchedAt:   new Date().toISOString(),
   }
