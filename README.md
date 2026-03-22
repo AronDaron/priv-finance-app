@@ -147,7 +147,7 @@ Do korzystania z funkcji AI wystarczy darmowe konto na [OpenRouter](https://open
 ### Instalacja
 
 ```bash
-git clone https://github.com/your-username/priv-finance-app.git
+git clone https://github.com/arondaron/priv-finance-app.git
 cd priv-finance-app
 npm install
 ```
