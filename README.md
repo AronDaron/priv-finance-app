@@ -94,10 +94,10 @@ Aplikacja używa dwóch modeli Gemini przez OpenRouter, dobranych pod konkretne 
 
 | Zadanie | Model | Dlaczego |
 |---|---|---|
-| Raport per spółka (Worker) | `google/gemini-flash` | Wiele równoległych zapytań — szybki i tani model w zupełności wystarcza do analizy jednej pozycji |
-| Analiza całego portfela (Manager) | `google/gemini-pro` | Jedno złożone zadanie wymagające głębokiego rozumowania — model Pro łączy wszystkie raporty Worker w spójną ocenę ryzyka portfela |
-| Analiza regionu globalnego | `google/gemini-flash` | Szybka analiza na żądanie przy kliknięciu w kartę regionu |
-| Chat z portfelem | `google/gemini-flash` | Konwersacja w czasie rzeczywistym — priorytet to czas odpowiedzi |
+| Raport per spółka (Worker) | `google/gemini-3-flash-preview` | Wiele równoległych zapytań — szybki i tani model w zupełności wystarcza do analizy jednej pozycji |
+| Analiza całego portfela (Manager) | `google/gemini-3.1-pro-preview` | Jedno złożone zadanie wymagające głębokiego rozumowania — model Pro łączy wszystkie raporty Worker w spójną ocenę ryzyka portfela |
+| Analiza regionu globalnego | `google/gemini-3-flash-preview` | Szybka analiza na żądanie przy kliknięciu w kartę regionu |
+| Chat z portfelem | `google/gemini-3-flash-preview` | Konwersacja w czasie rzeczywistym — priorytet to czas odpowiedzi |
 
 **Wzorzec Map-Reduce:**
 - **Etap A (Worker):** każda spółka analizowana osobno — dane fundamentalne + techniczne + kontekst makro → raport zapisywany w SQLite
