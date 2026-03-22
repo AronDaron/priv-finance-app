@@ -16,7 +16,7 @@
 
 🚧 Projekt jest aktywnie rozwijany — nowe funkcje i poprawki pojawiają się regularnie.
 
-> ⚠️ **Zastrzeżenie:** Aplikacja oraz wszelkie analizy generowane przez AI służą wyłącznie celom informacyjnym i nie stanowią porady inwestycyjnej. Decyzje inwestycyjne podejmujesz wyłącznie na własną odpowiedzialność.
+> ⚠️ **Zastrzeżenie:** Aplikacja oraz wszelkie treści i analizy generowane przez AI służą wyłącznie celom informacyjnym i nie stanowią porady inwestycyjnej. Decyzje inwestycyjne podejmujesz wyłącznie na własną odpowiedzialność.
 
 </div>
 
