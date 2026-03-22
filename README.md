@@ -32,28 +32,75 @@
 
 ## ✨ Funkcjonalności
 
-### Portfel i dane rynkowe
-- **Śledzenie portfela** — akcje, ETF-y, złoto (`GC=F`); pełna historia transakcji, zysk/strata, alokacja
-- **Wykresy świecowe** — interaktywne candlestick (TradingView Lightweight Charts), historia wartości portfela, wykres kołowy alokacji
-- **Wskaźniki fundamentalne** — P/E, EPS, kapitalizacja, przychody — dane z Yahoo Finance
-- **Wskaźniki techniczne** — RSI, MACD, SMA — wyliczane lokalnie, bez zewnętrznych API
-- **Dywidendy** — pełna historia wypłat dywidend dla każdego aktywa
-- **Aktualności** — najnowsze wiadomości finansowe dla śledzonych spółek
+### 🌍 Globalny Rynek — flagowa funkcja
 
-### Analiza i narzędzia
-- **Benchmark** — porównaj swój portfel z S&P 500, WIG20 i innymi indeksami
-- **Macierz korelacji** — wizualizacja zależności między aktywami w portfelu
-- **Rebalancing** — sugestie dotyczące przywrócenia docelowej alokacji
+Widok `Globalny Rynek` to autorski system oceny potencjału inwestycyjnego regionów świata oparty na deterministycznym algorytmie — działa bez AI, bez opóźnień, bez limitu zapytań.
 
-### Analiza AI
-- **Raporty per spółka** — AI analizuje dane fundamentalne i techniczne każdej pozycji
-- **Ocena całego portfela** — analiza ryzyka, dywersyfikacji i wzajemnych zależności
-- **Wzorzec Map-Reduce** — raporty generowane równolegle, następnie łączone w spójną ocenę portfela
-- **OpenRouter** — obsługuje darmowe modele (np. Meta Llama 3); klucz API z darmowego konta
+**Pasek rynkowy w czasie rzeczywistym** — zawsze widoczny u góry ekranu:
+- Surowce: Ropa WTI, Złoto, Gaz ziemny, Miedź, Pszenica
+- Waluty: EUR/USD, GBP/USD, CHF/USD, CAD/USD, AUD/USD, JPY/USD, CNY/USD
+- Indeksy: S&P 500, DAX, Nikkei 225, WIG20, FTSE 100
+- Wskaźniki makro: VIX (indeks strachu), US10Y (rentowność obligacji USA)
 
-### Prywatność i koszty
-- **Zero kosztów utrzymania** — wszystkie dane rynkowe z `yahoo-finance2` (darmowe, bez rejestracji)
-- **W 100% lokalny** — dane w SQLite na Twoim dysku; brak chmury, brak konta, brak telemetrii
+**Karty regionów i sektorów** — każdy region otrzymuje score 0–100 z kolorowym wskaźnikiem ryzyka (zielony / żółty / czerwony):
+
+| Regiony | Sektory |
+|---|---|
+| Ameryka Północna, Europa, Azja | Surowce |
+| Ameryka Południowa, Afryka | Rynki rozwinięte |
+| Australia i Oceania | LATAM / Rynki wschodzące |
+
+**Detekcja reżimu rynkowego** — aplikacja automatycznie wykrywa ekstremalne warunki i wyświetla alert z opisem wpływu na algorytm:
+- Tryb Paniki (VIX > 35) — wagi przełączone na wskaźniki strachu i płynności
+- Szok Obligacyjny (US10Y > 5%) — wagi przesunięte na USD i koszty finansowania
+- Szok Naftowy / Rally Złota / Szok Gazowy / Crash Miedzi
+
+**Modal szczegółów regionu** — po kliknięciu karty otwiera się pełna analiza:
+- Wykres składowych score z objaśnieniami każdego wskaźnika w prostym języku
+- Wizualizacja siły i kierunku wpływu każdej składowej (zielony/czerwony pasek)
+- Aktualne wartości rynkowe z przeliczeniem na punkty score
+- Przycisk **Analizuj AI** — pogłębiona analiza geopolityczna i inwestycyjna regionu wzbogacona o bieżące nagłówki newsów
+
+---
+
+### 📊 Portfel i transakcje
+- **Dodawanie aktywów** — wyszukiwarka spółek w czasie rzeczywistym (akcje, ETF-y, złoto `GC=F`); automatyczne pobieranie ceny i nazwy
+- **Historia transakcji** — pełny dziennik kupna/sprzedaży z ceną, ilością i datą; edycja i usuwanie wpisów
+- **Tagi aktywów** — grupowanie pozycji według własnych kategorii (np. dywidendowe, growth, hedging)
+- **Gotówka** — rejestrowanie wpłat i wypłat gotówkowych z portfela
+- **Dashboard** — podsumowanie wartości portfela, zysk/strata łączny i per aktyw, wykres kołowy alokacji, historia wartości portfela w czasie
+
+---
+
+### 📈 Analiza spółki
+- **Wykres świecowy** — interaktywny candlestick (TradingView Lightweight Charts) z wyborem zakresu dat
+- **Wskaźniki fundamentalne** — P/E, EPS, kapitalizacja rynkowa, przychody, marże, dane bilansowe z Yahoo Finance
+- **Wskaźniki techniczne** — RSI, MACD, SMA — wyliczane lokalnie przez `technicalindicators`, bez zewnętrznych API
+- **Dywidendy** — tabela historycznych wypłat z datami i kwotami na akcję
+
+---
+
+### 🔬 Narzędzia analityczne
+- **Benchmark** — porównanie wyników portfela z indeksami (S&P 500, WIG20 i inne) wraz z metrykami: alfa, beta, max drawdown, Sharpe ratio
+- **Macierz korelacji** — wizualizacja korelacji między wszystkimi aktywami portfela; pomaga ocenić rzeczywistą dywersyfikację i wykryć ukryte zależności
+- **Rebalancing** — widok docelowej alokacji z sugestiami dotyczącymi przywrócenia równowagi portfela
+- **Aktualności** — najnowsze wiadomości finansowe dla śledzonych spółek i regionów świata
+
+---
+
+### 🤖 Analiza AI (Map-Reduce)
+- **Raporty per spółka** — AI analizuje dane fundamentalne i techniczne każdej pozycji i zapisuje raport w SQLite
+- **Analiza całego portfela** — zaawansowany model zbiera wszystkie raporty spółkowe i generuje ocenę ryzyka, dywersyfikacji i wzajemnych zależności
+- **Analiza regionów** — AI komentuje wynik algorytmiczny wybranego regionu z uwzględnieniem bieżących nagłówków newsów
+- **Chat z AI** — swobodna rozmowa z modelem w kontekście Twojego portfela i sytuacji rynkowej
+- **OpenRouter** — kompatybilny z dowolnym modelem LLM, w tym darmowymi (np. Meta Llama 3); rejestracja bez karty kredytowej
+
+---
+
+### 🔒 Prywatność i koszty
+- **Zero kosztów utrzymania** — wszystkie dane rynkowe z `yahoo-finance2` (darmowe, bez rejestracji, bez limitu)
+- **W 100% lokalny** — dane przechowywane wyłącznie w SQLite na Twoim dysku; brak chmury, brak konta, brak telemetrii
+- **Klucz API tylko lokalnie** — klucz OpenRouter nigdy nie opuszcza Twojego komputera
 
 ---
 
