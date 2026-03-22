@@ -20,12 +20,16 @@
 
 > *Dodaj własne zrzuty ekranu — zastąp poniższe obrazki plikami z folderu `docs/screenshots/`*
 
+**Dashboard**
 ![Dashboard](docs/screenshots/dashboard.png)
 
+**Widok spółki**
 ![Widok spółki](docs/screenshots/stock.png)
 
+**Analiza AI**
 ![Analiza AI](docs/screenshots/ai.png)
 
+**Ustawienia**
 ![Ustawienia](docs/screenshots/settings.png)
 
 ---
