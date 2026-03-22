@@ -89,11 +89,21 @@ Widok `Globalny Rynek` to autorski system oceny potencjału inwestycyjnego regio
 ---
 
 ### 🤖 Analiza AI (Map-Reduce)
-- **Raporty per spółka** — AI analizuje dane fundamentalne i techniczne każdej pozycji i zapisuje raport w SQLite
-- **Analiza całego portfela** — zaawansowany model zbiera wszystkie raporty spółkowe i generuje ocenę ryzyka, dywersyfikacji i wzajemnych zależności
-- **Analiza regionów** — AI komentuje wynik algorytmiczny wybranego regionu z uwzględnieniem bieżących nagłówków newsów
-- **Chat z AI** — swobodna rozmowa z modelem w kontekście Twojego portfela i sytuacji rynkowej
-- **OpenRouter** — kompatybilny z dowolnym modelem LLM, w tym darmowymi (np. Meta Llama 3); rejestracja bez karty kredytowej
+
+Aplikacja używa dwóch modeli Gemini przez OpenRouter, dobranych pod konkretne zadania:
+
+| Zadanie | Model | Dlaczego |
+|---|---|---|
+| Raport per spółka (Worker) | `google/gemini-flash` | Wiele równoległych zapytań — szybki i tani model w zupełności wystarcza do analizy jednej pozycji |
+| Analiza całego portfela (Manager) | `google/gemini-pro` | Jedno złożone zadanie wymagające głębokiego rozumowania — model Pro łączy wszystkie raporty Worker w spójną ocenę ryzyka portfela |
+| Analiza regionu globalnego | `google/gemini-flash` | Szybka analiza na żądanie przy kliknięciu w kartę regionu |
+| Chat z portfelem | `google/gemini-flash` | Konwersacja w czasie rzeczywistym — priorytet to czas odpowiedzi |
+
+**Wzorzec Map-Reduce:**
+- **Etap A (Worker):** każda spółka analizowana osobno — dane fundamentalne + techniczne + kontekst makro → raport zapisywany w SQLite
+- **Etap B (Manager):** model Pro zbiera wszystkie raporty Worker i generuje całościową ocenę dywersyfikacji, ryzyka i rekomendacje zgodne ze strategią portfela (uwzględnia tagi: IKE, IKZE, Dywidendowy itp.)
+
+Do korzystania z funkcji AI wystarczy darmowe konto na [OpenRouter](https://openrouter.ai) — modele Gemini Flash są bezpłatne w ramach darmowego limitu.
 
 ---
 
@@ -115,7 +125,7 @@ Widok `Globalny Rynek` to autorski system oceny potencjału inwestycyjnego regio
 | Baza danych | [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) | Lokalny SQLite, synchroniczny dostęp |
 | Dane rynkowe | [yahoo-finance2](https://github.com/gadicc/node-yahoo-finance2) | Kursy, OHLC, fundamenty, dywidendy |
 | Wskaźniki | [technicalindicators](https://github.com/anandanand84/technicalindicators) | RSI, MACD, SMA — lokalnie |
-| AI | [OpenRouter API](https://openrouter.ai/) | Dowolny model LLM, w tym darmowe |
+| AI | [OpenRouter API](https://openrouter.ai/) | Gemini Flash (Worker/Chat/Regiony) + Gemini Pro (Manager portfela) |
 | Build | electron-vite + electron-builder | Cross-compile do `.exe` z Linuxa |
 
 ---
@@ -164,9 +174,8 @@ Aplikacja nie wymaga żadnych plików `.env` ani zmiennych środowiskowych.
 Klucz API konfiguruje się bezpośrednio w aplikacji:
 
 1. Utwórz darmowe konto na [openrouter.ai](https://openrouter.ai)
-2. Wygeneruj klucz API w zakładce [Keys](https://openrouter.ai/keys) — darmowe modele nie wymagają podania karty
+2. Wygeneruj klucz API w zakładce [Keys](https://openrouter.ai/keys) — rejestracja nie wymaga karty kredytowej
 3. W aplikacji przejdź do **Ustawień** i wklej klucz
-4. *(Opcjonalnie)* Wybierz preferowany model AI
 
 > Klucz API jest przechowywany wyłącznie lokalnie w bazie SQLite na Twoim komputerze. Nigdy nie jest wysyłany nigdzie poza oficjalne API OpenRouter.
 
