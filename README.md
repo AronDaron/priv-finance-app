@@ -10,10 +10,13 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript)](https://www.typescriptlang.org/)
 [![Zero Cost](https://img.shields.io/badge/koszt_utrzymania-$0-brightgreen)](https://github.com/gadicc/node-yahoo-finance2)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-wspomóż_projekt-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/arondaron)
+[![Download](https://img.shields.io/badge/Pobierz_.zip-latest-0078D4?logo=windows&logoColor=white)](https://github.com/AronDaron/priv-finance-app/releases/latest)
 
 Śledź akcje, ETF-y i złoto. Analizuj portfel z pomocą AI. Wszystko lokalnie, bez subskrypcji, bez chmury.
 
 🚧 Projekt jest aktywnie rozwijany — nowe funkcje i poprawki pojawiają się regularnie.
+
+> ⚠️ **Zastrzeżenie:** Aplikacja oraz wszelkie analizy generowane przez AI służą wyłącznie celom informacyjnym i nie stanowią porady inwestycyjnej. Decyzje inwestycyjne podejmujesz wyłącznie na własną odpowiedzialność.
 
 </div>
 
