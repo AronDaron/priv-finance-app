@@ -128,9 +128,9 @@ export default function PortfolioView() {
       {!loading && !error && (
         <>
           {groups.map(({ portfolio, assets: pfAssets, cashAccounts: pfCash }) => (
-            <div key={portfolio.id} className="mb-8 glass-card rounded-xl overflow-hidden">
+            <div key={portfolio.id} className="mb-8 glass-card rounded-xl">
               {/* Kolorowy pasek indigo na górze */}
-              <div style={{ height: 3, background: 'linear-gradient(90deg, #6366f1, #818cf8)', boxShadow: '0 0 8px rgba(99,102,241,0.4)' }} />
+              <div className="rounded-t-xl" style={{ height: 3, background: 'linear-gradient(90deg, #6366f1, #818cf8)', boxShadow: '0 0 8px rgba(99,102,241,0.4)' }} />
               <div className="p-4">
               {/* Nagłówek portfela — zawsze widoczny */}
               <div className="flex items-center justify-between mb-4">

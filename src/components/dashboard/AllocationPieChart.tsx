@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 
 interface AllocationPieChartProps {
@@ -8,6 +9,7 @@ interface AllocationPieChartProps {
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#84cc16']
 
 export default function AllocationPieChart({ title, data }: AllocationPieChartProps) {
+  const [showMoreTooltip, setShowMoreTooltip] = useState(false)
   const total = data.reduce((s, d) => s + d.value, 0)
   if (data.length === 0) return null
 
@@ -32,7 +34,7 @@ export default function AllocationPieChart({ title, data }: AllocationPieChartPr
             ))}
           </Pie>
           <Tooltip
-            formatter={(val) => [`${(((val as number) / total) * 100).toFixed(1)}%`, '']}
+            formatter={(val, name) => [`${(((val as number) / total) * 100).toFixed(1)}%`, name as string]}
             contentStyle={{
               background: '#111827',
               border: '1px solid rgba(16,185,129,0.3)',
@@ -63,7 +65,34 @@ export default function AllocationPieChart({ title, data }: AllocationPieChartPr
           )
         })}
         {data.length > 4 && (
-          <p className="text-xs text-gray-600 text-right">+{data.length - 4} więcej</p>
+          <div className="relative text-right">
+            <p
+              className="text-xs text-gray-500 cursor-default inline-block hover:text-gray-400 transition-colors"
+              onMouseEnter={() => setShowMoreTooltip(true)}
+              onMouseLeave={() => setShowMoreTooltip(false)}
+            >
+              +{data.length - 4} więcej
+            </p>
+            {showMoreTooltip && (
+              <div className="absolute right-0 bottom-full mb-1 z-20 bg-gray-800 border border-gray-600 rounded-lg shadow-lg py-1.5 px-2 min-w-[150px]">
+                {data.slice(4).map((d, i) => {
+                  const pct = total > 0 ? ((d.value / total) * 100).toFixed(1) : '0.0'
+                  return (
+                    <div key={d.name} className="flex items-center justify-between text-xs gap-3 py-0.5">
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className="w-2 h-2 rounded-sm flex-shrink-0"
+                          style={{ background: COLORS[(i + 4) % COLORS.length] }}
+                        />
+                        <span className="text-gray-300">{d.name}</span>
+                      </div>
+                      <span className="text-gray-400">{pct}%</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>
