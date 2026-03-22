@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getAssets, getQuote, getAssetMeta, getFundamentals, getCashAccounts, createPortfolio as apiCreatePortfolio } from '../../lib/api'
+import { getAssets, getQuote, getAssetMeta, getFundamentals, getCashAccounts } from '../../lib/api'
 import type { EnrichedAsset, CashAccount } from '../../lib/types'
+import { gramsToTroyOz } from '../../lib/types'
 import { usePortfolio } from '../../contexts/PortfolioContext'
 import SummaryCards from './SummaryCards'
 import AllocationPieChart from './AllocationPieChart'
@@ -21,7 +22,7 @@ async function getRate(ticker: string): Promise<number> {
 
 export default function DashboardView() {
   const navigate = useNavigate()
-  const { portfolios, activePortfolioId, setActivePortfolioId, createPortfolio, refreshPortfolios } = usePortfolio()
+  const { portfolios, activePortfolioId, setActivePortfolioId, createPortfolio } = usePortfolio()
   const [assets, setAssets] = useState<EnrichedAsset[]>([])
   const [cashAccounts, setCashAccounts] = useState<CashAccount[]>([])
   const [historyData, setHistoryData] = useState<{ date: string; value: number }[]>([])
@@ -60,8 +61,10 @@ export default function DashboardView() {
             getAssetMeta(asset.ticker).catch(() => ({ region: 'Inne', assetType: 'Akcje', sector: null })),
             getFundamentals(asset.ticker).catch(() => null),
           ])
-          const currentPrice  = q?.price ?? asset.purchase_price
+          const spotPrice     = q?.price ?? asset.purchase_price
           const quoteCurrency = q?.currency ?? asset.currency
+          const ozPerCoin     = asset.gold_grams ? gramsToTroyOz(asset.gold_grams) : null
+          const currentPrice  = ozPerCoin ? spotPrice * ozPerCoin : spotPrice
 
           const currentValue   = asset.quantity * currentPrice
           const valueInPLN     = currentValue * toPlnRate(quoteCurrency)
@@ -169,7 +172,7 @@ export default function DashboardView() {
 
   const portfolioData = [...assets]
     .sort((a, b) => b.valueInPLN - a.valueInPLN)
-    .map((a) => ({ name: a.ticker, value: a.valueInPLN }))
+    .map((a) => ({ name: a.name, value: a.valueInPLN }))
 
   return (
     <div className="p-6 space-y-6">
@@ -245,12 +248,12 @@ export default function DashboardView() {
               cashValuePLN={cashValuePLN}
               compact
             />
-            <div className="flex flex-col h-full">
+            <div className="flex flex-col" style={{ minHeight: 300 }}>
               <div className="flex items-center gap-2 mb-4">
                 <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Historia</h2>
                 <div className="flex-1 h-px bg-gray-700/50" />
               </div>
-              <div className="flex-1 min-h-0">
+              <div className="flex-1" style={{ minHeight: 240 }}>
                 <PortfolioHistoryChart data={historyData} fillHeight />
               </div>
             </div>

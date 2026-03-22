@@ -28,7 +28,6 @@ export default function PortfolioView() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showAddModal, setShowAddModal] = useState(false)
-  const [editAsset, setEditAsset] = useState<PortfolioAsset | null>(null)
   const [cashModalPortfolioId, setCashModalPortfolioId] = useState<number | null>(null)
   const [usdPln, setUsdPln] = useState(4.0)
   const [eurPln, setEurPln] = useState(4.3)
@@ -213,7 +212,6 @@ export default function PortfolioView() {
                           usdPln={usdPln}
                           eurPln={eurPln}
                           onDelete={() => handleDelete(asset.id)}
-                          onEdit={() => setEditAsset(asset)}
                         />
                       ))}
                     </tbody>
@@ -254,7 +252,6 @@ export default function PortfolioView() {
                         usdPln={usdPln}
                         eurPln={eurPln}
                         onDelete={() => handleDelete(asset.id)}
-                        onEdit={() => setEditAsset(asset)}
                       />
                     ))}
                   </tbody>
@@ -276,14 +273,6 @@ export default function PortfolioView() {
         <AddAssetModal
           onClose={() => setShowAddModal(false)}
           onSuccess={() => { setShowAddModal(false); loadData() }}
-        />
-      )}
-
-      {editAsset !== null && (
-        <AddAssetModal
-          editAsset={editAsset}
-          onClose={() => setEditAsset(null)}
-          onSuccess={() => { setEditAsset(null); loadData() }}
         />
       )}
 

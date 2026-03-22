@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { getAssets, getQuote, getCashAccounts, getAssetMeta, getSetting, setSetting } from '../../lib/api'
 import type { PortfolioAsset, StockQuote, CashAccount } from '../../lib/types'
+import { gramsToTroyOz } from '../../lib/types'
 import { formatCurrency } from '../../lib/utils'
 import LoadingSpinner from '../ui/LoadingSpinner'
 
@@ -95,7 +96,10 @@ export default function RebalancingView() {
     let total = 0
     assets.forEach(asset => {
       const q = quotes.get(asset.ticker)
-      const val = asset.quantity * (q?.price ?? asset.purchase_price) * toPlnRate(q?.currency ?? asset.currency, usdPln, eurPln)
+      const spotPrice = q?.price ?? asset.purchase_price
+      const ozPerCoin = asset.gold_grams ? gramsToTroyOz(asset.gold_grams) : null
+      const unitPrice = ozPerCoin ? spotPrice * ozPerCoin : spotPrice
+      const val = asset.quantity * unitPrice * toPlnRate(q?.currency ?? asset.currency, usdPln, eurPln)
       total += val
       const { key, label } = categorizeAsset(asset.ticker, metaMap.get(asset.ticker) ?? 'akcje', asset.gold_grams)
       if (!catMap.has(key)) catMap.set(key, { label, items: [] })

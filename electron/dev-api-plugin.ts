@@ -68,8 +68,10 @@ export function financeDevApiPlugin(): Plugin {
               const body = await readBody(req)
               const assets: Array<{ ticker: string; quantity: number; currency: string; purchase_date?: string; gold_grams?: number | null }> =
                 JSON.parse(body.assets ?? '[]')
+              const cashTxs: Array<{ type: 'deposit' | 'withdrawal'; amount: number; currency: string; date: string }> =
+                JSON.parse(body.cashTransactions ?? '[]')
               const pfPeriod = body.period ?? '1y'
-              data = await finance.fetchPortfolioHistory(assets, pfPeriod)
+              data = await finance.fetchPortfolioHistory(assets, pfPeriod, cashTxs)
               break
             }
             case '/portfolios': {

@@ -329,8 +329,27 @@ export async function updateTransaction(
   const txs = lsGet<Transaction[]>(LS_KEYS.TRANSACTIONS, [])
   const idx = txs.findIndex((t) => t.id === id)
   if (idx === -1) return null
+  const oldTicker = txs[idx].ticker
   txs[idx] = { ...txs[idx], ...updates }
   lsSet(LS_KEYS.TRANSACTIONS, txs)
+
+  // Sync portfolio asset: recalculate quantity and average purchase price
+  const allTxs = txs.filter(t => t.ticker === oldTicker)
+  const buyTxs = allTxs.filter(t => t.type === 'buy')
+  const sellTxs = allTxs.filter(t => t.type === 'sell')
+  const totalQty = buyTxs.reduce((s, t) => s + t.quantity, 0) - sellTxs.reduce((s, t) => s + t.quantity, 0)
+  const totalBuyQty = buyTxs.reduce((s, t) => s + t.quantity, 0)
+  const avgPrice = totalBuyQty > 0 ? buyTxs.reduce((s, t) => s + t.quantity * t.price, 0) / totalBuyQty : 0
+  const assets = lsGet<PortfolioAsset[]>(LS_KEYS.ASSETS, [])
+  const asset = assets.find(a => a.ticker === oldTicker)
+  if (asset) {
+    if (totalQty <= 0.000001) {
+      lsSet(LS_KEYS.ASSETS, assets.filter(a => a.id !== asset.id))
+    } else {
+      lsSet(LS_KEYS.ASSETS, assets.map(a => a.id === asset.id ? { ...a, quantity: totalQty, purchase_price: avgPrice } : a))
+    }
+  }
+
   return txs[idx]
 }
 
@@ -496,7 +515,11 @@ export async function getPortfolioHistory(portfolioId?: number, period: string =
   const allAssets = lsGet<PortfolioAsset[]>(LS_KEYS.ASSETS, [])
   const assets = portfolioId !== undefined ? allAssets.filter(a => a.portfolio_id === portfolioId) : allAssets
   if (assets.length === 0) return []
-  return devApiPost('/portfolio-history', { assets: JSON.stringify(assets), period })
+  const allCashTxs = lsGet<CashTransaction[]>(LS_KEYS.CASH_TRANSACTIONS, [])
+  const cashTransactions = portfolioId !== undefined
+    ? allCashTxs.filter(t => t.portfolio_id === portfolioId)
+    : allCashTxs
+  return devApiPost('/portfolio-history', { assets: JSON.stringify(assets), cashTransactions: JSON.stringify(cashTransactions), period })
 }
 
 export async function analyzeStock(ticker: string): Promise<AIReport> {

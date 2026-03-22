@@ -309,7 +309,26 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('db:transactions:update', (_event, id, updates) => {
-    return updateTransaction(id, updates)
+    const tx = getTransactionById(id)
+    const result = updateTransaction(id, updates)
+    if (tx) {
+      const allTxs = getTransactionsByTicker(tx.ticker)
+      const buyTxs = allTxs.filter(t => t.type === 'buy')
+      const sellTxs = allTxs.filter(t => t.type === 'sell')
+      const totalQty = buyTxs.reduce((s, t) => s + t.quantity, 0) - sellTxs.reduce((s, t) => s + t.quantity, 0)
+      const totalBuyQty = buyTxs.reduce((s, t) => s + t.quantity, 0)
+      const avgPrice = totalBuyQty > 0 ? buyTxs.reduce((s, t) => s + t.quantity * t.price, 0) / totalBuyQty : 0
+      const assets = getAllAssets()
+      const asset = assets.find(a => a.ticker === tx.ticker)
+      if (asset) {
+        if (totalQty <= 0.000001) {
+          deleteAsset(asset.id)
+        } else {
+          updateAsset(asset.id, { quantity: totalQty, purchase_price: avgPrice })
+        }
+      }
+    }
+    return result
   })
 
   ipcMain.handle('db:transactions:delete', (_event, id) => {
@@ -390,7 +409,8 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('finance:portfolioHistory', async (_event, portfolioId?: number, period?: string) => {
     const assets = getAllAssets(portfolioId)
-    return fetchPortfolioHistory(assets, period ?? '1y')
+    const cashTxs = getCashTransactions(portfolioId)
+    return fetchPortfolioHistory(assets, period ?? '1y', cashTxs)
   })
 
   // ── AI (OpenRouter) ───────────────────────────────────────────────────────

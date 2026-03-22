@@ -274,7 +274,8 @@ export function calculateTechnicals(candles: OHLCCandle[]): TechnicalIndicators 
 
 export async function fetchPortfolioHistory(
   assets: Array<{ ticker: string; quantity: number; currency: string; purchase_date?: string; gold_grams?: number | null }>,
-  period: string = '1y'
+  period: string = '1y',
+  cashTransactions: Array<{ type: 'deposit' | 'withdrawal'; amount: number; currency: string; date: string }> = []
 ): Promise<{ date: string; value: number }[]> {
   if (assets.length === 0) return []
 
@@ -287,9 +288,10 @@ export async function fetchPortfolioHistory(
     assets.map(async (asset) => {
       try {
         const result = await yf.chart(asset.ticker, { period1, period2: now, interval: '1d' })
-        return { asset, hist: result.quotes ?? [] }
+        const quoteCurrency: string = (result.meta as any)?.currency ?? asset.currency
+        return { asset, hist: result.quotes ?? [], quoteCurrency }
       } catch {
-        return { asset, hist: [] as any[] }
+        return { asset, hist: [] as any[], quoteCurrency: asset.currency }
       }
     })
   )
@@ -318,7 +320,7 @@ export async function fetchPortfolioHistory(
   // Nie filtrujemy po purchase_date — to daje "jak by wyglądał portfel w aktualnym składzie".
   const result = dates.map(date => {
     let totalPLN = 0
-    histories.forEach(({ asset, hist }) => {
+    histories.forEach(({ asset, hist, quoteCurrency }) => {
       const entry = hist
         .filter((h: any) => h.date.toISOString().split('T')[0] <= date)
         .at(-1)
@@ -326,8 +328,19 @@ export async function fetchPortfolioHistory(
         // Dla metali fizycznych: cena spot to USD/oz troy → przelicz przez wagę monety
         const ozPerCoin = asset.gold_grams ? asset.gold_grams / 31.1035 : null
         const pricePerUnit = ozPerCoin ? entry.close * ozPerCoin : entry.close
-        totalPLN += asset.quantity * pricePerUnit * toPlnRate(asset.currency)
+        totalPLN += asset.quantity * pricePerUnit * toPlnRate(quoteCurrency)
       }
+    })
+    // Saldo gotówki na dany dzień
+    const cashByCurrency = new Map<string, number>()
+    cashTransactions
+      .filter(t => t.date <= date)
+      .forEach(t => {
+        const prev = cashByCurrency.get(t.currency) ?? 0
+        cashByCurrency.set(t.currency, prev + (t.type === 'deposit' ? t.amount : -t.amount))
+      })
+    cashByCurrency.forEach((balance, currency) => {
+      if (balance > 0) totalPLN += balance * toPlnRate(currency)
     })
     return { date, value: totalPLN }
   })

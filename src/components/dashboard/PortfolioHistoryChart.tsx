@@ -30,7 +30,7 @@ export default function PortfolioHistoryChart({ data, fillHeight = false }: { da
   return (
     <div className={`glass-card rounded-xl p-5 ${fillHeight ? 'h-full flex flex-col' : ''}`}>
       <h3 className="text-sm font-semibold text-gray-200 mb-4">Historia wartości portfela (PLN)</h3>
-      <div className={fillHeight ? 'flex-1 min-h-0' : ''}>
+      <div className={fillHeight ? 'flex-1' : ''} style={fillHeight ? { minHeight: 220 } : undefined}>
       <ResponsiveContainer width="100%" height={fillHeight ? '100%' : 460}>
         <AreaChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
           <defs>
