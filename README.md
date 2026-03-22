@@ -1,47 +1,85 @@
-# Finance Portfolio Tracker
+<div align="center">
 
-Darmowa, open-source'owa aplikacja desktopowa do śledzenia portfela inwestycyjnego — akcje, ETF-y, złoto — z analizą AI. Zbudowana na Electron + React + TypeScript.
+# 📈 Finance Portfolio Tracker
 
-**Zero kosztów utrzymania** — brak płatnych API, brak subskrypcji. Wszystkie dane rynkowe z [yahoo-finance2](https://github.com/gadicc/node-yahoo-finance2) (darmowe).
+**Darmowa aplikacja desktopowa do śledzenia portfela inwestycyjnego z analizą AI**
 
----
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Electron](https://img.shields.io/badge/Electron-41-47848F?logo=electron)](https://www.electronjs.org/)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript)](https://www.typescriptlang.org/)
+[![Zero Cost](https://img.shields.io/badge/koszt_utrzymania-$0-brightgreen)](https://github.com/gadicc/node-yahoo-finance2)
 
-## Funkcjonalności
+Śledź akcje, ETF-y i złoto. Analizuj portfel z pomocą AI. Wszystko lokalnie, bez subskrypcji, bez chmury.
 
-- **Śledzenie portfela** — dodawanie akcji, ETF-ów, złota (`GC=F`), monitorowanie wartości, alokacji i zysku/straty
-- **Interaktywne wykresy** — wykresy świecowe (TradingView Lightweight Charts), historia portfela, wykres kołowy alokacji
-- **Fundamenty i wskaźniki techniczne** — P/E, EPS, RSI, MACD, SMA — wszystko wyliczane lokalnie
-- **Porównanie z benchmarkiem** — porównanie wyników portfela z indeksami (S&P 500 itp.)
-- **Śledzenie dywidend** — historyczne dane dywidendowe dla każdego aktywa
-- **Macierz korelacji** — analiza korelacji między aktywami
-- **Analiza AI (Map-Reduce)** — raporty per spółka i ocena ryzyka całego portfela przez [OpenRouter](https://openrouter.ai) (obsługiwane darmowe modele, np. Meta Llama 3)
-- **Aktualności** — najnowsze wiadomości dla każdej spółki
-- **W pełni lokalny** — wszystkie dane w SQLite na Twoim komputerze, bez synchronizacji z chmurą, bez konta
+</div>
 
 ---
 
-## Stos technologiczny
+## 📸 Zrzuty ekranu
 
-| Warstwa | Technologia |
-|---|---|
-| Powłoka desktopowa | Electron |
-| Frontend | React 19 + TypeScript + Vite |
-| Stylowanie | Tailwind CSS |
-| Wykresy | Lightweight Charts (TradingView) |
-| Baza danych | better-sqlite3 (lokalny SQLite) |
-| Dane rynkowe | yahoo-finance2 |
-| Wskaźniki techniczne | technicalindicators |
-| AI | OpenRouter API (konfigurowalny model) |
-| Build | electron-vite + electron-builder |
+> *Dodaj własne zrzuty ekranu — zastąp poniższe obrazki plikami z folderu `docs/screenshots/`*
+
+| Dashboard | Widok spółki |
+|:---------:|:------------:|
+| ![Dashboard](docs/screenshots/dashboard.png) | ![Stock](docs/screenshots/stock.png) |
+
+| Analiza AI | Ustawienia |
+|:----------:|:----------:|
+| ![AI](docs/screenshots/ai.png) | ![Settings](docs/screenshots/settings.png) |
 
 ---
 
-## Pierwsze kroki
+## ✨ Funkcjonalności
+
+### Portfel i dane rynkowe
+- **Śledzenie portfela** — akcje, ETF-y, złoto (`GC=F`); pełna historia transakcji, zysk/strata, alokacja
+- **Wykresy świecowe** — interaktywne candlestick (TradingView Lightweight Charts), historia wartości portfela, wykres kołowy alokacji
+- **Wskaźniki fundamentalne** — P/E, EPS, kapitalizacja, przychody — dane z Yahoo Finance
+- **Wskaźniki techniczne** — RSI, MACD, SMA — wyliczane lokalnie, bez zewnętrznych API
+- **Dywidendy** — pełna historia wypłat dywidend dla każdego aktywa
+- **Aktualności** — najnowsze wiadomości finansowe dla śledzonych spółek
+
+### Analiza i narzędzia
+- **Benchmark** — porównaj swój portfel z S&P 500, WIG20 i innymi indeksami
+- **Macierz korelacji** — wizualizacja zależności między aktywami w portfelu
+- **Rebalancing** — sugestie dotyczące przywrócenia docelowej alokacji
+
+### Analiza AI
+- **Raporty per spółka** — AI analizuje dane fundamentalne i techniczne każdej pozycji
+- **Ocena całego portfela** — analiza ryzyka, dywersyfikacji i wzajemnych zależności
+- **Wzorzec Map-Reduce** — raporty generowane równolegle, następnie łączone w spójną ocenę portfela
+- **OpenRouter** — obsługuje darmowe modele (np. Meta Llama 3); klucz API z darmowego konta
+
+### Prywatność i koszty
+- **Zero kosztów utrzymania** — wszystkie dane rynkowe z `yahoo-finance2` (darmowe, bez rejestracji)
+- **W 100% lokalny** — dane w SQLite na Twoim dysku; brak chmury, brak konta, brak telemetrii
+
+---
+
+## 🛠️ Stos technologiczny
+
+| Warstwa | Technologia | Opis |
+|---|---|---|
+| Powłoka desktopowa | [Electron 41](https://www.electronjs.org/) | Aplikacja `.exe` dla Windows |
+| Frontend | React 19 + TypeScript + Vite | UI w trybie sandboxed renderer |
+| Stylowanie | Tailwind CSS | Ciemny motyw, kolory inspirowane TradingView |
+| Wykresy | [Lightweight Charts](https://tradingview.github.io/lightweight-charts/) | Profesjonalne wykresy świecowe |
+| Baza danych | [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) | Lokalny SQLite, synchroniczny dostęp |
+| Dane rynkowe | [yahoo-finance2](https://github.com/gadicc/node-yahoo-finance2) | Kursy, OHLC, fundamenty, dywidendy |
+| Wskaźniki | [technicalindicators](https://github.com/anandanand84/technicalindicators) | RSI, MACD, SMA — lokalnie |
+| AI | [OpenRouter API](https://openrouter.ai/) | Dowolny model LLM, w tym darmowe |
+| Build | electron-vite + electron-builder | Cross-compile do `.exe` z Linuxa |
+
+---
+
+## 🚀 Pierwsze kroki
 
 ### Wymagania
 
-- Node.js 18+
-- npm
+- **Node.js** 18 lub nowszy
+- **npm**
+- *(Opcjonalnie, do buildu na Linuxie)* Wine
 
 ### Instalacja
 
@@ -51,53 +89,77 @@ cd priv-finance-app
 npm install
 ```
 
-> `postinstall` automatycznie uruchamia `electron-rebuild` do kompilacji natywnych modułów.
+> **Uwaga:** `npm install` automatycznie uruchamia `electron-rebuild`, który kompiluje natywne moduły (better-sqlite3) dla Twojej platformy. Może to chwilę potrwać przy pierwszej instalacji.
 
-### Tryb deweloperski (przeglądarka)
+### Uruchomienie w trybie deweloperskim
 
 ```bash
 npm run dev
 ```
 
-Uruchamia Vite dev server pod adresem `http://localhost:5173`. Aplikacja działa w pełni w przeglądarce — dane zapisywane w `localStorage` zamiast SQLite, gdy `window.electronAPI` jest niedostępne.
+Otwiera aplikację w przeglądarce pod adresem `http://localhost:5173`.
+W trybie dev dane są zapisywane w `localStorage` — pełne UI działa bez Electrona.
 
-### Build Windows `.exe`
+### Build — plik `.exe` dla Windows
 
 ```bash
 npm run build:win
 ```
 
-Na Linuxie wymagane Wine. Na Windows działa natywnie. Wynik w katalogu `dist/`.
+Gotowy instalator znajdziesz w katalogu `dist/`.
+Na Linuxie wymagane Wine. Na Windows działa natywnie.
 
 ---
 
-## Konfiguracja
+## ⚙️ Konfiguracja AI
 
-Brak plików `.env` ani zmiennych środowiskowych. Po uruchomieniu aplikacji:
+Aplikacja nie wymaga żadnych plików `.env` ani zmiennych środowiskowych.
+Klucz API konfiguruje się bezpośrednio w aplikacji:
 
-1. Przejdź do **Ustawień**
-2. Wprowadź swój [klucz API OpenRouter](https://openrouter.ai/keys) (darmowe konto, darmowe modele nie wymagają karty)
-3. Opcjonalnie wybierz preferowany model AI
+1. Utwórz darmowe konto na [openrouter.ai](https://openrouter.ai)
+2. Wygeneruj klucz API w zakładce [Keys](https://openrouter.ai/keys) — darmowe modele nie wymagają podania karty
+3. W aplikacji przejdź do **Ustawień** i wklej klucz
+4. *(Opcjonalnie)* Wybierz preferowany model AI
 
-Klucz API przechowywany lokalnie w SQLite — nigdy nie opuszcza Twojego komputera.
+> Klucz API jest przechowywany wyłącznie lokalnie w bazie SQLite na Twoim komputerze. Nigdy nie jest wysyłany nigdzie poza oficjalne API OpenRouter.
 
 ---
 
-## Architektura
+## 🏗️ Architektura
+
+Aplikacja korzysta z modelu procesów Electrona — renderer (React) jest izolowany od Node.js przez IPC:
 
 ```
-electron/main/        # Główny proces: SQLite, yahoo-finance2, zapytania AI
-electron/preload/     # Most IPC przez contextBridge
-src/                  # Renderer: aplikacja React
-  components/
-  lib/api.ts          # Warstwa abstrakcji: używa electronAPI lub localStorage
-  lib/types.ts
+electron/
+  main/
+    index.ts        ← Główny proces: okno, baza danych, fetch danych
+    database.ts     ← Operacje SQLite (better-sqlite3)
+    finance.ts      ← Integracja yahoo-finance2
+    ai.ts           ← Logika Map-Reduce, wywołania OpenRouter
+  preload/
+    index.ts        ← Most IPC — contextBridge.exposeInMainWorld
+
+src/                ← Renderer: aplikacja React (sandbox, brak Node.js)
+  components/       ← Wszystkie widoki UI
+  lib/
+    api.ts          ← Warstwa abstrakcji: electronAPI lub localStorage
+    types.ts        ← Wspólne typy TypeScript
 ```
 
-Komponenty React nigdy nie importują modułów Node.js bezpośrednio. Cała funkcjonalność backendowa udostępniana przez `window.electronAPI` przez IPC.
+**Zasada krytyczna:** Komponenty React nigdy nie importują modułów Node.js bezpośrednio. Dostęp do SQLite, danych finansowych i AI odbywa się wyłącznie przez `window.electronAPI` (IPC).
 
 ---
 
-## Licencja
+## 📄 Licencja
 
-[MIT](LICENSE)
+Ten projekt jest udostępniony na licencji **MIT**.
+
+Licencja MIT to jedna z najbardziej permisywnych licencji open-source. Oznacza to, że:
+
+- ✅ **Możesz** używać kodu w projektach prywatnych i komercyjnych
+- ✅ **Możesz** modyfikować kod według własnych potrzeb
+- ✅ **Możesz** dystrybuować oryginał oraz własne modyfikacje
+- ✅ **Możesz** dołączać ten kod do projektów na innych licencjach
+- ℹ️ **Musisz** zachować oryginalną informację o prawach autorskich i treść licencji w dystrybuowanych kopiach
+
+Pełna treść licencji: [LICENSE](LICENSE)
