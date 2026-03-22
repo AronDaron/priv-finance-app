@@ -37,7 +37,7 @@
 
 ### 🌍 Globalny Rynek — flagowa funkcja
 
-Widok `Globalny Rynek` to autorski system oceny potencjału inwestycyjnego regionów świata oparty na deterministycznym algorytmie — działa bez AI, bez opóźnień, bez limitu zapytań.
+Widok `Globalny Rynek` to autorski(moja koncepcja i logika, kod wygenerowany przez AI) system oceny potencjału inwestycyjnego regionów świata oparty na deterministycznym algorytmie — działa bez AI, bez opóźnień, bez limitu zapytań.
 
 **Pasek rynkowy w czasie rzeczywistym** — zawsze widoczny u góry ekranu:
 - Surowce: Ropa WTI, Złoto, Gaz ziemny, Miedź, Pszenica
