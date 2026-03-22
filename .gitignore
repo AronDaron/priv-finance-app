@@ -9,4 +9,6 @@ out
 .env.local
 resources/icon.ico
 *.md
-!CLAUDE.md
+!README.md
+*.tsbuildinfo
+.claude/
