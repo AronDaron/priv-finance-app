@@ -64,6 +64,7 @@ function buildMacroContext(m: GlobalMarketData, regime: MarketRegime): GlobalMac
     us10y: m.bonds.US10Y.price,
     sp500Change1m: m.indices.SP500.change1m,
     oil: { price: m.commodities.oil.price, change1m: m.commodities.oil.change1m },
+    brent: { price: m.commodities.brent.price, change1m: m.commodities.brent.change1m },
     gold: { price: m.commodities.gold.price, change1m: m.commodities.gold.change1m },
     copper: { change1m: m.commodities.copper.change1m },
     gas: { change1m: m.commodities.gas.change1m },
@@ -208,7 +209,7 @@ function buildChatSystemContext(params: {
       `  VIX: ${m.indices.VIX.price.toFixed(1)} (${vixLevel}) | US10Y: ${m.bonds.US10Y.price.toFixed(2)}%`,
       `  S&P500: ${m.indices.SP500.price.toFixed(0)} (${m.indices.SP500.changePercent >= 0 ? '+' : ''}${m.indices.SP500.changePercent.toFixed(2)}% dziś, ${ch(m.indices.SP500.change1m)} 30d) | WIG20: ${m.indices.WIG20.price.toFixed(0)} (${ch(m.indices.WIG20.change1m)} 30d)`,
       `  DAX: ${m.indices.DAX.price.toFixed(0)} (${ch(m.indices.DAX.change1m)} 30d) | Nikkei: ${m.indices.Nikkei.price.toFixed(0)} (${ch(m.indices.Nikkei.change1m)} 30d) | FTSE: ${m.indices.FTSE.price.toFixed(0)} (${ch(m.indices.FTSE.change1m)} 30d)`,
-      `  Ropa: $${m.commodities.oil.price.toFixed(1)} (${ch(m.commodities.oil.change1m)} 30d) | Złoto: $${m.commodities.gold.price.toFixed(0)} (${ch(m.commodities.gold.change1m)} 30d) | Miedź 30d: ${ch(m.commodities.copper.change1m)} | Gaz 30d: ${ch(m.commodities.gas.change1m)}`,
+      `  Ropa WTI: $${m.commodities.oil.price.toFixed(1)} (${ch(m.commodities.oil.change1m)} 30d) | Ropa Brent: $${m.commodities.brent.price.toFixed(1)} (${ch(m.commodities.brent.change1m)} 30d) | Złoto: $${m.commodities.gold.price.toFixed(0)} (${ch(m.commodities.gold.change1m)} 30d) | Miedź 30d: ${ch(m.commodities.copper.change1m)} | Gaz 30d: ${ch(m.commodities.gas.change1m)}`,
       `  EUR/USD: ${m.currencies.EURUSD.price.toFixed(4)} | USD/PLN: ${usdPln.toFixed(2)}`,
       ...(regimeLine ? [`  Reżim rynkowy: ${regimeLine}`] : [])
     )

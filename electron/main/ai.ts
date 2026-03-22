@@ -75,6 +75,7 @@ export interface GlobalMacroContext {
   us10y: number
   sp500Change1m: number
   oil: { price: number; change1m: number }
+  brent: { price: number; change1m: number } | null
   gold: { price: number; change1m: number }
   copper: { change1m: number } | null
   gas: { change1m: number } | null
@@ -169,7 +170,7 @@ ${marketContext ? `
 KONTEKST MAKROEKONOMICZNY:
 - VIX: ${marketContext.vix.toFixed(1)} (${marketContext.vix < 15 ? 'spokój' : marketContext.vix < 25 ? 'umiarkowany' : marketContext.vix < 35 ? 'wysoki' : 'panika'}) | US10Y: ${marketContext.us10y.toFixed(2)}%
 - S&P500 30d: ${marketContext.sp500Change1m >= 0 ? '+' : ''}${marketContext.sp500Change1m.toFixed(1)}%${marketContext.nikkeiChange1m != null ? ` | Nikkei 30d: ${marketContext.nikkeiChange1m >= 0 ? '+' : ''}${marketContext.nikkeiChange1m.toFixed(1)}%` : ''}${marketContext.ftseChange1m != null ? ` | FTSE 30d: ${marketContext.ftseChange1m >= 0 ? '+' : ''}${marketContext.ftseChange1m.toFixed(1)}%` : ''}
-- Ropa: $${marketContext.oil.price.toFixed(1)} (${marketContext.oil.change1m >= 0 ? '+' : ''}${marketContext.oil.change1m.toFixed(1)}% 30d) | Złoto: $${marketContext.gold.price.toFixed(0)} (${marketContext.gold.change1m >= 0 ? '+' : ''}${marketContext.gold.change1m.toFixed(1)}% 30d)${marketContext.copper ? ` | Miedź 30d: ${marketContext.copper.change1m >= 0 ? '+' : ''}${marketContext.copper.change1m.toFixed(1)}%` : ''}${marketContext.gas ? ` | Gaz 30d: ${marketContext.gas.change1m >= 0 ? '+' : ''}${marketContext.gas.change1m.toFixed(1)}%` : ''}${marketContext.regimeSummary ? `\n- Reżim rynkowy: ${marketContext.regimeSummary}` : ''}` : ''}
+- Ropa WTI: $${marketContext.oil.price.toFixed(1)} (${marketContext.oil.change1m >= 0 ? '+' : ''}${marketContext.oil.change1m.toFixed(1)}% 30d)${marketContext.brent ? ` | Ropa Brent: $${marketContext.brent.price.toFixed(1)} (${marketContext.brent.change1m >= 0 ? '+' : ''}${marketContext.brent.change1m.toFixed(1)}% 30d)` : ''} | Złoto: $${marketContext.gold.price.toFixed(0)} (${marketContext.gold.change1m >= 0 ? '+' : ''}${marketContext.gold.change1m.toFixed(1)}% 30d)${marketContext.copper ? ` | Miedź 30d: ${marketContext.copper.change1m >= 0 ? '+' : ''}${marketContext.copper.change1m.toFixed(1)}%` : ''}${marketContext.gas ? ` | Gaz 30d: ${marketContext.gas.change1m >= 0 ? '+' : ''}${marketContext.gas.change1m.toFixed(1)}%` : ''}${marketContext.regimeSummary ? `\n- Reżim rynkowy: ${marketContext.regimeSummary}` : ''}` : ''}
 
 Napisz analizę (max 250 słów) zawierającą:
 1. ${isPhysicalMetal ? `Ocenę jako inwestycję w fizyczny ${metalName} (koszty przechowywania, spread kupno/sprzedaż, rola w portfelu)` : `Krótką ocenę fundamentalną${isEtf ? ' (skład, ekspozycja)' : ' (finanse, wycena, konsensus analityków)'}`}
@@ -291,7 +292,8 @@ export async function analyzeRegion(params: RegionAnalysisParams): Promise<strin
   const systemPrompt = `Jesteś analitykiem geopolitycznym i rynkowym. Piszesz zwięzłe analizy po polsku. Używasz markdown: **bold** dla kluczowych wniosków, listy dla punktów. Zawsze kończysz wyraźną oceną potencjału inwestycyjnego.`
 
   const commoditiesStr = [
-    `Ropa: $${m.commodities.oil.price.toFixed(1)} (${m.commodities.oil.changePercent >= 0 ? '+' : ''}${m.commodities.oil.changePercent.toFixed(2)}% dziś, ${m.commodities.oil.change1m >= 0 ? '+' : ''}${m.commodities.oil.change1m.toFixed(1)}% 30d)`,
+    `Ropa WTI (CL=F): $${m.commodities.oil.price.toFixed(1)} (${m.commodities.oil.changePercent >= 0 ? '+' : ''}${m.commodities.oil.changePercent.toFixed(2)}% dziś, ${m.commodities.oil.change1m >= 0 ? '+' : ''}${m.commodities.oil.change1m.toFixed(1)}% 30d)`,
+    `Ropa Brent (BZ=F): $${m.commodities.brent.price.toFixed(1)} (${m.commodities.brent.changePercent >= 0 ? '+' : ''}${m.commodities.brent.changePercent.toFixed(2)}% dziś, ${m.commodities.brent.change1m >= 0 ? '+' : ''}${m.commodities.brent.change1m.toFixed(1)}% 30d)`,
     `Złoto: $${m.commodities.gold.price.toFixed(0)} (${m.commodities.gold.changePercent >= 0 ? '+' : ''}${m.commodities.gold.changePercent.toFixed(2)}% dziś, ${m.commodities.gold.change1m >= 0 ? '+' : ''}${m.commodities.gold.change1m.toFixed(1)}% 30d)`,
     `Gaz: $${m.commodities.gas.price.toFixed(2)} (${m.commodities.gas.changePercent >= 0 ? '+' : ''}${m.commodities.gas.changePercent.toFixed(2)}% dziś)`,
     `Miedź: $${m.commodities.copper.price.toFixed(2)} (${m.commodities.copper.changePercent >= 0 ? '+' : ''}${m.commodities.copper.changePercent.toFixed(2)}% dziś)`,

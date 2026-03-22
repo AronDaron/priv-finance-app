@@ -238,7 +238,8 @@ export interface MarketTickerData {
 
 export interface GlobalMarketData {
   commodities: {
-    oil: MarketTickerData     // CL=F
+    oil: MarketTickerData     // CL=F (WTI)
+    brent: MarketTickerData   // BZ=F (Brent)
     gas: MarketTickerData     // NG=F
     wheat: MarketTickerData   // ZW=F
     copper: MarketTickerData  // HG=F

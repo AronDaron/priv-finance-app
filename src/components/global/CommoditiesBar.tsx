@@ -35,7 +35,8 @@ export default function CommoditiesBar({ data }: { data: GlobalMarketData }) {
   return (
     <div className="flex flex-wrap gap-2 items-center">
       {/* Surowce */}
-      <Tick label="Ropa"    price={c.oil.price}    changePercent={c.oil.changePercent}    decimals={2} unit="USD/bbl" tooltip="Ropa WTI — cena baryłki ropy naftowej w dolarach" />
+      <Tick label="WTI"     price={c.oil.price}    changePercent={c.oil.changePercent}    decimals={2} unit="USD/bbl" tooltip="Ropa WTI (CL=F) — amerykański benchmark, cena baryłki w dolarach" />
+      <Tick label="Brent"   price={c.brent.price}  changePercent={c.brent.changePercent}  decimals={2} unit="USD/bbl" tooltip="Ropa Brent (BZ=F) — globalny benchmark (Europa, Azja), cena baryłki w dolarach" />
       <Tick label="Złoto"   price={c.gold.price}   changePercent={c.gold.changePercent}   decimals={0} unit="USD/oz"  tooltip="Złoto — cena uncji troy w dolarach (futures GC=F)" />
       <Tick label="Gaz"     price={c.gas.price}    changePercent={c.gas.changePercent}    decimals={2} unit="USD"     tooltip="Gaz ziemny — cena kontraktu futures (MMBTU)" />
       <Tick label="Miedź"   price={c.copper.price} changePercent={c.copper.changePercent} decimals={2} unit="USD/lb"  tooltip="Miedź — cena funta w dolarach (futures HG=F)" />

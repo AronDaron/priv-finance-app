@@ -391,13 +391,14 @@ export async function fetchGlobalMarketData(): Promise<GlobalMarketData> {
 
   // Krok 1: wszystkie cytaty równolegle
   const [
-    oil, gas, wheat, copper, gold,
+    oil, brent, gas, wheat, copper, gold,
     eurusd, gbpusd, chfusd, cadusd, audusd, jpyusd, cnyusd,
     sp500, dax, nikkei, wig20, ftse, vix, fxi,
     asx200, eza, bvsp, vwo, inda, ewj,
     us10y,
   ] = await Promise.all([
     safeQuote('CL=F'),
+    safeQuote('BZ=F'),
     safeQuote('NG=F'),
     safeQuote('ZW=F'),
     safeQuote('HG=F'),
@@ -426,7 +427,7 @@ export async function fetchGlobalMarketData(): Promise<GlobalMarketData> {
   ])
 
   // Krok 2: zmiana 30-dniowa dla kluczowych indeksów (równolegle)
-  const monthlyKey = ['^GSPC', '^GDAXI', '^N225', 'WIG20.WA', '^FTSE', 'FXI', 'CL=F', 'GC=F', 'HG=F', 'NG=F', 'ZW=F', '^AXJO', 'EZA', '^BVSP', 'VWO', 'INDA', 'EWJ']
+  const monthlyKey = ['^GSPC', '^GDAXI', '^N225', 'WIG20.WA', '^FTSE', 'FXI', 'CL=F', 'BZ=F', 'GC=F', 'HG=F', 'NG=F', 'ZW=F', '^AXJO', 'EZA', '^BVSP', 'VWO', 'INDA', 'EWJ']
   const monthly = await Promise.all(monthlyKey.map(t => get1mChange(t)))
   const m: Record<string, number> = {}
   monthlyKey.forEach((t, i) => { m[t] = monthly[i] })
@@ -438,6 +439,7 @@ export async function fetchGlobalMarketData(): Promise<GlobalMarketData> {
   ftse.change1m    = m['^FTSE']    ?? 0
   fxi.change1m     = m['FXI']      ?? 0
   oil.change1m     = m['CL=F']     ?? 0
+  brent.change1m   = m['BZ=F']     ?? 0
   gold.change1m    = m['GC=F']     ?? 0
   copper.change1m  = m['HG=F']     ?? 0
   asx200.change1m  = m['^AXJO']    ?? 0
@@ -450,7 +452,7 @@ export async function fetchGlobalMarketData(): Promise<GlobalMarketData> {
   ewj.change1m     = m['EWJ']      ?? 0
 
   const result: GlobalMarketData = {
-    commodities: { oil, gas, wheat, copper, gold },
+    commodities: { oil, brent, gas, wheat, copper, gold },
     currencies:  { EURUSD: eurusd, GBPUSD: gbpusd, CHFUSD: chfusd, CADUSD: cadusd, AUDUSD: audusd, JPYUSD: jpyusd, CNYUSD: cnyusd },
     indices:     { SP500: sp500, DAX: dax, Nikkei: nikkei, WIG20: wig20, FTSE: ftse, VIX: vix, FXI: fxi, ASX200: asx200, EZA: eza, BVSP: bvsp, VWO: vwo, INDA: inda, EWJ: ewj },
     bonds:       { US10Y: us10y },

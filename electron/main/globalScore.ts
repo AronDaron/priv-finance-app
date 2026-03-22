@@ -77,7 +77,7 @@ export function detectMarketRegime(m: GlobalMarketData): MarketRegime {
   return {
     vixLevel:    vix > 30 ? 'panic' : vix >= 20 ? 'elevated' : 'calm',
     bondStress:  us10y > 5.0 ? 'shock' : us10y >= 4.0 ? 'elevated' : 'normal',
-    oilShock:    Math.abs(m.commodities.oil.change1m) > 15,
+    oilShock:    Math.abs((m.commodities.oil.change1m + m.commodities.brent.change1m) / 2) > 15,
     goldRally:   m.commodities.gold.change1m > 10,
     copperCrash: m.commodities.copper.change1m < -10,
     gasSpike:    m.commodities.gas.change1m > 20,
@@ -167,7 +167,7 @@ const REGIONS: RegionDef[] = [
         { ...contribNorm(m.indices.VIX.price, vixFactor(m.indices.VIX.price), nw.vix), name: 'VIX (strach)' },
         { ...contrib(currencyBasket,   1.5, nw.currencies), name: 'EUR+GBP+CHF (kurs)' },
         { ...contrib(-m.commodities.gas.change1m, 20, nw.gas), name: 'Gaz (import)' },
-        { ...contrib(-m.commodities.oil.change1m, 15, nw.oil), name: 'Ropa (import)' },
+        { ...contrib(-m.commodities.brent.change1m, 15, nw.oil), name: 'Ropa Brent (import)' },
       ]
       return { components, trend1d: avgIdx1d }
     },
@@ -206,7 +206,7 @@ const REGIONS: RegionDef[] = [
         { ...contribNorm(m.indices.VIX.price, vixFactor(m.indices.VIX.price), nw.vix), name: 'VIX (globalny)' },
         { ...contrib(currencyBasket, 1.5, nw.currencies), name: 'JPY+CNY (kurs)' },
         { ...contrib(m.commodities.copper.change1m, 10, nw.copper), name: 'Miedź (przemysł)' },
-        { ...contrib(-m.commodities.oil.change1m,   12, nw.oil),   name: 'Ropa (import)' },
+        { ...contrib(-m.commodities.brent.change1m,  12, nw.oil),   name: 'Ropa Brent (import)' },
       ]
       return { components, trend1d: avgIdx1d }
     },
@@ -413,8 +413,10 @@ const REGIONS: RegionDef[] = [
     name: 'Surowce',
     flag: '🛢️',
     compute(m, regime) {
+      const avgOilChangePercent = (m.commodities.oil.changePercent + m.commodities.brent.changePercent) / 2
+      const avgOilChange1m     = (m.commodities.oil.change1m     + m.commodities.brent.change1m)     / 2
       const avgCommodity = (
-        m.commodities.oil.changePercent    +
+        avgOilChangePercent                +
         m.commodities.gold.changePercent   +
         m.commodities.copper.changePercent +
         m.commodities.gas.changePercent    +
@@ -439,7 +441,7 @@ const REGIONS: RegionDef[] = [
       const nw = normalizeWeights(w)
       const components: RegionScoreComponent[] = [
         { ...contrib(m.commodities.gold.change1m,    8,  nw.gold),   name: 'Złoto (30 dni)' },
-        { ...contrib(m.commodities.oil.change1m,    12,  nw.oil),    name: 'Ropa (30 dni)' },
+        { ...contrib(avgOilChange1m,                12,  nw.oil),    name: 'Ropa WTI+Brent (30 dni)' },
         { ...contrib(m.commodities.copper.change1m, 10,  nw.copper), name: 'Miedź (30 dni)' },
         { ...contrib(m.commodities.gas.change1m,    25,  nw.gas),    name: 'Gaz (30 dni)' },
         { ...contrib(m.commodities.wheat.change1m,  15,  nw.wheat),  name: 'Pszenica (30 dni)' },
