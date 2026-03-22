@@ -13,6 +13,8 @@
 
 Śledź akcje, ETF-y i złoto. Analizuj portfel z pomocą AI. Wszystko lokalnie, bez subskrypcji, bez chmury.
 
+🚧 Projekt jest aktywnie rozwijany — nowe funkcje i poprawki pojawiają się regularnie.
+
 </div>
 
 ---
