@@ -289,7 +289,12 @@ export async function deleteAsset(id: number): Promise<void> {
     return
   }
   const assets = lsGet<PortfolioAsset[]>(LS_KEYS.ASSETS, [])
+  const asset = assets.find(a => a.id === id)
   lsSet(LS_KEYS.ASSETS, assets.filter((a) => a.id !== id))
+  if (asset) {
+    const txs = lsGet<Transaction[]>(LS_KEYS.TRANSACTIONS, [])
+    lsSet(LS_KEYS.TRANSACTIONS, txs.filter(t => t.ticker !== asset.ticker))
+  }
 }
 
 // ─── API: transactions ────────────────────────────────────────────────────────

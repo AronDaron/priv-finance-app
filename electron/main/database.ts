@@ -395,6 +395,10 @@ export function deleteTransaction(id: number): void {
   db.prepare('DELETE FROM transactions WHERE id = ?').run(id)
 }
 
+export function deleteTransactionsByTicker(ticker: string): void {
+  db.prepare('DELETE FROM transactions WHERE ticker = ?').run(ticker)
+}
+
 // ─── ai_reports ──────────────────────────────────────────────────────────────
 
 export function getLatestReportByTicker(ticker: string): DBAIReport | null {

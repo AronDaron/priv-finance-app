@@ -26,6 +26,7 @@ import {
   addTransaction,
   updateTransaction,
   deleteTransaction,
+  deleteTransactionsByTicker,
   getTransactionById,
   getLatestReportByTicker,
   getAllReports,
@@ -291,7 +292,10 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('db:assets:delete', (_event, id) => {
+    const assets = getAllAssets()
+    const asset = assets.find(a => a.id === id)
     deleteAsset(id)
+    if (asset) deleteTransactionsByTicker(asset.ticker)
     return { success: true }
   })
 
