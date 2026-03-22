@@ -249,7 +249,7 @@ export async function addAsset(asset: NewPortfolioAsset): Promise<PortfolioAsset
   }
   const assets = lsGet<PortfolioAsset[]>(LS_KEYS.ASSETS, [])
   const targetPfId = asset.portfolio_id ?? 1
-  const existing = assets.find((a) => a.ticker === asset.ticker && (a.portfolio_id ?? 1) === targetPfId)
+  const existing = assets.find((a) => a.ticker === asset.ticker && (a.portfolio_id ?? 1) === targetPfId && a.name === asset.name)
   if (existing) {
     const totalQty = existing.quantity + asset.quantity
     const avgPrice =
@@ -340,7 +340,21 @@ export async function deleteTransaction(id: number): Promise<void> {
     return
   }
   const txs = lsGet<Transaction[]>(LS_KEYS.TRANSACTIONS, [])
+  const tx = txs.find(t => t.id === id)
   lsSet(LS_KEYS.TRANSACTIONS, txs.filter((t) => t.id !== id))
+  if (tx) {
+    const assets = lsGet<PortfolioAsset[]>(LS_KEYS.ASSETS, [])
+    const asset = assets.find(a => a.ticker === tx.ticker)
+    if (asset) {
+      const delta = tx.type === 'buy' ? -tx.quantity : tx.quantity
+      const newQty = asset.quantity + delta
+      if (newQty <= 0.000001) {
+        lsSet(LS_KEYS.ASSETS, assets.filter(a => a.id !== asset.id))
+      } else {
+        lsSet(LS_KEYS.ASSETS, assets.map(a => a.id === asset.id ? { ...a, quantity: newQty } : a))
+      }
+    }
+  }
 }
 
 // ─── API: ai_reports ──────────────────────────────────────────────────────────

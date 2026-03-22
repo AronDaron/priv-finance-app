@@ -26,6 +26,7 @@ import {
   addTransaction,
   updateTransaction,
   deleteTransaction,
+  getTransactionById,
   getLatestReportByTicker,
   getAllReports,
   addReport,
@@ -312,7 +313,21 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('db:transactions:delete', (_event, id) => {
+    const tx = getTransactionById(id)
     deleteTransaction(id)
+    if (tx) {
+      const assets = getAllAssets()
+      const asset = assets.find(a => a.ticker === tx.ticker)
+      if (asset) {
+        const delta = tx.type === 'buy' ? -tx.quantity : tx.quantity
+        const newQty = asset.quantity + delta
+        if (newQty <= 0.000001) {
+          deleteAsset(asset.id)
+        } else {
+          updateAsset(asset.id, { quantity: newQty })
+        }
+      }
+    }
     return { success: true }
   })
 

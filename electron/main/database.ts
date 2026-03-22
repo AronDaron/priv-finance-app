@@ -244,6 +244,28 @@ function migrateDatabase(): void {
     db.exec(`ALTER TABLE transactions ADD COLUMN time TEXT`)
   }
 
+  // Usuń UNIQUE constraint z ticker (pozwól na wiele pozycji złota z tym samym tickerem)
+  const tableSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='portfolio_assets'").get() as { sql: string } | undefined
+  if (tableSchema?.sql?.includes('UNIQUE') && tableSchema.sql.includes('ticker')) {
+    db.exec(`
+      CREATE TABLE portfolio_assets_new (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticker         TEXT NOT NULL,
+        name           TEXT NOT NULL,
+        quantity       REAL NOT NULL DEFAULT 0,
+        purchase_price REAL NOT NULL DEFAULT 0,
+        currency       TEXT NOT NULL DEFAULT 'USD',
+        created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+        portfolio_id   INTEGER DEFAULT 1,
+        purchase_date  TEXT,
+        gold_grams     REAL
+      );
+      INSERT INTO portfolio_assets_new SELECT * FROM portfolio_assets;
+      DROP TABLE portfolio_assets;
+      ALTER TABLE portfolio_assets_new RENAME TO portfolio_assets;
+    `)
+  }
+
   // Utwórz domyślny portfel jeśli tabela pusta
   const count = db.prepare('SELECT COUNT(*) as c FROM portfolios').get() as { c: number }
   if (count.c === 0) {
@@ -265,9 +287,10 @@ export function getAllAssets(portfolioId?: number): DBPortfolioAsset[] {
 }
 
 export function addAsset(asset: DBNewPortfolioAsset): DBPortfolioAsset {
+  const portfolioId = asset.portfolio_id ?? 1
   const existing = db
-    .prepare('SELECT * FROM portfolio_assets WHERE ticker = ?')
-    .get(asset.ticker) as DBPortfolioAsset | undefined
+    .prepare('SELECT * FROM portfolio_assets WHERE ticker = ? AND portfolio_id = ? AND name = ?')
+    .get(asset.ticker, portfolioId, asset.name) as DBPortfolioAsset | undefined
 
   if (existing) {
     // Połącz pozycje: nowa ilość = suma, nowa śr. cena = średnia ważona
@@ -362,6 +385,10 @@ export function updateTransaction(
   if (!fields) return db.prepare('SELECT * FROM transactions WHERE id = ?').get(id) as DBTransaction ?? null
   db.prepare(`UPDATE transactions SET ${fields} WHERE id = @id`).run({ ...updates, id })
   return db.prepare('SELECT * FROM transactions WHERE id = ?').get(id) as DBTransaction ?? null
+}
+
+export function getTransactionById(id: number): DBTransaction | null {
+  return (db.prepare('SELECT * FROM transactions WHERE id = ?').get(id) as DBTransaction) ?? null
 }
 
 export function deleteTransaction(id: number): void {
