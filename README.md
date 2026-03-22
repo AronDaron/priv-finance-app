@@ -1,49 +1,49 @@
 # Finance Portfolio Tracker
 
-A free, open-source desktop application for tracking your investment portfolio — stocks, ETFs, and gold — with AI-powered analysis. Built with Electron + React + TypeScript.
+Darmowa, open-source'owa aplikacja desktopowa do śledzenia portfela inwestycyjnego — akcje, ETF-y, złoto — z analizą AI. Zbudowana na Electron + React + TypeScript.
 
-**Zero-cost operation** — no paid APIs, no subscriptions. All market data from [yahoo-finance2](https://github.com/gadicc/node-yahoo-finance2) (free).
-
----
-
-## Features
-
-- **Portfolio tracking** — add stocks, ETFs, gold (`GC=F`), monitor value, allocation, and profit/loss
-- **Interactive charts** — candlestick charts (TradingView Lightweight Charts), portfolio history, allocation pie chart
-- **Fundamentals & Technicals** — P/E, EPS, RSI, MACD, SMA — all computed locally
-- **Benchmark comparison** — compare portfolio performance vs indices (S&P 500, etc.)
-- **Dividend tracking** — historical dividend data per asset
-- **Correlation matrix** — cross-asset correlation analysis
-- **AI analysis (Map-Reduce)** — per-company reports and full portfolio risk assessment via [OpenRouter](https://openrouter.ai) (free tier models supported, e.g. Meta Llama 3)
-- **News feed** — latest news per stock
-- **Fully local** — all data stored in SQLite on your machine, no cloud sync, no account required
+**Zero kosztów utrzymania** — brak płatnych API, brak subskrypcji. Wszystkie dane rynkowe z [yahoo-finance2](https://github.com/gadicc/node-yahoo-finance2) (darmowe).
 
 ---
 
-## Tech Stack
+## Funkcjonalności
 
-| Layer | Technology |
+- **Śledzenie portfela** — dodawanie akcji, ETF-ów, złota (`GC=F`), monitorowanie wartości, alokacji i zysku/straty
+- **Interaktywne wykresy** — wykresy świecowe (TradingView Lightweight Charts), historia portfela, wykres kołowy alokacji
+- **Fundamenty i wskaźniki techniczne** — P/E, EPS, RSI, MACD, SMA — wszystko wyliczane lokalnie
+- **Porównanie z benchmarkiem** — porównanie wyników portfela z indeksami (S&P 500 itp.)
+- **Śledzenie dywidend** — historyczne dane dywidendowe dla każdego aktywa
+- **Macierz korelacji** — analiza korelacji między aktywami
+- **Analiza AI (Map-Reduce)** — raporty per spółka i ocena ryzyka całego portfela przez [OpenRouter](https://openrouter.ai) (obsługiwane darmowe modele, np. Meta Llama 3)
+- **Aktualności** — najnowsze wiadomości dla każdej spółki
+- **W pełni lokalny** — wszystkie dane w SQLite na Twoim komputerze, bez synchronizacji z chmurą, bez konta
+
+---
+
+## Stos technologiczny
+
+| Warstwa | Technologia |
 |---|---|
-| Desktop shell | Electron |
+| Powłoka desktopowa | Electron |
 | Frontend | React 19 + TypeScript + Vite |
-| Styling | Tailwind CSS |
-| Charts | Lightweight Charts (TradingView) |
-| Database | better-sqlite3 (local SQLite) |
-| Market data | yahoo-finance2 |
-| Technical indicators | technicalindicators |
-| AI | OpenRouter API (configurable model) |
+| Stylowanie | Tailwind CSS |
+| Wykresy | Lightweight Charts (TradingView) |
+| Baza danych | better-sqlite3 (lokalny SQLite) |
+| Dane rynkowe | yahoo-finance2 |
+| Wskaźniki techniczne | technicalindicators |
+| AI | OpenRouter API (konfigurowalny model) |
 | Build | electron-vite + electron-builder |
 
 ---
 
-## Getting Started
+## Pierwsze kroki
 
-### Prerequisites
+### Wymagania
 
 - Node.js 18+
 - npm
 
-### Install
+### Instalacja
 
 ```bash
 git clone https://github.com/your-username/priv-finance-app.git
@@ -51,15 +51,15 @@ cd priv-finance-app
 npm install
 ```
 
-> `postinstall` automatically runs `electron-rebuild` to compile native modules.
+> `postinstall` automatycznie uruchamia `electron-rebuild` do kompilacji natywnych modułów.
 
-### Development (browser)
+### Tryb deweloperski (przeglądarka)
 
 ```bash
 npm run dev
 ```
 
-Opens a Vite dev server at `http://localhost:5173`. The app runs fully in the browser — data is stored in `localStorage` instead of SQLite when `window.electronAPI` is unavailable.
+Uruchamia Vite dev server pod adresem `http://localhost:5173`. Aplikacja działa w pełni w przeglądarce — dane zapisywane w `localStorage` zamiast SQLite, gdy `window.electronAPI` jest niedostępne.
 
 ### Build Windows `.exe`
 
@@ -67,37 +67,37 @@ Opens a Vite dev server at `http://localhost:5173`. The app runs fully in the br
 npm run build:win
 ```
 
-Requires Wine on Linux, or run on Windows. Output: `dist/`.
+Na Linuxie wymagane Wine. Na Windows działa natywnie. Wynik w katalogu `dist/`.
 
 ---
 
-## Configuration
+## Konfiguracja
 
-No environment variables or config files needed. After launching the app:
+Brak plików `.env` ani zmiennych środowiskowych. Po uruchomieniu aplikacji:
 
-1. Go to **Settings**
-2. Enter your [OpenRouter API key](https://openrouter.ai/keys) (free account, no card required for free models)
-3. Optionally select your preferred AI model
+1. Przejdź do **Ustawień**
+2. Wprowadź swój [klucz API OpenRouter](https://openrouter.ai/keys) (darmowe konto, darmowe modele nie wymagają karty)
+3. Opcjonalnie wybierz preferowany model AI
 
-The API key is stored locally in SQLite — never leaves your machine.
+Klucz API przechowywany lokalnie w SQLite — nigdy nie opuszcza Twojego komputera.
 
 ---
 
-## Architecture
+## Architektura
 
 ```
-electron/main/        # Main process: SQLite, yahoo-finance2, AI calls
-electron/preload/     # IPC bridge via contextBridge
-src/                  # Renderer: React app
+electron/main/        # Główny proces: SQLite, yahoo-finance2, zapytania AI
+electron/preload/     # Most IPC przez contextBridge
+src/                  # Renderer: aplikacja React
   components/
-  lib/api.ts          # Abstraction layer: uses electronAPI or localStorage
+  lib/api.ts          # Warstwa abstrakcji: używa electronAPI lub localStorage
   lib/types.ts
 ```
 
-React components never import Node.js modules directly. All backend functionality is exposed through `window.electronAPI` via IPC.
+Komponenty React nigdy nie importują modułów Node.js bezpośrednio. Cała funkcjonalność backendowa udostępniana przez `window.electronAPI` przez IPC.
 
 ---
 
-## License
+## Licencja
 
 [MIT](LICENSE)
