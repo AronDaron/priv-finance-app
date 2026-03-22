@@ -1,5 +1,5 @@
 // electron/main/index.ts
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu } from 'electron'
 import { join } from 'path'
 import {
   fetchQuote,
@@ -244,7 +244,7 @@ function createWindow(): void {
     title: 'Finance Portfolio Tracker',
     backgroundColor: '#111827',
     webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
+      preload: join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false
@@ -634,6 +634,7 @@ function registerIpcHandlers(): void {
 }
 
 app.whenReady().then(() => {
+  Menu.setApplicationMenu(null)
   // Inicjalizuj bazę PRZED otwarciem okna
   initDatabase()
   registerIpcHandlers()

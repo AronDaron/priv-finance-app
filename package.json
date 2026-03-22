@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite --host",
     "build": "electron-vite build && electron-builder",
+    "build:win": "node scripts/build-win.cjs",
     "preview": "electron-vite preview",
     "postinstall": "electron-rebuild"
   },
@@ -17,15 +18,17 @@
       "output": "dist"
     },
     "win": {
-      "target": "nsis",
+      "target": "zip",
       "icon": "resources/icon.ico"
     },
     "files": [
       "out/**/*"
-    ]
+    ],
+    "asar": false,
+    "npmRebuild": false
   },
   "dependencies": {
-    "better-sqlite3": "^12.6.2",
+    "better-sqlite3": "^12.8.0",
     "lightweight-charts": "^5.1.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
@@ -46,6 +49,8 @@
     "electron-builder": "^26.8.1",
     "electron-rebuild": "^3.2.9",
     "electron-vite": "^5.0.0",
+    "jimp": "^0.22.12",
+    "png-to-ico": "^3.0.1",
     "postcss": "^8.5.8",
     "tailwindcss": "^3.4.19",
     "typescript": "^5.9.3",
