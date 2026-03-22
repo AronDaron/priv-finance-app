@@ -21,7 +21,6 @@
 
 ## 📸 Zrzuty ekranu
 
-> *Dodaj własne zrzuty ekranu — zastąp poniższe obrazki plikami z folderu `docs/screenshots/`*
 
 **Dashboard**
 ![Dashboard](docs/screenshots/dashboard.png)
