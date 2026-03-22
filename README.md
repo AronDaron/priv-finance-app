@@ -20,13 +20,13 @@
 
 > *Dodaj własne zrzuty ekranu — zastąp poniższe obrazki plikami z folderu `docs/screenshots/`*
 
-| Dashboard | Widok spółki |
-|:---------:|:------------:|
-| ![Dashboard](docs/screenshots/dashboard.png) | ![Stock](docs/screenshots/stock.png) |
+![Dashboard](docs/screenshots/dashboard.png)
 
-| Analiza AI | Ustawienia |
-|:----------:|:----------:|
-| ![AI](docs/screenshots/ai.png) | ![Settings](docs/screenshots/settings.png) |
+![Widok spółki](docs/screenshots/stock.png)
+
+![Analiza AI](docs/screenshots/ai.png)
+
+![Ustawienia](docs/screenshots/settings.png)
 
 ---
 
@@ -103,7 +103,7 @@ Aplikacja używa dwóch modeli Gemini przez OpenRouter, dobranych pod konkretne 
 - **Etap A (Worker):** każda spółka analizowana osobno — dane fundamentalne + techniczne + kontekst makro → raport zapisywany w SQLite
 - **Etap B (Manager):** model Pro zbiera wszystkie raporty Worker i generuje całościową ocenę dywersyfikacji, ryzyka i rekomendacje zgodne ze strategią portfela (uwzględnia tagi: IKE, IKZE, Dywidendowy itp.)
 
-Do korzystania z funkcji AI wystarczy darmowe konto na [OpenRouter](https://openrouter.ai) — modele Gemini Flash są bezpłatne w ramach darmowego limitu.
+Do korzystania z funkcji AI wystarczy darmowe konto na [OpenRouter](https://openrouter.ai) — niektóre modele są bezpłatne w ramach darmowego okresu, wszystkie modele powinny działać lecz w wersji DEV testowane były tylko modele z serii Gemini.
 
 ---
 
