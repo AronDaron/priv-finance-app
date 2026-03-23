@@ -1,0 +1,487 @@
+// electron/main/bonds.ts
+// Logika obliczeniowa polskich obligacji skarbowych.
+// WAŻNE: Ten plik NIE może importować żadnych modułów Node.js/Electron (database, app, itp.),
+// ponieważ jest używany dynamicznie przez dev-api-plugin.ts (Vite).
+// Zależności DB przekazywane są jako callbacki.
+
+export type BondType = 'OTS' | 'ROR' | 'DOR' | 'TOS' | 'COI' | 'EDO' | 'ROS' | 'ROD'
+
+// Minimalna struktura potrzebna do obliczeń (podzbiór DBPortfolioAsset)
+export interface BondAssetData {
+  ticker: string
+  quantity: number
+  purchase_date: string
+  bond_type: string | null
+  bond_year1_rate: number | null
+  bond_maturity_date: string | null
+}
+
+export interface BondValueResult {
+  currentValuePerBond: number  // PLN
+  totalValue: number           // PLN
+  baseValue: number            // nominał + odsetki z zakończonych lat
+  accruedInterest: number      // odsetki narosłe w bieżącym roku
+  bondYearNum: number          // aktualny rok obligacji (1, 2…)
+  currentYearRate: number      // stopa bieżącego roku (ułamek, np. 0.0625)
+  maturityDate: string         // 'YYYY-MM-DD'
+  isMatured: boolean
+}
+
+const FACE_VALUE = 100 // PLN — stała wartość nominalna obligacji detalicznych
+
+// ─── Parsowanie tickera ───────────────────────────────────────────────────────
+
+export function parseBondTicker(ticker: string): { bondType: BondType; maturityMonth: number; maturityYear: number } | null {
+  const match = ticker.match(/^([A-Z]{3})(\d{2})(\d{2})$/)
+  if (!match) return null
+  const bondType = match[1] as BondType
+  const validTypes: BondType[] = ['OTS', 'ROR', 'DOR', 'TOS', 'COI', 'EDO', 'ROS', 'ROD']
+  if (!validTypes.includes(bondType)) return null
+  const maturityMonth = parseInt(match[2], 10)
+  const maturityYear = 2000 + parseInt(match[3], 10)
+  return { bondType, maturityMonth, maturityYear }
+}
+
+// ─── Obliczenia daty ──────────────────────────────────────────────────────────
+
+function daysBetween(from: string, to: string): number {
+  const msPerDay = 86400000
+  return Math.floor((Date.parse(to) - Date.parse(from)) / msPerDay)
+}
+
+function addYears(dateStr: string, years: number): string {
+  const d = new Date(dateStr)
+  d.setFullYear(d.getFullYear() + years)
+  return d.toISOString().split('T')[0]
+}
+
+function addMonths(dateStr: string, months: number): string {
+  const d = new Date(dateStr)
+  d.setMonth(d.getMonth() + months)
+  return d.toISOString().split('T')[0]
+}
+
+// Rzeczywista liczba dni w roku obligacyjnym (365 lub 366 dla roku przestępnego)
+function daysInBondYear(periodStart: string, periodEnd: string): number {
+  return daysBetween(periodStart, periodEnd)
+}
+
+// Liczba dni w roku kalendarzowym zawierającym podaną datę (dla modelu miesięcznego)
+function daysInYear(dateStr: string): number {
+  const year = new Date(dateStr).getFullYear()
+  return ((year % 4 === 0 && year % 100 !== 0) || year % 400 === 0) ? 366 : 365
+}
+
+// ─── Stopy procentowe per typ/rok ─────────────────────────────────────────────
+
+// Domyślne marże per typ — używane jako fallback gdy brak danych z DB
+const DEFAULT_MARGINS: Partial<Record<BondType, number>> = {
+  COI: 1.5,
+  EDO: 1.75,
+  ROS: 2.0,
+  ROD: 2.5,
+}
+
+// Miesiąc referencyjny CPI: 2 miesiące przed początkiem okresu odsetkowego
+// np. rok 2 startuje w marcu → referencja = styczeń (ogłoszony przez GUS w lutym)
+function getCpiReferenceMonth(purchaseDate: string, yearNum: number): { year: number; month: number } {
+  const anniversary = addYears(purchaseDate, yearNum - 1)
+  const d = new Date(anniversary)
+  let month = d.getMonth() + 1 - 2  // 2 miesiące wstecz
+  let year = d.getFullYear()
+  if (month <= 0) { month += 12; year -= 1 }
+  return { year, month }
+}
+
+function getRateForYear(
+  bondType: BondType,
+  yearNum: number,
+  purchaseDate: string,
+  year1Rate: number,  // w %, np. 6.25
+  lookupCpi: (year: number) => number | null,
+  lookupNbpRate: (date: string) => number | null,
+  lookupMargin?: () => number | null,  // marża z DB per ticker
+  lookupMonthlyCpi?: (year: number, month: number) => number | null,  // miesięczne CPI GUS
+): number {
+  if (yearNum === 1) return year1Rate / 100
+
+  switch (bondType) {
+    case 'OTS':
+    case 'TOS':
+      return year1Rate / 100
+
+    case 'ROR':
+    case 'DOR': {
+      const nbpRate = lookupNbpRate(purchaseDate)
+      return (nbpRate ?? year1Rate) / 100
+    }
+
+    case 'COI':
+    case 'EDO':
+    case 'ROS':
+    case 'ROD': {
+      const { year: refYear, month: refMonth } = getCpiReferenceMonth(purchaseDate, yearNum)
+      const monthlyCpi = lookupMonthlyCpi?.(refYear, refMonth)
+      if (monthlyCpi === null || monthlyCpi === undefined) {
+        // Miesięczne CPI niedostępne — dane GUS jeszcze nie opublikowane
+        throw new Error(`PENDING_GUS_DATA:${refYear}-${String(refMonth).padStart(2, '0')}`)
+      }
+      const margin = lookupMargin?.() ?? DEFAULT_MARGINS[bondType] ?? 1.75
+      return (monthlyCpi + margin) / 100
+    }
+
+    default:
+      return year1Rate / 100
+  }
+}
+
+// ─── Model 1: Kapitalizacja roczna (OTS, TOS, EDO, ROS, ROD) ─────────────────
+// Odsetki każdego roku powiększają bazę dla kolejnego roku (procent składany).
+
+function calculateCapitalizing(
+  asset: BondAssetData,
+  today: string,
+  getRate: (y: number) => number,
+): BondValueResult {
+  const purchaseDate = asset.purchase_date!
+  const maturityDate = asset.bond_maturity_date!
+
+  if (today >= maturityDate) {
+    const parsed = parseBondTicker(asset.ticker)
+    const totalYears = parsed ? Math.round(daysBetween(purchaseDate, maturityDate) / 365) : 1
+    let baseValue = FACE_VALUE
+    for (let y = 1; y <= totalYears; y++) {
+      baseValue = Math.round((baseValue + baseValue * getRate(y)) * 100) / 100
+    }
+    return {
+      currentValuePerBond: baseValue,
+      totalValue: baseValue * asset.quantity,
+      baseValue,
+      accruedInterest: 0,
+      bondYearNum: totalYears,
+      currentYearRate: getRate(totalYears),
+      maturityDate,
+      isMatured: true,
+    }
+  }
+
+  // Znajdź aktualny rok obligacji używając rzeczywistych rocznic (poprawne dla lat przestępnych)
+  let bondYearNum = 1
+  while (today >= addYears(purchaseDate, bondYearNum)) bondYearNum++
+
+  let baseValue = FACE_VALUE
+  for (let y = 1; y < bondYearNum; y++) {
+    baseValue = Math.round((baseValue + baseValue * getRate(y)) * 100) / 100
+  }
+
+  const anniversaryStart = addYears(purchaseDate, bondYearNum - 1)
+  const anniversaryEnd = addYears(purchaseDate, bondYearNum)
+  const daysInCurrentYear = daysBetween(anniversaryStart, today)
+  const bondYearDays = daysInBondYear(anniversaryStart, anniversaryEnd)
+  const currentYearRate = getRate(bondYearNum)
+  const accruedInterest = Math.round(baseValue * currentYearRate * (daysInCurrentYear / bondYearDays) * 100) / 100
+
+  return {
+    currentValuePerBond: baseValue + accruedInterest,
+    totalValue: (baseValue + accruedInterest) * asset.quantity,
+    baseValue,
+    accruedInterest,
+    bondYearNum,
+    currentYearRate,
+    maturityDate,
+    isMatured: false,
+  }
+}
+
+// ─── Model 2: Kupon roczny bez kapitalizacji (COI) ────────────────────────────
+// Baza = zawsze 100 PLN. Każdy roczny kupon liczony od 100, zaokrąglany do grosza.
+// baseValue w wyniku = 100 + suma wypłaconych kuponów (dla ciągłości P&L w portfelu).
+
+function calculateCouponAnnual(
+  asset: BondAssetData,
+  today: string,
+  getRate: (y: number) => number,
+): BondValueResult {
+  const purchaseDate = asset.purchase_date!
+  const maturityDate = asset.bond_maturity_date!
+
+  if (today >= maturityDate) {
+    const parsed = parseBondTicker(asset.ticker)
+    const totalYears = parsed ? Math.round(daysBetween(purchaseDate, maturityDate) / 365) : 1
+    let paidCoupons = 0
+    for (let y = 1; y <= totalYears; y++) {
+      paidCoupons += Math.round(FACE_VALUE * getRate(y) * 100) / 100
+    }
+    const finalValue = FACE_VALUE + paidCoupons
+    return {
+      currentValuePerBond: finalValue,
+      totalValue: finalValue * asset.quantity,
+      baseValue: FACE_VALUE + paidCoupons,
+      accruedInterest: 0,
+      bondYearNum: totalYears,
+      currentYearRate: getRate(totalYears),
+      maturityDate,
+      isMatured: true,
+    }
+  }
+
+  // Znajdź aktualny rok obligacji używając rzeczywistych rocznic (poprawne dla lat przestępnych)
+  let bondYearNum = 1
+  while (today >= addYears(purchaseDate, bondYearNum)) bondYearNum++
+
+  // Suma kuponów z zakończonych lat — każdy liczony od 100 PLN
+  let paidCoupons = 0
+  for (let y = 1; y < bondYearNum; y++) {
+    paidCoupons += Math.round(FACE_VALUE * getRate(y) * 100) / 100
+  }
+
+  const anniversaryStart = addYears(purchaseDate, bondYearNum - 1)
+  const anniversaryEnd = addYears(purchaseDate, bondYearNum)
+  const daysInCurrentYear = daysBetween(anniversaryStart, today)
+  const bondYearDays = daysInBondYear(anniversaryStart, anniversaryEnd)
+  const currentYearRate = getRate(bondYearNum)
+  const accruedInterest = Math.round(FACE_VALUE * currentYearRate * (daysInCurrentYear / bondYearDays) * 100) / 100
+
+  const baseValue = FACE_VALUE + paidCoupons
+  return {
+    currentValuePerBond: baseValue + accruedInterest,
+    totalValue: (baseValue + accruedInterest) * asset.quantity,
+    baseValue,
+    accruedInterest,
+    bondYearNum,
+    currentYearRate,
+    maturityDate,
+    isMatured: false,
+  }
+}
+
+// ─── Model 3: Kupon miesięczny bez kapitalizacji (ROR, DOR) ──────────────────
+// Baza = zawsze 100 PLN. Okresy miesięczne. Stopa NBP obowiązująca na start miesiąca.
+// Wzór per miesiąc: round(100 * nbpRate/100 * daysInPeriod/365, 2)
+
+function calculateCouponMonthly(
+  asset: BondAssetData,
+  today: string,
+  lookupNbpRate: (date: string) => number | null,
+): BondValueResult {
+  const purchaseDate = asset.purchase_date!
+  const maturityDate = asset.bond_maturity_date!
+  const year1Rate = asset.bond_year1_rate!
+
+  // Znajdź ile miesięcznych okresów zostało zakończonych
+  let completedMonths = 0
+  while (addMonths(purchaseDate, completedMonths + 1) <= today &&
+         addMonths(purchaseDate, completedMonths + 1) <= maturityDate) {
+    completedMonths++
+  }
+
+  const isMatured = today >= maturityDate
+
+  // Funkcja pomocnicza: kupon za jeden miesiąc
+  const monthCoupon = (monthIndex: number): number => {
+    const periodStart = addMonths(purchaseDate, monthIndex)
+    const periodEnd = addMonths(purchaseDate, monthIndex + 1)
+    const daysInPeriod = daysBetween(periodStart, periodEnd)
+    const nbpRate = lookupNbpRate(periodStart) ?? year1Rate
+    return Math.round(FACE_VALUE * (nbpRate / 100) * (daysInPeriod / daysInYear(periodStart)) * 100) / 100
+  }
+
+  if (isMatured) {
+    // Policz wszystkie miesiące do zapadalności
+    let totalMonths = 0
+    while (addMonths(purchaseDate, totalMonths + 1) <= maturityDate) totalMonths++
+    let paidCoupons = 0
+    for (let m = 0; m < totalMonths; m++) paidCoupons += monthCoupon(m)
+    const finalValue = FACE_VALUE + paidCoupons
+    const lastPeriodStart = addMonths(purchaseDate, totalMonths - 1)
+    const lastNbpRate = lookupNbpRate(lastPeriodStart) ?? year1Rate
+    return {
+      currentValuePerBond: finalValue,
+      totalValue: finalValue * asset.quantity,
+      baseValue: FACE_VALUE + paidCoupons,
+      accruedInterest: 0,
+      bondYearNum: totalMonths,
+      currentYearRate: lastNbpRate / 100,
+      maturityDate,
+      isMatured: true,
+    }
+  }
+
+  // Suma wypłaconych kuponów z zakończonych miesięcy
+  let paidCoupons = 0
+  for (let m = 0; m < completedMonths; m++) paidCoupons += monthCoupon(m)
+
+  // Narosłe odsetki w bieżącym (niepełnym) miesiącu
+  const currentMonthStart = addMonths(purchaseDate, completedMonths)
+  const daysInCurrentPeriod = daysBetween(currentMonthStart, today)
+  const currentNbpRate = lookupNbpRate(currentMonthStart) ?? year1Rate
+  const accruedInterest = Math.round(FACE_VALUE * (currentNbpRate / 100) * (daysInCurrentPeriod / daysInYear(currentMonthStart)) * 100) / 100
+
+  const baseValue = FACE_VALUE + paidCoupons
+  return {
+    currentValuePerBond: baseValue + accruedInterest,
+    totalValue: (baseValue + accruedInterest) * asset.quantity,
+    baseValue,
+    accruedInterest,
+    bondYearNum: completedMonths + 1,  // bieżący miesiąc
+    currentYearRate: currentNbpRate / 100,
+    maturityDate,
+    isMatured: false,
+  }
+}
+
+// ─── Główna funkcja obliczeniowa ──────────────────────────────────────────────
+
+export function calculateBondValue(
+  asset: BondAssetData,
+  today: string,  // 'YYYY-MM-DD'
+  lookupCpi: (year: number) => number | null,
+  lookupNbpRate: (date: string) => number | null,
+  lookupMargin?: () => number | null,
+  lookupMonthlyCpi?: (year: number, month: number) => number | null,
+): BondValueResult {
+  if (!asset.bond_type || asset.bond_year1_rate === null || !asset.purchase_date || !asset.bond_maturity_date) {
+    throw new Error(`Asset ${asset.ticker} nie ma kompletnych danych obligacji`)
+  }
+
+  const bondType = asset.bond_type as BondType
+  const year1Rate = asset.bond_year1_rate
+  const purchaseDate = asset.purchase_date
+
+  // Model 3: miesięczny kupon bez kapitalizacji
+  if (bondType === 'ROR' || bondType === 'DOR') {
+    return calculateCouponMonthly(asset, today, lookupNbpRate)
+  }
+
+  // Model 2: roczny kupon bez kapitalizacji
+  if (bondType === 'COI') {
+    const getRate = (y: number) => getRateForYear(bondType, y, purchaseDate, year1Rate, lookupCpi, lookupNbpRate, lookupMargin, lookupMonthlyCpi)
+    return calculateCouponAnnual(asset, today, getRate)
+  }
+
+  // Model 1: kapitalizacja roczna (OTS, TOS, EDO, ROS, ROD)
+  const getRate = (y: number) => getRateForYear(bondType, y, purchaseDate, year1Rate, lookupCpi, lookupNbpRate, lookupMargin, lookupMonthlyCpi)
+  return calculateCapitalizing(asset, today, getRate)
+}
+
+// ─── Pobieranie oprocentowania roku 1 z obligacjeskarbowe.pl ──────────────────
+
+const BOND_TYPE_SLUGS: Record<BondType, string> = {
+  OTS: 'obligacje-3-miesieczne-ots',
+  ROR: 'obligacje-roczne-ror',
+  DOR: 'obligacje-2-letnie-dor',
+  TOS: 'obligacje-3-letnie-tos',
+  COI: 'obligacje-4-letnie-coi',
+  EDO: 'obligacje-10-letnie-edo',
+  ROS: 'obligacje-6-letnie-ros',
+  ROD: 'obligacje-12-letnie-rod',
+}
+
+export interface BondPageData {
+  year1Rate: number | null   // oprocentowanie roku 1 w %
+  margin: number | null      // marża inflacyjna dla lat 2+ w %
+}
+
+export async function fetchBondYear1Rate(ticker: string): Promise<BondPageData> {
+  const parsed = parseBondTicker(ticker.toUpperCase())
+  if (!parsed) return { year1Rate: null, margin: null }
+
+  const slug = BOND_TYPE_SLUGS[parsed.bondType]
+  const url = `https://www.obligacjeskarbowe.pl/oferta-obligacji/${slug}/${ticker.toLowerCase()}/`
+
+  try {
+    const response = await fetch(url)
+    if (!response.ok) return { year1Rate: null, margin: null }
+
+    const html = await response.text()
+
+    // Oprocentowanie roku 1: "6,55% w pierwszym rocznym okresie odsetkowym"
+    const rateMatch = html.match(/Oprocentowanie[^%]*?([\d]+[,.][\d]+)\s*%/)
+    const year1Rate = rateMatch ? parseFloat(rateMatch[1].replace(',', '.')) : null
+
+    // Marża inflacyjna: "marża 2,00% + inflacja" lub "marża 1,75% + inflacja"
+    const marginMatch = html.match(/mar[żz]a\s+([\d]+[,.][\d]+)\s*%/)
+    const margin = marginMatch ? parseFloat(marginMatch[1].replace(',', '.')) : null
+
+    return { year1Rate, margin }
+  } catch {
+    return { year1Rate: null, margin: null }
+  }
+}
+
+// ─── Synchronizacja CPI z GUS BDL ────────────────────────────────────────────
+// Zmienna 217230 = "wskaźnik cen towarów i usług konsumpcyjnych ogółem, rok poprzedni = 100"
+// Zwraca pobrane dane — zapisanie do DB należy do wywołującego (index.ts)
+
+export async function fetchGusAnnualCpi(): Promise<Array<{ year: number; value: number }>> {
+  try {
+    const url = 'https://bdl.stat.gov.pl/api/v1/data/by-variable/217230?unit-level=0&format=json&page-size=30'
+    const response = await fetch(url)
+    if (!response.ok) return []
+
+    const data = await response.json() as {
+      results?: Array<{
+        values?: Array<{ year: number; val: number }>
+      }>
+    }
+
+    const results = data.results?.[0]?.values ?? []
+    return results
+      .filter(v => typeof v.year === 'number' && typeof v.val === 'number')
+      .map(v => ({ year: v.year, value: v.val - 100 }))  // 103.6 → 3.6%
+  } catch {
+    return []
+  }
+}
+
+// ─── Synchronizacja miesięcznego CPI ze stooq.pl ─────────────────────────────
+// Symbol CPIYPL.M = CPI r/r, Polska, miesięczny
+// Kolumna Zamkniecie = wartość r/r w % (np. 4.1 = 4.1% inflacji)
+// Zwraca pobrane dane — zapisanie do DB należy do wywołującego (index.ts)
+
+export async function fetchMonthlyCpi(): Promise<Array<{ year: number; month: number; value: number }>> {
+  try {
+    const url = 'https://stooq.pl/q/d/l/?s=cpiypl.m&i=m'
+    const response = await fetch(url)
+    if (!response.ok) return []
+
+    const text = await response.text()
+    const lines = text.trim().split('\n')
+    // Pierwsza linia to nagłówek: Data,Otwarcie,Najwyzszy,Najnizszy,Zamkniecie
+    const result: Array<{ year: number; month: number; value: number }> = []
+    for (const line of lines.slice(1)) {
+      const parts = line.split(',')
+      if (parts.length < 5) continue
+      const dateStr = parts[0].trim()       // 'YYYY-MM-DD'
+      const val = parseFloat(parts[4].trim())  // Zamkniecie = CPI r/r %
+      if (!dateStr || isNaN(val)) continue
+      const [yearStr, monthStr] = dateStr.split('-')
+      const year = parseInt(yearStr, 10)
+      const month = parseInt(monthStr, 10)
+      if (isNaN(year) || isNaN(month)) continue
+      result.push({ year, month, value: val })
+    }
+    return result
+  } catch {
+    return []
+  }
+}
+
+// ─── Synchronizacja stopy NBP ─────────────────────────────────────────────────
+// Zwraca pobrane dane — zapisanie do DB należy do wywołującego (index.ts)
+
+export async function fetchNbpRates(): Promise<Array<{ date: string; rate: number }>> {
+  try {
+    const response = await fetch('https://api.nbp.pl/api/stopy/referencji/?format=json')
+    if (!response.ok) return []
+
+    const data = await response.json() as Array<{ effectiveDate: string; rate: number }>
+    if (!Array.isArray(data)) return []
+
+    return data
+      .filter(e => e.effectiveDate && typeof e.rate === 'number')
+      .map(e => ({ date: e.effectiveDate, rate: e.rate }))
+  } catch {
+    return []
+  }
+}

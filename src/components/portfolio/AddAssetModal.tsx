@@ -1,9 +1,9 @@
-import { useState } from 'react'
-import { addAsset, updateAsset, addTransaction } from '../../lib/api'
+import { useState, useEffect, useRef } from 'react'
+import { addAsset, updateAsset, addTransaction, fetchBondYear1Rate } from '../../lib/api'
 import { StockSearch } from '../StockSearch'
 import { usePortfolio } from '../../contexts/PortfolioContext'
-import { PHYSICAL_METAL_COINS, gramsToTroyOz } from '../../lib/types'
-import type { PortfolioAsset } from '../../lib/types'
+import { PHYSICAL_METAL_COINS, gramsToTroyOz, BOND_TYPES, parseBondTickerClient } from '../../lib/types'
+import type { PortfolioAsset, BondType } from '../../lib/types'
 
 interface Props {
   onClose: () => void
@@ -44,8 +44,31 @@ export default function AddAssetModal({ onClose, onSuccess, editAsset }: Props) 
   const [customGrams, setCustomGrams] = useState<string>(
     editAsset?.gold_grams && initCoinId() === '__custom__' ? editAsset.gold_grams.toString() : ''
   )
+  // Obligacje skarbowe
+  const [bondYear1Rate, setBondYear1Rate] = useState<string>(
+    editAsset?.bond_year1_rate?.toString() ?? ''
+  )
+  const [rateFetching, setRateFetching] = useState(false)
+  const fetchedForRef = useRef<string>('')
 
   const isPhysicalMetal = form.ticker === 'GC=F' || form.ticker === 'SI=F'
+
+  // Wykrywanie obligacji z tickera
+  const bondParsed = parseBondTickerClient(form.ticker)
+  const isBond = !!bondParsed && !isPhysicalMetal
+
+  // Auto-pobierz oprocentowanie roku 1 gdy ticker pasuje do obligacji
+  useEffect(() => {
+    if (!isBond || isEditMode) return
+    if (fetchedForRef.current === form.ticker) return
+    fetchedForRef.current = form.ticker
+    setRateFetching(true)
+    setBondYear1Rate('')
+    fetchBondYear1Rate(form.ticker).then(rate => {
+      if (rate !== null) setBondYear1Rate(String(rate))
+      setRateFetching(false)
+    }).catch(() => setRateFetching(false))
+  }, [form.ticker, isBond, isEditMode])
   const metalCoins = PHYSICAL_METAL_COINS.filter(c => c.ticker === form.ticker)
   const selectedCoin = metalCoins.find(c => c.id === selectedCoinId) ?? null
   const isCustomCoin = selectedCoinId === '__custom__' || selectedCoin?.pureGrams === 0
@@ -58,10 +81,24 @@ export default function AddAssetModal({ onClose, onSuccess, editAsset }: Props) 
   // Przeliczone uncje troy na monetę (do informacji dla użytkownika)
   const ozPerCoin = effectiveGrams > 0 ? gramsToTroyOz(effectiveGrams) : 0
 
+  // Data zapadalności z tickera obligacji — dzień = dzień zakupu (obligacje detaliczne zapadają tego samego dnia)
+  const purchaseDay = form.purchase_date.split('-')[2]
+  const bondMaturityDate = bondParsed
+    ? `${bondParsed.maturityYear}-${String(bondParsed.maturityMonth).padStart(2, '0')}-${purchaseDay}`
+    : null
+
   const handleSelect = (ticker: string, name: string) => {
-    setForm((f) => ({ ...f, ticker, name }))
+    setForm((f) => {
+      const parsed = parseBondTickerClient(ticker)
+      // Dla obligacji: auto-ustaw walutę PLN i cenę 100
+      if (parsed) {
+        return { ...f, ticker, name: name || ticker, currency: 'PLN', purchase_price: '100' }
+      }
+      return { ...f, ticker, name }
+    })
     setSelectedCoinId('')
     setCustomGrams('')
+    setBondYear1Rate('')
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -80,10 +117,20 @@ export default function AddAssetModal({ onClose, onSuccess, editAsset }: Props) 
       setError('Podaj wagę czystego metalu w gramach.')
       return
     }
+    if (isBond && !bondYear1Rate) {
+      setError('Podaj oprocentowanie roku 1 obligacji.')
+      return
+    }
     setSaving(true)
     setError(null)
     try {
-      const goldGrams = (isPhysicalMetal && selectedCoinId !== '__exchange__' && effectiveGrams > 0) ? effectiveGrams : null
+      const goldGrams = (isPhysicalMetal && selectedCoinId !== '__exchange__' && effectiveGrams > 0) ? effectiveGrams : undefined
+      const bondFields = isBond ? {
+        asset_type: 'bond' as const,
+        bond_type: bondParsed!.bondType,
+        bond_year1_rate: parseFloat(bondYear1Rate),
+        bond_maturity_date: bondMaturityDate ?? undefined,
+      } : {}
       if (isEditMode) {
         await updateAsset(editAsset.id, {
           name: form.name.trim() || form.ticker.trim().toUpperCase(),
@@ -103,6 +150,7 @@ export default function AddAssetModal({ onClose, onSuccess, editAsset }: Props) 
           purchase_date: form.purchase_date,
           portfolio_id: form.portfolio_id,
           gold_grams: goldGrams,
+          ...bondFields,
         })
         // Auto-zapis do historii transakcji
         try {
@@ -150,9 +198,16 @@ export default function AddAssetModal({ onClose, onSuccess, editAsset }: Props) 
               value={form.ticker}
               onChange={(e) => {
                 if (isEditMode) return
-                setForm((f) => ({ ...f, ticker: e.target.value.toUpperCase() }))
+                const newTicker = e.target.value.toUpperCase()
+                const parsed = parseBondTickerClient(newTicker)
+                setForm((f) => ({
+                  ...f,
+                  ticker: newTicker,
+                  ...(parsed ? { currency: 'PLN', purchase_price: '100' } : {}),
+                }))
                 setSelectedCoinId('')
                 setCustomGrams('')
+                if (!parsed) setBondYear1Rate('')
               }}
               disabled={isEditMode}
               placeholder="np. AAPL"
@@ -160,6 +215,57 @@ export default function AddAssetModal({ onClose, onSuccess, editAsset }: Props) 
               required
             />
           </div>
+
+          {/* Sekcja obligacji skarbowych — pojawia się gdy ticker pasuje do wzorca np. EDO0336 */}
+          {isBond && bondParsed && (
+            <div className="rounded-xl border border-blue-600/40 bg-blue-900/10 p-4 space-y-3">
+              <p className="text-xs font-semibold text-blue-400 uppercase tracking-wider">
+                Obligacja skarbowa
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Typ</label>
+                  <div className="bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm">
+                    {bondParsed.bondType} — {BOND_TYPES[bondParsed.bondType as BondType]?.name}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Zapadalność</label>
+                  <div className="bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm">
+                    {String(bondParsed.maturityMonth).padStart(2, '0')}/{bondParsed.maturityYear}
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">
+                  Oprocentowanie roku 1 (%) *
+                  {BOND_TYPES[bondParsed.bondType as BondType]?.inflationLinked && (
+                    <span className="ml-1 text-blue-400">(indeksowana inflacją od roku 2)</span>
+                  )}
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={bondYear1Rate}
+                    onChange={(e) => setBondYear1Rate(e.target.value)}
+                    placeholder={rateFetching ? 'Pobieranie...' : 'np. 6.25'}
+                    disabled={rateFetching}
+                    className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-finance-green disabled:opacity-60"
+                  />
+                  {rateFetching && (
+                    <span className="absolute right-3 top-2.5 text-blue-400 text-xs">Pobieranie...</span>
+                  )}
+                </div>
+                {!rateFetching && !bondYear1Rate && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Nie udało się pobrać — wpisz ręcznie (znajdziesz na obligacjeskarbowe.pl)
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Sekcja metali fizycznych — pojawia się tylko dla GC=F i SI=F */}
           {isPhysicalMetal && (
@@ -224,13 +330,15 @@ export default function AddAssetModal({ onClose, onSuccess, editAsset }: Props) 
               className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-finance-green"
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className={`grid gap-3 ${isBond ? 'grid-cols-1' : 'grid-cols-2'}`}>
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Ilość *</label>
+              <label className="block text-xs text-gray-400 mb-1">
+                {isBond ? 'Liczba sztuk *' : 'Ilość *'}
+              </label>
               <input
                 type="number"
-                min="0.001"
-                step="0.001"
+                min={isBond ? '1' : '0.001'}
+                step={isBond ? '1' : '0.001'}
                 value={form.quantity}
                 onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))}
                 placeholder="0"
@@ -238,32 +346,36 @@ export default function AddAssetModal({ onClose, onSuccess, editAsset }: Props) 
                 required
               />
             </div>
+            {!isBond && (
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Śr. cena zakupu *</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.purchase_price}
+                  onChange={(e) => setForm((f) => ({ ...f, purchase_price: e.target.value }))}
+                  placeholder="0.00"
+                  className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-finance-green"
+                  required
+                />
+              </div>
+            )}
+          </div>
+          {!isBond && (
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Śr. cena zakupu *</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={form.purchase_price}
-                onChange={(e) => setForm((f) => ({ ...f, purchase_price: e.target.value }))}
-                placeholder="0.00"
+              <label className="block text-xs text-gray-400 mb-1">Waluta</label>
+              <select
+                value={form.currency}
+                onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))}
                 className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-finance-green"
-                required
-              />
+              >
+                <option value="USD">USD</option>
+                <option value="PLN">PLN</option>
+                <option value="EUR">EUR</option>
+              </select>
             </div>
-          </div>
-          <div>
-            <label className="block text-xs text-gray-400 mb-1">Waluta</label>
-            <select
-              value={form.currency}
-              onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))}
-              className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-finance-green"
-            >
-              <option value="USD">USD</option>
-              <option value="PLN">PLN</option>
-              <option value="EUR">EUR</option>
-            </select>
-          </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-gray-400 mb-1">Data zakupu</label>

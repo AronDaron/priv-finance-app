@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
-import { getAssets, deleteAsset, getQuote, getHistory, getCashAccounts } from '../../lib/api'
-import type { PortfolioAsset, StockQuote, CashAccount } from '../../lib/types'
+import { getAssets, deleteAsset, getQuote, getHistory, getCashAccounts, getBondValues } from '../../lib/api'
+import type { PortfolioAsset, StockQuote, CashAccount, BondValueResult } from '../../lib/types'
+import type { BondValuesResult } from '../../lib/api'
 import { usePortfolio } from '../../contexts/PortfolioContext'
 import AssetRow from './AssetRow'
 import AddAssetModal from './AddAssetModal'
@@ -31,6 +32,8 @@ export default function PortfolioView() {
   const [cashModalPortfolioId, setCashModalPortfolioId] = useState<number | null>(null)
   const [usdPln, setUsdPln] = useState(4.0)
   const [eurPln, setEurPln] = useState(4.3)
+  const [bondValuesMap, setBondValuesMap] = useState<Map<number, BondValueResult>>(new Map())
+  const [bondPendingMap, setBondPendingMap] = useState<Map<number, string>>(new Map())
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -46,9 +49,12 @@ export default function PortfolioView() {
       setEurPln(eurRate)
       setAssets(list)
       setCashAccounts(cash)
-      const [quoteEntries, sparkEntries] = await Promise.all([
+      const stockAssets = list.filter(a => a.asset_type !== 'bond')
+      const bondAssets = list.filter(a => a.asset_type === 'bond')
+
+      const [quoteEntries, sparkEntries, bondValues] = await Promise.all([
         Promise.all(
-          list.map(async (a) => {
+          stockAssets.map(async (a) => {
             try {
               const q = await getQuote(a.ticker)
               return [a.ticker, q] as [string, StockQuote]
@@ -58,7 +64,7 @@ export default function PortfolioView() {
           })
         ),
         Promise.all(
-          list.map(async (a) => {
+          stockAssets.map(async (a) => {
             try {
               const candles = await getHistory(a.ticker, '1mo')
               return [a.ticker, candles.map(c => c.close)] as [string, number[]]
@@ -67,6 +73,7 @@ export default function PortfolioView() {
             }
           })
         ),
+        getBondValues(bondAssets),
       ])
       const qMap = new Map<string, StockQuote>()
       quoteEntries.forEach((e) => { if (e) qMap.set(e[0], e[1]) })
@@ -74,6 +81,8 @@ export default function PortfolioView() {
       const sMap = new Map<string, number[]>()
       sparkEntries.forEach((e) => { if (e) sMap.set(e[0], e[1]) })
       setSparklines(sMap)
+      setBondValuesMap(bondValues.values)
+      setBondPendingMap(bondValues.pending)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Błąd ładowania danych')
     } finally {
@@ -212,6 +221,8 @@ export default function PortfolioView() {
                           usdPln={usdPln}
                           eurPln={eurPln}
                           onDelete={() => handleDelete(asset.id)}
+                          bondValue={bondValuesMap.get(asset.id)}
+                          bondPendingMonth={bondPendingMap.get(asset.id)}
                         />
                       ))}
                     </tbody>
@@ -252,6 +263,8 @@ export default function PortfolioView() {
                         usdPln={usdPln}
                         eurPln={eurPln}
                         onDelete={() => handleDelete(asset.id)}
+                        bondValue={bondValuesMap.get(asset.id)}
+                        bondPendingMonth={bondPendingMap.get(asset.id)}
                       />
                     ))}
                   </tbody>

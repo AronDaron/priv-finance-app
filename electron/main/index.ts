@@ -45,6 +45,17 @@ import {
   archiveNews,
   searchNews,
   pruneOldNews,
+  getAssetById,
+  upsertCpi,
+  getCpiForYear,
+  getNbpRateForDate,
+  upsertNbpRate,
+  getCachedBondRate,
+  cacheBondRate,
+  getCachedBondMargin,
+  cacheBondMargin,
+  getCpiForMonth,
+  upsertMonthlyCpi,
   type DBNewsItem,
   type DBPortfolioAsset,
   type DBPortfolio,
@@ -53,6 +64,7 @@ import {
   type DBAIReport,
 } from './database'
 import { analyzeStock, analyzePortfolio, analyzeRegion, chatWithPortfolio, WORKER_MODEL, MANAGER_MODEL, WORLD_MODEL, type ChatMessage, type GlobalMacroContext } from './ai'
+import { calculateBondValue, fetchNbpRates, fetchBondYear1Rate, fetchGusAnnualCpi, fetchMonthlyCpi } from './bonds'
 import { fetchNewsForRegion } from './news'
 import type { NewsRegion } from './news'
 
@@ -133,8 +145,9 @@ function buildChatSystemContext(params: {
   usdPln: number
   eurPln: number
   today: string
+  bondValues?: Map<number, { totalValue: number; bondYearNum: number; currentYearRate: number; maturityDate: string; isMatured: boolean }>
 }): string {
-  const { assets, quotes, portfolios, transactions, cashAccounts, priceHistories, globalMarket, regime, news, aiReports, usdPln, eurPln, today } = params
+  const { assets, quotes, portfolios, transactions, cashAccounts, priceHistories, globalMarket, regime, news, aiReports, usdPln, eurPln, today, bondValues } = params
   const toPln = (amount: number, currency: string) =>
     currency === 'PLN' ? amount : currency === 'USD' ? amount * usdPln : currency === 'EUR' ? amount * eurPln : amount
 
@@ -142,16 +155,36 @@ function buildChatSystemContext(params: {
   let totalValuePLN = 0
   const assetLines: string[] = []
   for (const a of assets) {
+    if (a.asset_type === 'bond') continue  // obligacje obsługiwane osobno poniżej
     const q = quotes.get(a.ticker)
     if (!q) continue
-    const pricePLN = toPln(q.price, q.currency)
+    // Dla metali fizycznych: cena spot USD/oz × oz/monetę → cena USD/monetę
+    const ozPerCoin = a.gold_grams ? gramsToTroyOz(a.gold_grams) : null
+    const priceInCurrency = ozPerCoin ? q.price * ozPerCoin : q.price
+    const pricePLN = toPln(priceInCurrency, ozPerCoin ? 'USD' : q.currency)
     const valuePLN = pricePLN * a.quantity
     totalValuePLN += valuePLN
     const purchasePLN = toPln(a.purchase_price, a.currency)
     const pnl = purchasePLN > 0 ? ((pricePLN - purchasePLN) / purchasePLN * 100).toFixed(1) : '0.0'
     const ch = q.changePercent >= 0 ? `+${q.changePercent.toFixed(2)}%` : `${q.changePercent.toFixed(2)}%`
     const pnlStr = parseFloat(pnl) >= 0 ? `+${pnl}%` : `${pnl}%`
-    assetLines.push(`  ${a.ticker} (${a.name}): ${a.quantity} szt. × ${q.price.toFixed(2)} ${q.currency} = ${valuePLN.toFixed(0)} PLN | P&L: ${pnlStr} | Dziś: ${ch}${a.purchase_date ? ` | Zakup: ${a.purchase_date}` : ''}`)
+    assetLines.push(`  ${a.ticker} (${a.name}): ${a.quantity} szt. × ${priceInCurrency.toFixed(2)} ${ozPerCoin ? 'USD' : q.currency} = ${valuePLN.toFixed(0)} PLN | P&L: ${pnlStr} | Dziś: ${ch}${a.purchase_date ? ` | Zakup: ${a.purchase_date}` : ''}`)
+  }
+
+  // Obligacje skarbowe — brak kwotowań Yahoo Finance, wycena z DB
+  const bondAssets = assets.filter(a => a.asset_type === 'bond')
+  const bondLines: string[] = []
+  for (const a of bondAssets) {
+    const bv = bondValues?.get(a.id)
+    const costBasis = a.quantity * 100
+    if (bv) {
+      totalValuePLN += bv.totalValue
+      const pnlPLN = bv.totalValue - costBasis
+      bondLines.push(`  ${a.ticker} (${a.name}): ${a.quantity} szt. × 100 PLN = ${bv.totalValue.toFixed(0)} PLN | P&L: ${pnlPLN >= 0 ? '+' : ''}${pnlPLN.toFixed(2)} PLN | Rok ${bv.bondYearNum}, stopa ${(bv.currentYearRate * 100).toFixed(2)}%, zapada ${bv.maturityDate}${bv.isMatured ? ' [ZAPADŁA]' : ''}`)
+    } else {
+      totalValuePLN += costBasis
+      bondLines.push(`  ${a.ticker} (${a.name}): ${a.quantity} szt. × 100 PLN = ${costBasis} PLN nominał, zakup ${a.purchase_date ?? '?'}, zapada ${a.bond_maturity_date ?? '?'}, opr. roku 1: ${a.bond_year1_rate?.toFixed(2) ?? '?'}% [CPI pending]`)
+    }
   }
 
   const sections: string[] = [
@@ -160,6 +193,7 @@ function buildChatSystemContext(params: {
     `=== PORTFEL (${today}) ===`,
     `Łączna wartość: ~${totalValuePLN.toFixed(0)} PLN | USD/PLN: ${usdPln.toFixed(2)} | EUR/PLN: ${eurPln.toFixed(2)}`,
     ...assetLines,
+    ...(bondLines.length > 0 ? ['', `OBLIGACJE SKARBOWE (${bondLines.length} poz.):`, ...bondLines] : []),
   ]
 
   const pfLines = portfolios.map(p => {
@@ -415,7 +449,15 @@ function registerIpcHandlers(): void {
   ipcMain.handle('finance:portfolioHistory', async (_event, portfolioId?: number, period?: string) => {
     const assets = getAllAssets(portfolioId)
     const cashTxs = getCashTransactions(portfolioId)
-    return fetchPortfolioHistory(assets, period ?? '1y', cashTxs)
+    const bondCalc = (asset: any, date: string): number => {
+      try {
+        const lookupMargin = () => getCachedBondMargin(asset.ticker)
+        return calculateBondValue(asset, date, getCpiForYear, getNbpRateForDate, lookupMargin, getCpiForMonth).totalValue
+      } catch {
+        return asset.quantity * 100
+      }
+    }
+    return fetchPortfolioHistory(assets, period ?? '1y', cashTxs, bondCalc)
   })
 
   // ── AI (OpenRouter) ───────────────────────────────────────────────────────
@@ -487,17 +529,28 @@ function registerIpcHandlers(): void {
     const toPln = (amount: number, currency: string) =>
       currency === 'PLN' ? amount : currency === 'USD' ? amount * usdPln : currency === 'EUR' ? amount * eurPln : amount
 
-    // Aktualne kursy wszystkich aktywów
+    // Aktualne kursy aktywów (obligacje pomijamy — brak kwotowań Yahoo Finance)
     const quoteMap = new Map<string, { price: number; currency: string; changePercent: number }>()
-    await Promise.all(assets.map(async a => {
+    await Promise.all(assets.filter(a => a.asset_type !== 'bond').map(async a => {
       try {
         const q = await fetchQuote(a.ticker)
         quoteMap.set(a.ticker, { price: q.price, currency: q.currency, changePercent: q.changePercent })
       } catch { /* pomiń nieudane */ }
     }))
 
-    // Wybierz tickery do historii cen: wspomniane w pytaniu + TOP 5 wg wartości
+    // Wartości bieżące obligacji (obliczane lokalnie z DB)
+    const bondValuesMap = new Map<number, { totalValue: number; bondYearNum: number; currentYearRate: number; maturityDate: string; isMatured: boolean }>()
+    const todayForBonds = new Date().toISOString().split('T')[0]
+    for (const bond of assets.filter(a => a.asset_type === 'bond')) {
+      try {
+        const bv = calculateBondValue(bond, todayForBonds, getCpiForYear, getNbpRateForDate, () => getCachedBondMargin(bond.ticker), getCpiForMonth)
+        bondValuesMap.set(bond.id, bv)
+      } catch { /* PENDING_GUS_DATA lub brak danych */ }
+    }
+
+    // Wybierz tickery do historii cen: wspomniane w pytaniu + TOP 5 wg wartości (bez obligacji)
     const assetValues = assets
+      .filter(a => a.asset_type !== 'bond')
       .map(a => {
         const q = quoteMap.get(a.ticker)
         const price = q ? toPln(q.price, q.currency) : toPln(a.purchase_price, a.currency)
@@ -553,6 +606,7 @@ function registerIpcHandlers(): void {
       usdPln,
       eurPln,
       today: new Date().toISOString().split('T')[0],
+      bondValues: bondValuesMap,
     })
 
     // Konserwacja: usuń stare newsy
@@ -585,8 +639,30 @@ function registerIpcHandlers(): void {
     const apiKey = getSetting('openrouter_api_key')
     if (!apiKey) throw new Error('Brak klucza API OpenRouter.')
 
-    const assets = getAllAssets()
-    if (assets.length === 0) throw new Error('Portfel jest pusty.')
+    const allAssets = getAllAssets()
+    if (allAssets.length === 0) throw new Error('Portfel jest pusty.')
+
+    // Obligacje nie są analizowane przez Worker AI — mają deterministyczną wycenę
+    const bondAssets = allAssets.filter(a => a.asset_type === 'bond')
+    const assets = allAssets.filter(a => a.asset_type !== 'bond')
+
+    // Podsumowanie obligacji dla Manager AI
+    const todayBonds = new Date().toISOString().split('T')[0]
+    let bondTotalPLN = 0
+    const bondSummaryLines: string[] = []
+    for (const a of bondAssets) {
+      const costBasis = a.quantity * 100
+      try {
+        const bv = calculateBondValue(a, todayBonds, getCpiForYear, getNbpRateForDate, () => getCachedBondMargin(a.ticker), getCpiForMonth)
+        bondTotalPLN += bv.totalValue
+        const pnlPLN = bv.totalValue - costBasis
+        bondSummaryLines.push(`- ${a.ticker} (${a.bond_type}, ${a.name}): ${a.quantity} szt., wartość ${bv.totalValue.toFixed(0)} PLN | P&L: ${pnlPLN >= 0 ? '+' : ''}${pnlPLN.toFixed(2)} PLN | Rok ${bv.bondYearNum}, stopa ${(bv.currentYearRate * 100).toFixed(2)}%, zapada ${bv.maturityDate}`)
+      } catch {
+        bondTotalPLN += costBasis
+        bondSummaryLines.push(`- ${a.ticker} (${a.bond_type}, ${a.name}): ${a.quantity} szt., nominał ${costBasis} PLN [CPI pending]`)
+      }
+    }
+    const bondsSummary = bondSummaryLines.length > 0 ? bondSummaryLines.join('\n') : undefined
 
     // Pobierz kursy walut — wszystkie wartości będą w PLN dla spójności
     const [usdPlnQ, eurPlnQ] = await Promise.all([
@@ -650,8 +726,11 @@ function registerIpcHandlers(): void {
       })
     }
 
-    const totalValuePLN = enrichedAssets.reduce((sum, a) => sum + a.quantity * a.currentPrice, 0)
-    const totalCostPLN  = enrichedAssets.reduce((sum, a) => sum + a.quantity * a.purchasePrice, 0)
+    const stocksValuePLN = enrichedAssets.reduce((sum, a) => sum + a.quantity * a.currentPrice, 0)
+    const stocksCostPLN  = enrichedAssets.reduce((sum, a) => sum + a.quantity * a.purchasePrice, 0)
+    const totalValuePLN = stocksValuePLN + bondTotalPLN
+    const totalCostPLN  = stocksCostPLN + bondAssets.reduce((sum, a) => sum + a.quantity * 100, 0)
+    // portfolioSharePercent odnosi się do całości (akcje + obligacje)
     enrichedAssets.forEach(a => {
       a.portfolioSharePercent = (a.quantity * a.currentPrice / totalValuePLN) * 100
     })
@@ -667,9 +746,52 @@ function registerIpcHandlers(): void {
         name: p.name,
         tags: p.tags ? JSON.parse(p.tags) : [],
       })),
+      bondsSummary,
     })
 
     return addReport({ ticker: '__PORTFOLIO__', model: MANAGER_MODEL, report_text: reportText })
+  })
+
+  // ── obligacje skarbowe ─────────────────────────────────────────────────────
+  ipcMain.handle('bonds:getBatchValues', (_event, assetIds: number[]) => {
+    const today = new Date().toISOString().split('T')[0]
+    return assetIds.map(id => {
+      const asset = getAssetById(id)
+      if (!asset || asset.asset_type !== 'bond') return { id, error: 'not_a_bond' }
+      try {
+        const lookupMargin = () => getCachedBondMargin(asset.ticker)
+        return { id, ...calculateBondValue(asset, today, getCpiForYear, getNbpRateForDate, lookupMargin, getCpiForMonth) }
+      } catch (err) {
+        return { id, error: String(err) }
+      }
+    })
+  })
+
+  ipcMain.handle('bonds:syncNbpRate', async () => {
+    const rates = await fetchNbpRates()
+    for (const { date, rate } of rates) upsertNbpRate(date, rate)
+    return { success: true }
+  })
+
+  ipcMain.handle('bonds:updateCpi', (_event, year: number, value: number) => {
+    upsertCpi(year, value)
+    return { success: true }
+  })
+
+  ipcMain.handle('bonds:fetchYear1Rate', async (_event, ticker: string) => {
+    const t = ticker.toUpperCase()
+    const cachedRate = getCachedBondRate(t)
+    const cachedMargin = getCachedBondMargin(t)
+
+    // Dla obligacji indeksowanych inflacją wymagamy też marży w cache
+    const needsMargin = /^(COI|EDO|ROS|ROD)/.test(t)
+    if (cachedRate !== null && (!needsMargin || cachedMargin !== null)) return cachedRate
+
+    // Pobierz z obligacjeskarbowe.pl (rate + margin zawsze razem)
+    const { year1Rate, margin } = await fetchBondYear1Rate(t)
+    if (year1Rate !== null) cacheBondRate(t, year1Rate)
+    if (margin !== null) cacheBondMargin(t, margin)
+    return cachedRate ?? year1Rate
   })
 }
 
@@ -679,6 +801,30 @@ app.whenReady().then(() => {
   initDatabase()
   registerIpcHandlers()
   createWindow()
+  // Synchronizuj stopę NBP asynchronicznie — nie blokuje startu
+  fetchNbpRates().then(rates => {
+    for (const { date, rate } of rates) upsertNbpRate(date, rate)
+  }).catch(() => {})
+
+  // Synchronizuj roczne CPI z GUS BDL — aktualizuje historyczne dane inflacji
+  fetchGusAnnualCpi().then(cpiData => {
+    for (const { year, value } of cpiData) upsertCpi(year, value)
+  }).catch(() => {})
+
+  // Synchronizuj miesięczne CPI ze stooq — dokładne dane do obliczeń obligacji
+  fetchMonthlyCpi().then(cpiData => {
+    for (const { year, month, value } of cpiData) upsertMonthlyCpi(year, month, value)
+  }).catch(() => {})
+
+  // Pobierz brakujące marże dla obligacji indeksowanych inflacją (np. po upgradezie)
+  const INFLATION_TYPES = new Set(['COI', 'EDO', 'ROS', 'ROD'])
+  getAllAssets()
+    .filter(a => a.asset_type === 'bond' && INFLATION_TYPES.has(a.bond_type ?? '') && getCachedBondMargin(a.ticker) === null)
+    .forEach(bond => {
+      fetchBondYear1Rate(bond.ticker)
+        .then(({ margin }) => { if (margin !== null) cacheBondMargin(bond.ticker, margin) })
+        .catch(() => {})
+    })
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

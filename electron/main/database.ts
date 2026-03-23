@@ -17,7 +17,11 @@ export interface DBPortfolioAsset {
   purchase_date: string
   created_at: string
   portfolio_id: number
-  gold_grams: number | null  // gramy czystego metalu na monetę; null = kontrakt giełdowy
+  gold_grams: number | null          // gramy czystego metalu na monetę; null = kontrakt giełdowy
+  asset_type: 'stock' | 'bond'       // domyślnie 'stock'
+  bond_type: string | null           // 'EDO'|'COI'|'OTS'|'ROR'|'DOR'|'TOS'|'ROS'|'ROD'
+  bond_year1_rate: number | null     // stopa roku 1 w %, np. 6.25
+  bond_maturity_date: string | null  // 'YYYY-MM-DD'
 }
 
 export interface DBPortfolio {
@@ -78,6 +82,10 @@ export interface DBNewPortfolioAsset {
   purchase_date?: string
   gold_grams?: number | null
   portfolio_id?: number
+  asset_type?: 'stock' | 'bond'
+  bond_type?: string | null
+  bond_year1_rate?: number | null
+  bond_maturity_date?: string | null
 }
 
 export interface DBNewTransaction {
@@ -121,6 +129,7 @@ export function initDatabase(): void {
 
   createTables()
   migrateDatabase()
+  seedBondReferenceData()
 }
 
 function createTables(): void {
@@ -212,11 +221,34 @@ function createTables(): void {
       INSERT INTO news_archive_fts(news_archive_fts, rowid, title, description, source, region)
       VALUES ('delete', old.id, old.title, old.description, old.source, old.region);
     END;
+
+    CREATE TABLE IF NOT EXISTS bond_reference_data (
+      id        INTEGER PRIMARY KEY AUTOINCREMENT,
+      data_type TEXT NOT NULL,
+      year      INTEGER,
+      date      TEXT,
+      value     REAL NOT NULL,
+      UNIQUE(data_type, year, date)
+    );
   `)
 }
 
 function migrateDatabase(): void {
   const cols = db.prepare("PRAGMA table_info(portfolio_assets)").all() as { name: string }[]
+
+  if (!cols.find(c => c.name === 'asset_type')) {
+    db.exec(`ALTER TABLE portfolio_assets ADD COLUMN asset_type TEXT DEFAULT 'stock'`)
+  }
+  if (!cols.find(c => c.name === 'bond_type')) {
+    db.exec(`ALTER TABLE portfolio_assets ADD COLUMN bond_type TEXT`)
+  }
+  if (!cols.find(c => c.name === 'bond_year1_rate')) {
+    db.exec(`ALTER TABLE portfolio_assets ADD COLUMN bond_year1_rate REAL`)
+  }
+  if (!cols.find(c => c.name === 'bond_maturity_date')) {
+    db.exec(`ALTER TABLE portfolio_assets ADD COLUMN bond_maturity_date TEXT`)
+  }
+
   if (!cols.find(c => c.name === 'purchase_date')) {
     db.exec(`ALTER TABLE portfolio_assets ADD COLUMN purchase_date TEXT`)
     db.exec(`UPDATE portfolio_assets SET purchase_date = date(created_at) WHERE purchase_date IS NULL`)
@@ -305,14 +337,18 @@ export function addAsset(asset: DBNewPortfolioAsset): DBPortfolioAsset {
   }
 
   const stmt = db.prepare(`
-    INSERT INTO portfolio_assets (ticker, name, quantity, purchase_price, currency, purchase_date, gold_grams, portfolio_id)
-    VALUES (@ticker, @name, @quantity, @purchase_price, @currency, @purchase_date, @gold_grams, @portfolio_id)
+    INSERT INTO portfolio_assets (ticker, name, quantity, purchase_price, currency, purchase_date, gold_grams, portfolio_id, asset_type, bond_type, bond_year1_rate, bond_maturity_date)
+    VALUES (@ticker, @name, @quantity, @purchase_price, @currency, @purchase_date, @gold_grams, @portfolio_id, @asset_type, @bond_type, @bond_year1_rate, @bond_maturity_date)
   `)
   const result = stmt.run({
     ...asset,
     purchase_date: asset.purchase_date ?? new Date().toISOString().split('T')[0],
     gold_grams: asset.gold_grams ?? null,
     portfolio_id: asset.portfolio_id ?? 1,
+    asset_type: asset.asset_type ?? 'stock',
+    bond_type: asset.bond_type ?? null,
+    bond_year1_rate: asset.bond_year1_rate ?? null,
+    bond_maturity_date: asset.bond_maturity_date ?? null,
   })
   return getAssetById(result.lastInsertRowid as number)!
 }
@@ -573,4 +609,112 @@ export function searchNews(query: string, limit = 15): DBNewsItem[] {
 export function pruneOldNews(days = 90): void {
   const cutoff = `-${days} days`
   db.prepare(`DELETE FROM news_archive WHERE created_at < datetime('now', ?)`).run(cutoff)
+}
+
+// ─── bond_reference_data ──────────────────────────────────────────────────────
+
+export function getCpiForYear(year: number): number | null {
+  const row = db.prepare(
+    `SELECT value FROM bond_reference_data WHERE data_type = 'CPI_ANNUAL' AND year = ?`
+  ).get(year) as { value: number } | undefined
+  return row?.value ?? null
+}
+
+export function getNbpRateForDate(referenceDate: string): number | null {
+  // Najnowsza stopa NBP obowiązująca w dniu referenceDate lub wcześniej
+  const row = db.prepare(`
+    SELECT value FROM bond_reference_data
+    WHERE data_type = 'NBP_RATE' AND date <= ?
+    ORDER BY date DESC LIMIT 1
+  `).get(referenceDate) as { value: number } | undefined
+  return row?.value ?? null
+}
+
+export function upsertCpi(year: number, value: number): void {
+  db.prepare(`
+    INSERT INTO bond_reference_data (data_type, year, value)
+    VALUES ('CPI_ANNUAL', ?, ?)
+    ON CONFLICT(data_type, year, date) DO UPDATE SET value = excluded.value
+  `).run(year, value)
+}
+
+export function upsertNbpRate(date: string, value: number): void {
+  db.prepare(`
+    INSERT INTO bond_reference_data (data_type, date, value)
+    VALUES ('NBP_RATE', ?, ?)
+    ON CONFLICT(data_type, year, date) DO UPDATE SET value = excluded.value
+  `).run(date, value)
+}
+
+export function getCpiForMonth(year: number, month: number): number | null {
+  const dateKey = `${year}-${String(month).padStart(2, '0')}`
+  const row = db.prepare(
+    `SELECT value FROM bond_reference_data WHERE data_type = 'CPI_MONTHLY' AND year = ? AND date = ?`
+  ).get(year, dateKey) as { value: number } | undefined
+  return row?.value ?? null
+}
+
+export function upsertMonthlyCpi(year: number, month: number, value: number): void {
+  const dateKey = `${year}-${String(month).padStart(2, '0')}`
+  db.prepare(`
+    INSERT INTO bond_reference_data (data_type, year, date, value)
+    VALUES ('CPI_MONTHLY', ?, ?, ?)
+    ON CONFLICT(data_type, year, date) DO UPDATE SET value = excluded.value
+  `).run(year, dateKey, value)
+}
+
+export function getCachedBondRate(ticker: string): number | null {
+  const row = db.prepare(
+    `SELECT value FROM bond_reference_data WHERE data_type = 'BOND_YEAR1_RATE' AND date = ?`
+  ).get(ticker.toUpperCase()) as { value: number } | undefined
+  return row?.value ?? null
+}
+
+export function cacheBondRate(ticker: string, rate: number): void {
+  db.prepare(`
+    INSERT INTO bond_reference_data (data_type, date, value)
+    VALUES ('BOND_YEAR1_RATE', ?, ?)
+    ON CONFLICT(data_type, year, date) DO UPDATE SET value = excluded.value
+  `).run(ticker.toUpperCase(), rate)
+}
+
+export function getCachedBondMargin(ticker: string): number | null {
+  const row = db.prepare(
+    `SELECT value FROM bond_reference_data WHERE data_type = 'BOND_MARGIN' AND date = ?`
+  ).get(ticker.toUpperCase()) as { value: number } | undefined
+  return row?.value ?? null
+}
+
+export function cacheBondMargin(ticker: string, margin: number): void {
+  db.prepare(`
+    INSERT INTO bond_reference_data (data_type, date, value)
+    VALUES ('BOND_MARGIN', ?, ?)
+    ON CONFLICT(data_type, year, date) DO UPDATE SET value = excluded.value
+  `).run(ticker.toUpperCase(), margin)
+}
+
+function seedBondReferenceData(): void {
+  const cpiData: Array<[number, number]> = [
+    [2015, -0.9],
+    [2016, -0.6],
+    [2017, 2.0],
+    [2018, 1.6],
+    [2019, 2.3],
+    [2020, 3.4],
+    [2021, 5.1],
+    [2022, 14.4],
+    [2023, 11.4],
+    [2024, 3.6],
+    [2025, 4.9],
+  ]
+  const stmt = db.prepare(`
+    INSERT OR IGNORE INTO bond_reference_data (data_type, year, value)
+    VALUES ('CPI_ANNUAL', ?, ?)
+  `)
+  const seed = db.transaction(() => {
+    for (const [year, value] of cpiData) {
+      stmt.run(year, value)
+    }
+  })
+  seed()
 }

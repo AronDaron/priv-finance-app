@@ -199,10 +199,11 @@ export interface PortfolioAnalysisParams {
   totalValuePLN: number
   totalPnlPercent: number
   portfolios?: Array<{ id: number; name: string; tags?: string[] }>
+  bondsSummary?: string  // Podsumowanie obligacji (bez Worker AI — wycena deterministyczna)
 }
 
 export async function analyzePortfolio(params: PortfolioAnalysisParams): Promise<string> {
-  const { apiKey, assets, totalValuePLN, totalPnlPercent, portfolios } = params
+  const { apiKey, assets, totalValuePLN, totalPnlPercent, portfolios, bondsSummary } = params
 
   const systemPrompt = `Jesteś zarządzającym portfelem inwestycyjnym. Piszesz po polsku. Twoje analizy są konkretne i actionable. Zawsze pisz pełną analizę z 4 sekcjami używając markdown: **bold** dla kluczowych wartości i wniosków, listy punktowane dla rekomendacji i ryzyk. Nigdy nie skracaj analizy.`
 
@@ -251,8 +252,8 @@ export async function analyzePortfolio(params: PortfolioAnalysisParams): Promise
 
   const userPrompt = `Oceń poniższy portfel inwestycyjny.
 ${portfolioContextSection}${physicalMetalNote}
-SKŁAD PORTFELA (${assets.length} pozycji):
-${assetLines}
+SKŁAD PORTFELA (${assets.length} pozycji${bondsSummary ? ' akcje/ETF/metal' : ''}):
+${assetLines}${bondsSummary ? `\nOBLIGACJE SKARBOWE (wycena deterministyczna, bez analizy Worker):\n${bondsSummary}` : ''}
 
 ŁĄCZNA WARTOŚĆ: ~${totalValuePLN.toFixed(0)} PLN
 ŁĄCZNY P&L: ${totalPnlPercent.toFixed(2)}%

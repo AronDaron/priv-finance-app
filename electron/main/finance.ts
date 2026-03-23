@@ -179,7 +179,7 @@ export async function fetchAssetMeta(ticker: string): Promise<{ region: string; 
 
     let region = 'Inne'
     if (quote.quoteType === 'FUTURE') {
-      region = 'Surowce'
+      region = 'Świat'
     } else if (quote.quoteType === 'ETF') {
       const name = (quote.longName ?? quote.shortName ?? '').toLowerCase()
       region = /world|global|international|msci world|all country|emerging/i.test(name)
@@ -273,11 +273,15 @@ export function calculateTechnicals(candles: OHLCCandle[]): TechnicalIndicators 
 }
 
 export async function fetchPortfolioHistory(
-  assets: Array<{ ticker: string; quantity: number; currency: string; purchase_date?: string; gold_grams?: number | null }>,
+  assets: Array<{ ticker: string; quantity: number; currency: string; purchase_date?: string; gold_grams?: number | null; asset_type?: string; bond_year1_rate?: number | null }>,
   period: string = '1y',
-  cashTransactions: Array<{ type: 'deposit' | 'withdrawal'; amount: number; currency: string; date: string }> = []
+  cashTransactions: Array<{ type: 'deposit' | 'withdrawal'; amount: number; currency: string; date: string }> = [],
+  bondValueCalc?: (asset: any, date: string) => number
 ): Promise<{ date: string; value: number }[]> {
   if (assets.length === 0) return []
+
+  const bondAssets = assets.filter(a => a.asset_type === 'bond')
+  const stockAssets = assets.filter(a => a.asset_type !== 'bond')
 
   const yf = await getYF()
   const now = new Date()
@@ -285,7 +289,7 @@ export async function fetchPortfolioHistory(
   const period1 = new Date(now.getTime() - periodDays * 86_400_000)
 
   const histories = await Promise.all(
-    assets.map(async (asset) => {
+    stockAssets.map(async (asset) => {
       try {
         const result = await yf.chart(asset.ticker, { period1, period2: now, interval: '1d' })
         const quoteCurrency: string = (result.meta as any)?.currency ?? asset.currency
@@ -314,6 +318,12 @@ export async function fetchPortfolioHistory(
   histories.forEach(({ hist }) =>
     hist.forEach((h: any) => dateSet.add(h.date.toISOString().split('T')[0]))
   )
+  // Gdy brak danych rynkowych (np. sam portfel obligacji), generuj zakres dat dla okresu
+  if (dateSet.size === 0 && bondAssets.length > 0) {
+    for (let d = new Date(period1); d <= now; d.setDate(d.getDate() + 1)) {
+      dateSet.add(d.toISOString().split('T')[0])
+    }
+  }
   const dates = Array.from(dateSet).sort()
 
   // Dla benchmarku: zawsze używaj aktualnych ilości dla wszystkich dat historycznych.
@@ -329,6 +339,13 @@ export async function fetchPortfolioHistory(
         const ozPerCoin = asset.gold_grams ? asset.gold_grams / 31.1035 : null
         const pricePerUnit = ozPerCoin ? entry.close * ozPerCoin : entry.close
         totalPLN += asset.quantity * pricePerUnit * toPlnRate(quoteCurrency)
+      }
+    })
+    // Obligacje: faktyczna wartość przez bondValueCalc (z narosłymi odsetkami), fallback: nominał
+    bondAssets.forEach(bond => {
+      const purchaseDate = bond.purchase_date ? bond.purchase_date.split('T')[0] : ''
+      if (!purchaseDate || purchaseDate <= date) {
+        totalPLN += bondValueCalc ? bondValueCalc(bond, date) : bond.quantity * 100
       }
     })
     // Saldo gotówki na dany dzień

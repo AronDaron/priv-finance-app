@@ -3,6 +3,44 @@ import type { IncomingMessage } from 'http'
 import type { HistoryPeriod } from '../src/lib/types'
 import { gramsToTroyOz } from '../src/lib/types'
 
+// ─── Cache danych CPI dla dev mode ───────────────────────────────────────────
+// Pobiera prawdziwe dane z GUS BDL tak jak tryb Electron, bez hardkodowanych wartości
+
+const CPI_ANNUAL_FALLBACK: Record<number, number> = {
+  2015: -0.9, 2016: -0.6, 2017: 2.0, 2018: 1.6, 2019: 2.3,
+  2020: 3.4, 2021: 5.1, 2022: 14.4, 2023: 11.4, 2024: 3.6, 2025: 4.9,
+}
+
+let _cpiCache: { annual: Record<number, number>; monthly: Record<string, number>; fetchedAt: number } | null = null
+const CPI_CACHE_TTL_MS = 60 * 60 * 1000  // 1 godzina
+
+async function getDevCpiData(): Promise<{ annual: Record<number, number>; monthly: Record<string, number> }> {
+  const now = Date.now()
+  if (_cpiCache && now - _cpiCache.fetchedAt < CPI_CACHE_TTL_MS) return _cpiCache
+
+  try {
+    const { fetchGusAnnualCpi, fetchMonthlyCpi } = await import('./main/bonds')
+    const [annualData, monthlyData] = await Promise.all([
+      fetchGusAnnualCpi().catch(() => []),
+      fetchMonthlyCpi().catch(() => []),
+    ])
+
+    const annual = { ...CPI_ANNUAL_FALLBACK }
+    for (const { year, value } of annualData) annual[year] = value
+
+    const monthly: Record<string, number> = {}
+    for (const { year, month, value } of monthlyData) {
+      monthly[`${year}-${String(month).padStart(2, '0')}`] = value
+    }
+
+    _cpiCache = { annual, monthly, fetchedAt: now }
+  } catch {
+    _cpiCache = { annual: { ...CPI_ANNUAL_FALLBACK }, monthly: {}, fetchedAt: now }
+  }
+
+  return _cpiCache
+}
+
 function readBody(req: IncomingMessage): Promise<Record<string, string>> {
   return new Promise((resolve, reject) => {
     let data = ''
@@ -66,12 +104,25 @@ export function financeDevApiPlugin(): Plugin {
               break
             case '/portfolio-history': {
               const body = await readBody(req)
-              const assets: Array<{ ticker: string; quantity: number; currency: string; purchase_date?: string; gold_grams?: number | null }> =
-                JSON.parse(body.assets ?? '[]')
+              const assets = JSON.parse(body.assets ?? '[]')
               const cashTxs: Array<{ type: 'deposit' | 'withdrawal'; amount: number; currency: string; date: string }> =
                 JSON.parse(body.cashTransactions ?? '[]')
               const pfPeriod = body.period ?? '1y'
-              data = await finance.fetchPortfolioHistory(assets, pfPeriod, cashTxs)
+              const marginCache: Record<string, number> = body.marginCache ? JSON.parse(body.marginCache) : {}
+              const { annual: annualCpi, monthly: monthlyCpi } = await getDevCpiData()
+              const { calculateBondValue: calcBV } = await import('./main/bonds')
+              const lookupCpi = (year: number) => annualCpi[year] ?? null
+              const lookupMonthlyCpi = (year: number, month: number) =>
+                monthlyCpi[`${year}-${String(month).padStart(2, '0')}`] ?? null
+              const bondCalc = (asset: any, date: string): number => {
+                try {
+                  const lookupMargin = () => marginCache[(asset.ticker as string)?.toUpperCase()] ?? null
+                  return calcBV(asset, date, lookupCpi, () => 5.75, lookupMargin, lookupMonthlyCpi).totalValue
+                } catch {
+                  return asset.quantity * 100
+                }
+              }
+              data = await finance.fetchPortfolioHistory(assets, pfPeriod, cashTxs, bondCalc)
               break
             }
             case '/portfolios': {
@@ -376,6 +427,52 @@ export function financeDevApiPlugin(): Plugin {
               const headlines: string[] = headlinesJson ? JSON.parse(headlinesJson) : []
               const text = await ar({ apiKey: ak ?? '', region, marketData: md, newsHeadlines: headlines })
               data = { text, model: wm }
+              break
+            }
+            case '/bonds/batch-values': {
+              const body = await readBody(req)
+              const assetIds: number[] = body.assetIds ? JSON.parse(body.assetIds) : []
+              const assetsData: Array<Record<string, unknown>> = body.assets ? JSON.parse(body.assets) : []
+              const { calculateBondValue } = await import('./main/bonds')
+              const today = new Date().toISOString().split('T')[0]
+
+              // Pobierz prawdziwe dane CPI z GUS BDL (cache 1h) — identycznie jak tryb Electron
+              const { annual: annualCpi, monthly: monthlyCpi } = await getDevCpiData()
+              const lookupCpi = (year: number) => annualCpi[year] ?? null
+              const lookupNbpRate = (_date: string) => 5.75  // fallback — brak DB w dev
+              const lookupMonthlyCpi = (year: number, month: number) =>
+                monthlyCpi[`${year}-${String(month).padStart(2, '0')}`] ?? null
+
+              // Cache marż pobranych przy dodawaniu obligacji (localStorage)
+              const marginCache: Record<string, number> = body.marginCache ? JSON.parse(body.marginCache) : {}
+              data = assetsData
+                .filter(a => assetIds.includes(a.id as number))
+                .map(a => {
+                  try {
+                    const ticker = (a.ticker as string ?? '').toUpperCase()
+                    const lookupMargin = () => marginCache[ticker] ?? null
+                    return { id: a.id, ...calculateBondValue(
+                      a as unknown as Parameters<typeof calculateBondValue>[0],
+                      today, lookupCpi, lookupNbpRate, lookupMargin, lookupMonthlyCpi
+                    )}
+                  } catch (e) {
+                    return { id: a.id, error: String(e) }
+                  }
+                })
+              break
+            }
+            case '/bonds/sync-nbp': {
+              // Dev mode: brak SQLite, tylko potwierdzenie
+              data = { success: true }
+              break
+            }
+            case '/bonds/fetch-rate': {
+              const body = await readBody(req)
+              const { ticker } = body
+              if (!ticker) { res.statusCode = 400; res.end(JSON.stringify({ error: 'Brak ticker' })); return }
+              const { fetchBondYear1Rate } = await import('./main/bonds')
+              const bondData = await fetchBondYear1Rate(ticker)
+              data = { rate: bondData.year1Rate, margin: bondData.margin }
               break
             }
             default:

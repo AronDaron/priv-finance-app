@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { searchTickers } from '../lib/api'
 import type { SearchResult } from '../lib/types'
+import { parseBondTickerClient, BOND_TYPES } from '../lib/types'
+import type { BondType } from '../lib/types'
 
 interface Props {
   onSelect: (ticker: string, name: string) => void
@@ -17,6 +19,21 @@ export function StockSearch({ onSelect, placeholder = 'Szukaj spółki (np. AAPL
 
   const doSearch = useCallback(async (q: string) => {
     if (q.trim().length < 2) { setResults([]); setIsOpen(false); return }
+
+    // Detect Polish bond tickers (e.g. EDO0336) — yahoo-finance2 doesn't know them
+    const bondParsed = parseBondTickerClient(q.trim().toUpperCase())
+    if (bondParsed) {
+      const bondInfo = BOND_TYPES[bondParsed.bondType]
+      setResults([{
+        ticker: q.trim().toUpperCase(),
+        name: bondInfo.name,
+        exchange: 'MF',
+        type: `Obligacja ${bondInfo.period}`,
+      }])
+      setIsOpen(true)
+      return
+    }
+
     setLoading(true)
     try {
       const data = await searchTickers(q)

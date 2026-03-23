@@ -31,6 +31,7 @@ import type {
   GlobalAnalysis,
   RegionId,
   ChatMessage,
+  BondValueResult,
 } from './types'
 
 export type { ChatMessage }
@@ -98,6 +99,12 @@ declare global {
       }
       globalAI: {
         analyzeRegion(regionId: string, newsHeadlines: string[]): Promise<{ text: string; model: string }>
+      }
+      bonds: {
+        getBatchValues(assetIds: number[]): Promise<Array<{ id: number } & BondValueResult & { error?: string }>>
+        syncNbpRate(): Promise<{ success: boolean }>
+        updateCpi(year: number, value: number): Promise<{ success: boolean }>
+        fetchYear1Rate(ticker: string): Promise<number | null>
       }
     }
   }
@@ -524,7 +531,7 @@ export async function getPortfolioHistory(portfolioId?: number, period: string =
   const cashTransactions = portfolioId !== undefined
     ? allCashTxs.filter(t => t.portfolio_id === portfolioId)
     : allCashTxs
-  return devApiPost('/portfolio-history', { assets: JSON.stringify(assets), cashTransactions: JSON.stringify(cashTransactions), period })
+  return devApiPost('/portfolio-history', { assets: JSON.stringify(assets), cashTransactions: JSON.stringify(cashTransactions), period, marginCache: JSON.stringify(getCachedBondMargins()) })
 }
 
 export async function analyzeStock(ticker: string): Promise<AIReport> {
@@ -615,4 +622,97 @@ export async function chatPortfolio(messages: ChatMessage[]): Promise<string> {
     reports: JSON.stringify(reports),
     apiKey: apiKey ?? '',
   })
+}
+
+// ─── API: obligacje skarbowe ──────────────────────────────────────────────────
+
+export interface BondValuesResult {
+  values: Map<number, BondValueResult>
+  pending: Map<number, string>  // id → miesiąc CPI np. '2026-01'
+}
+
+export async function getBondValues(
+  bondAssets: PortfolioAsset[]
+): Promise<BondValuesResult> {
+  const empty: BondValuesResult = { values: new Map(), pending: new Map() }
+  if (bondAssets.length === 0) return empty
+
+  const assetIds = bondAssets.map(a => a.id)
+
+  const parseResults = (results: Array<{ id: number } & Partial<BondValueResult> & { error?: string }>): BondValuesResult => {
+    const values = new Map<number, BondValueResult>()
+    const pending = new Map<number, string>()
+    for (const r of results) {
+      if (!r.error) {
+        values.set(r.id, r as unknown as BondValueResult)
+      } else if (r.error.includes('PENDING_GUS_DATA:')) {
+        const month = r.error.split('PENDING_GUS_DATA:')[1]
+        pending.set(r.id, month)
+      }
+    }
+    return { values, pending }
+  }
+
+  if (isElectron()) {
+    const results = await window.electronAPI!.bonds.getBatchValues(assetIds)
+    return parseResults(results)
+  }
+
+  // Dev mode: wyślij dane asset do /api/bonds/batch-values
+  const results = await devApiPost<Array<{ id: number } & BondValueResult & { error?: string }>>(
+    '/bonds/batch-values',
+    {
+      assetIds: JSON.stringify(assetIds),
+      assets: JSON.stringify(bondAssets),
+      marginCache: JSON.stringify(getCachedBondMargins()),
+    }
+  )
+  return parseResults(results)
+}
+
+export async function syncBondNbpRate(): Promise<void> {
+  if (isElectron()) {
+    await window.electronAPI!.bonds.syncNbpRate()
+  }
+  // Dev mode: wywołaj endpoint (opcjonalne — NBP API dostępne bezpośrednio z Node.js w pluginie)
+  await devApiPost('/bonds/sync-nbp', {}).catch(() => {})
+}
+
+const LS_BOND_RATES = 'fp_bond_rates'
+const LS_BOND_MARGINS = 'fp_bond_margins'
+
+export async function fetchBondYear1Rate(ticker: string): Promise<number | null> {
+  const t = ticker.toUpperCase()
+
+  // Electron: cache SQLite + pobieranie ze strony obsługiwane w main process
+  if (isElectron()) {
+    return window.electronAPI!.bonds.fetchYear1Rate(t)
+  }
+
+  // Dev: sprawdź cache localStorage
+  const cachedRates = lsGet<Record<string, number>>(LS_BOND_RATES, {})
+  const cachedMargins = lsGet<Record<string, number>>(LS_BOND_MARGINS, {})
+
+  // Dla obligacji indeksowanych inflacją potrzebujemy OBIE wartości (stopę + marżę)
+  const needsMargin = /^(COI|EDO|ROS|ROD)/.test(t)
+  if (cachedRates[t] !== undefined && (!needsMargin || cachedMargins[t] !== undefined)) {
+    return cachedRates[t]
+  }
+
+  try {
+    const result = await devApiPost<{ rate: number | null; margin: number | null }>('/bonds/fetch-rate', { ticker: t })
+    if (result.rate !== null) {
+      lsSet(LS_BOND_RATES, { ...lsGet<Record<string, number>>(LS_BOND_RATES, {}), [t]: result.rate })
+    }
+    if (result.margin !== null) {
+      lsSet(LS_BOND_MARGINS, { ...lsGet<Record<string, number>>(LS_BOND_MARGINS, {}), [t]: result.margin })
+    }
+    return cachedRates[t] ?? result.rate
+  } catch {
+    return cachedRates[t] ?? null
+  }
+}
+
+export function getCachedBondMargins(): Record<string, number> {
+  return lsGet<Record<string, number>>(LS_BOND_MARGINS, {})
 }

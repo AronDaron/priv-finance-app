@@ -2,17 +2,60 @@
 // Centralne typy danych dla całej aplikacji.
 // Używane przez: src/lib/api.ts, src/components/**, src/App.tsx
 
+// ─── Obligacje skarbowe ───────────────────────────────────────────────────────
+
+export type BondType = 'OTS' | 'ROR' | 'DOR' | 'TOS' | 'COI' | 'EDO' | 'ROS' | 'ROD'
+
+export const BOND_TYPES: Record<BondType, { name: string; period: string; inflationLinked: boolean }> = {
+  OTS: { name: 'Trzymiesięczne',    period: '3M',  inflationLinked: false },
+  ROR: { name: 'Roczne',            period: '1Y',  inflationLinked: false },
+  DOR: { name: 'Dwuletnie',         period: '2Y',  inflationLinked: false },
+  TOS: { name: 'Trzyletnie',        period: '3Y',  inflationLinked: false },
+  COI: { name: 'Czteroletnie',      period: '4Y',  inflationLinked: true  },
+  EDO: { name: 'Dziesięcioletnie',  period: '10Y', inflationLinked: true  },
+  ROS: { name: 'Sześcioletnie',     period: '6Y',  inflationLinked: true  },
+  ROD: { name: 'Dwunastoletnie',    period: '12Y', inflationLinked: true  },
+}
+
+export interface BondValueResult {
+  currentValuePerBond: number  // PLN — wartość jednej obligacji
+  totalValue: number           // PLN — wartość całej pozycji
+  baseValue: number            // nominał + odsetki z zakończonych lat
+  accruedInterest: number      // odsetki narosłe w bieżącym roku
+  bondYearNum: number          // aktualny rok obligacji (1, 2, …)
+  currentYearRate: number      // stopa bieżącego roku (ułamek, np. 0.0625)
+  maturityDate: string         // 'YYYY-MM-DD'
+  isMatured: boolean           // czy obligacja zapadła
+}
+
+// Parsuje ticker obligacji: 'EDO0336' → { bondType: 'EDO', maturityMonth: 3, maturityYear: 2036 }
+export function parseBondTickerClient(ticker: string): { bondType: BondType; maturityMonth: number; maturityYear: number } | null {
+  const match = ticker.match(/^([A-Z]{3})(\d{2})(\d{2})$/)
+  if (!match) return null
+  const bondType = match[1] as BondType
+  if (!(bondType in BOND_TYPES)) return null
+  return {
+    bondType,
+    maturityMonth: parseInt(match[2], 10),
+    maturityYear: 2000 + parseInt(match[3], 10),
+  }
+}
+
 export interface PortfolioAsset {
   id: number
-  ticker: string        // np. "AAPL", "PKOBP.WA", "GC=F"
+  ticker: string        // np. "AAPL", "PKOBP.WA", "GC=F", "EDO0336"
   name: string          // pełna nazwa: "Apple Inc."
-  quantity: number      // ilość jednostek/akcji (dla metali fizycznych: liczba monet)
-  purchase_price: number // średnia cena zakupu (PLN lub USD)
+  quantity: number      // ilość jednostek/akcji (dla metali fizycznych: liczba monet; dla obligacji: liczba sztuk)
+  purchase_price: number // średnia cena zakupu (PLN lub USD); dla obligacji zawsze 100 PLN
   currency: string      // "USD" | "PLN" | "EUR"
   purchase_date?: string // format: "YYYY-MM-DD"
   created_at: string    // ISO 8601: "2024-01-15T10:30:00Z"
   portfolio_id?: number
   gold_grams?: number   // gramy czystego metalu na monetę (dla GC=F i SI=F fizycznych); null = giełdowy kontrakt
+  asset_type?: 'stock' | 'bond'         // domyślnie 'stock'
+  bond_type?: BondType                  // np. 'EDO', 'COI'
+  bond_year1_rate?: number              // stopa roku 1 w %, np. 6.25
+  bond_maturity_date?: string           // 'YYYY-MM-DD' — data zapadalności
 }
 
 export interface Portfolio {

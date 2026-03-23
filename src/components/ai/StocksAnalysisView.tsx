@@ -120,7 +120,7 @@ export default function StocksAnalysisView() {
             <p className="text-gray-500 text-sm italic">Brak spółek w portfelu.</p>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-              {assets.map(asset => {
+              {assets.filter(a => a.asset_type !== 'bond').map(asset => {
                 const hasReport = !!stockReports[asset.ticker]
                 const isSelected = selected?.ticker === asset.ticker
                 return (

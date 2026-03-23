@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getAssets, getQuote, getAssetMeta, getFundamentals, getCashAccounts } from '../../lib/api'
+import { getAssets, getQuote, getAssetMeta, getFundamentals, getCashAccounts, getBondValues } from '../../lib/api'
 import type { EnrichedAsset, CashAccount } from '../../lib/types'
-import { gramsToTroyOz } from '../../lib/types'
+import { gramsToTroyOz, BOND_TYPES } from '../../lib/types'
+import type { BondType } from '../../lib/types'
 import { usePortfolio } from '../../contexts/PortfolioContext'
 import SummaryCards from './SummaryCards'
 import AllocationPieChart from './AllocationPieChart'
@@ -54,41 +55,68 @@ export default function DashboardView() {
         return 1
       }
 
-      const enriched = await Promise.all(
-        list.map(async (asset) => {
-          const [q, meta, fund] = await Promise.all([
-            getQuote(asset.ticker).catch(() => null),
-            getAssetMeta(asset.ticker).catch(() => ({ region: 'Inne', assetType: 'Akcje', sector: null })),
-            getFundamentals(asset.ticker).catch(() => null),
-          ])
-          const spotPrice     = q?.price ?? asset.purchase_price
-          const quoteCurrency = q?.currency ?? asset.currency
-          const ozPerCoin     = asset.gold_grams ? gramsToTroyOz(asset.gold_grams) : null
-          const currentPrice  = ozPerCoin ? spotPrice * ozPerCoin : spotPrice
+      const bondAssets = list.filter(a => a.asset_type === 'bond')
+      const stockAssets = list.filter(a => a.asset_type !== 'bond')
 
-          const currentValue   = asset.quantity * currentPrice
-          const valueInPLN     = currentValue * toPlnRate(quoteCurrency)
-          const costBasis      = asset.quantity * asset.purchase_price
-          const costBasisInPLN = costBasis * toPlnRate(asset.currency)
-          const annualDividendPLN = (fund?.dividendRate ?? 0) * asset.quantity * toPlnRate(quoteCurrency)
+      const [stockEnriched, bondValuesResult] = await Promise.all([
+        Promise.all(
+          stockAssets.map(async (asset) => {
+            const [q, meta, fund] = await Promise.all([
+              getQuote(asset.ticker).catch(() => null),
+              getAssetMeta(asset.ticker).catch(() => ({ region: 'Inne', assetType: 'Akcje', sector: null })),
+              getFundamentals(asset.ticker).catch(() => null),
+            ])
+            const spotPrice     = q?.price ?? asset.purchase_price
+            const quoteCurrency = q?.currency ?? asset.currency
+            const ozPerCoin     = asset.gold_grams ? gramsToTroyOz(asset.gold_grams) : null
+            const currentPrice  = ozPerCoin ? spotPrice * ozPerCoin : spotPrice
 
-          return {
-            ...asset,
-            currentPrice,
-            currentValue,
-            valueInPLN,
-            costBasis,
-            costBasisInPLN,
-            pnl: valueInPLN - costBasisInPLN,
-            quoteCurrency,
-            annualDividendPLN,
-            region: meta.region,
-            assetType: meta.assetType,
-            sector: meta.sector ?? undefined,
-          } as EnrichedAsset
-        })
-      )
-      setAssets(enriched)
+            const currentValue   = asset.quantity * currentPrice
+            const valueInPLN     = currentValue * toPlnRate(quoteCurrency)
+            const costBasis      = asset.quantity * asset.purchase_price
+            const costBasisInPLN = costBasis * toPlnRate(asset.currency)
+            const annualDividendPLN = (fund?.dividendRate ?? 0) * asset.quantity * toPlnRate(quoteCurrency)
+
+            return {
+              ...asset,
+              currentPrice,
+              currentValue,
+              valueInPLN,
+              costBasis,
+              costBasisInPLN,
+              pnl: valueInPLN - costBasisInPLN,
+              quoteCurrency,
+              annualDividendPLN,
+              region: meta.region,
+              assetType: meta.assetType,
+              sector: meta.sector ?? undefined,
+            } as EnrichedAsset
+          })
+        ),
+        getBondValues(bondAssets),
+      ])
+
+      const bondEnriched: EnrichedAsset[] = bondAssets.map(asset => {
+        const bv = bondValuesResult.values.get(asset.id)
+        const nominalValue = asset.quantity * 100
+        const totalValue = bv?.totalValue ?? nominalValue
+        return {
+          ...asset,
+          currentPrice: bv?.currentValuePerBond ?? 100,
+          currentValue: totalValue,
+          valueInPLN: totalValue,
+          costBasis: nominalValue,
+          costBasisInPLN: nominalValue,
+          pnl: totalValue - nominalValue,
+          quoteCurrency: 'PLN',
+          annualDividendPLN: 0,
+          region: 'Europa',
+          assetType: 'Obligacje',
+          sector: 'Obligacje Skarbowe',
+        }
+      })
+
+      setAssets([...stockEnriched, ...bondEnriched])
     } catch (e: any) {
       setError(e.message)
     } finally {
@@ -170,9 +198,20 @@ export default function DashboardView() {
   const totalROI = totalCost > 0 ? (totalPnL / totalCost) * 100 : 0
   const totalAnnualDividendPLN = assets.reduce((s, a) => s + a.annualDividendPLN, 0)
 
-  const portfolioData = [...assets]
-    .sort((a, b) => b.valueInPLN - a.valueInPLN)
-    .map((a) => ({ name: a.name, value: a.valueInPLN }))
+  const portfolioData = (() => {
+    const map = new Map<string, number>()
+    assets.forEach(a => {
+      let name: string
+      if (a.asset_type === 'bond' && a.bond_type) {
+        const meta = BOND_TYPES[a.bond_type as BondType]
+        name = meta ? `${meta.name} (${a.bond_type})` : a.name
+      } else {
+        name = a.name
+      }
+      map.set(name, (map.get(name) ?? 0) + a.valueInPLN)
+    })
+    return Array.from(map, ([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value)
+  })()
 
   return (
     <div className="p-6 space-y-6">

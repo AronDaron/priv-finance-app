@@ -12,7 +12,7 @@
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-wspomóż_projekt-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/arondaron)
 [![Download](https://img.shields.io/badge/Pobierz_.zip-latest-0078D4?logo=windows&logoColor=white)](https://github.com/AronDaron/priv-finance-app/releases/latest)
 
-Śledź akcje, ETF-y i złoto. Analizuj portfel z pomocą AI. Wszystko lokalnie, bez subskrypcji, bez chmury.
+Śledź akcje, ETF-y, złoto i polskie obligacje skarbowe. Analizuj portfel z pomocą AI. Wszystko lokalnie, bez subskrypcji, bez chmury.
 
 🚧 Projekt jest aktywnie rozwijany — nowe funkcje i poprawki pojawiają się regularnie.
 
@@ -72,6 +72,22 @@ Widok `Globalny Rynek` to autorski(moja koncepcja i logika, kod wygenerowany prz
 - **Tagi aktywów** — grupowanie pozycji według własnych kategorii (np. dywidendowe, growth, hedging)
 - **Gotówka** — rejestrowanie wpłat i wypłat gotówkowych z portfela
 - **Dashboard** — podsumowanie wartości portfela, zysk/strata łączny i per aktyw, wykres kołowy alokacji, historia wartości portfela w czasie
+
+#### 🏦 Polskie obligacje skarbowe detaliczne
+Obsługa wszystkich 8 typów obligacji Ministerstwa Finansów z deterministyczną wyceną bez zewnętrznych API:
+
+| Typ | Okres | Oprocentowanie |
+|-----|-------|----------------|
+| OTS | 3 miesiące | Stałe |
+| ROR / DOR | 1 / 2 lata | Zmienne (stopa NBP) |
+| TOS | 3 lata | Stałe |
+| COI / EDO / ROS / ROD | 4–12 lat | Zmienne (CPI + marża) |
+
+- **Auto-wykrywanie tickera** — wpisz np. `EDO0335`, aplikacja rozpoznaje typ i pobiera oprocentowanie z `obligacjeskarbowe.pl`
+- **Trzy modele obliczeniowe** — kapitalizacja roczna (EDO/ROS/ROD), kupon roczny (COI), kupon miesięczny (ROR/DOR); zaokrąglenie groszowe per sztuka zgodne z metodologią MF
+- **Dane makro automatycznie** — stopa NBP z `api.nbp.pl`, CPI miesięczny ze `stooq.pl` (CPIYPL.M); obowiązuje zasada T-2
+- **Stan „CPI pending"** — gdy GUS nie opublikował jeszcze danych za dany miesiąc, aplikacja wyświetla żółty status zamiast błędnej wartości
+- **Modal szczegółów** — bieżąca wartość, P&L vs nominał, narosłe odsetki, rok obligacji, bieżąca stopa, data zapadalności
 
 ---
 
@@ -209,6 +225,7 @@ electron/
     database.ts     ← Operacje SQLite (better-sqlite3)
     finance.ts      ← Integracja yahoo-finance2
     ai.ts           ← Logika Map-Reduce, wywołania OpenRouter
+    bonds.ts        ← Wycena obligacji (3 modele), fetch NBP/CPI/obligacjeskarbowe.pl
   preload/
     index.ts        ← Most IPC — contextBridge.exposeInMainWorld
 

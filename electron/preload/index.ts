@@ -50,6 +50,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       purchase_date?: string
       gold_grams?: number | null
       portfolio_id?: number
+      asset_type?: 'stock' | 'bond'
+      bond_type?: string | null
+      bond_year1_rate?: number | null
+      bond_maturity_date?: string | null
     }) => ipcRenderer.invoke('db:assets:add', asset),
 
     update: (
@@ -173,5 +177,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   globalAI: {
     analyzeRegion: (regionId: string, newsHeadlines: string[]) =>
       ipcRenderer.invoke('ai:analyzeRegion', regionId, newsHeadlines),
+  },
+
+  // ── obligacje skarbowe ───────────────────────────────────────────────────
+  bonds: {
+    getBatchValues: (assetIds: number[]) =>
+      ipcRenderer.invoke('bonds:getBatchValues', assetIds),
+    syncNbpRate: () =>
+      ipcRenderer.invoke('bonds:syncNbpRate'),
+    updateCpi: (year: number, value: number) =>
+      ipcRenderer.invoke('bonds:updateCpi', year, value),
+    fetchYear1Rate: (ticker: string) =>
+      ipcRenderer.invoke('bonds:fetchYear1Rate', ticker),
   },
 })
