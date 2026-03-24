@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       notes?: string | null
     }) => ipcRenderer.invoke('db:cash:addTransaction', data),
     getTransactions: (portfolioId?: number) => ipcRenderer.invoke('db:cash:getTransactions', { portfolioId }),
+    deleteTransaction: (id: number) => ipcRenderer.invoke('db:cash:deleteTransaction', { id }),
   },
 
   // ── portfolio_assets ────────────────────────────────────────────────────

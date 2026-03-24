@@ -42,6 +42,7 @@ import {
   getCashAccounts,
   addCashTransaction,
   getCashTransactions,
+  deleteCashTransaction,
   archiveNews,
   searchNews,
   pruneOldNews,
@@ -324,6 +325,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle('db:cash:getAccounts', (_event, { portfolioId } = {}) => getCashAccounts(portfolioId))
   ipcMain.handle('db:cash:addTransaction', (_event, data) => addCashTransaction(data))
   ipcMain.handle('db:cash:getTransactions', (_event, { portfolioId } = {}) => getCashTransactions(portfolioId))
+  ipcMain.handle('db:cash:deleteTransaction', (_event, { id }) => { deleteCashTransaction(id); return { success: true } })
 
   // ── portfolio_assets ──────────────────────────────────────────────────────
   ipcMain.handle('db:assets:getAll', (_event, portfolioId?: number) => {

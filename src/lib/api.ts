@@ -76,6 +76,7 @@ declare global {
         getAccounts(portfolioId?: number): Promise<CashAccount[]>
         addTransaction(data: NewCashTransaction): Promise<CashTransaction>
         getTransactions(portfolioId?: number): Promise<CashTransaction[]>
+        deleteTransaction(id: number): Promise<{ success: boolean }>
       }
       assets: {
         getAll(portfolioId?: number): Promise<PortfolioAsset[]>
@@ -240,8 +241,13 @@ export async function addCashTransaction(data: NewCashTransaction): Promise<Cash
   const idx = accounts.findIndex(a => a.portfolio_id === data.portfolio_id && a.currency === data.currency)
   const delta = data.type === 'deposit' ? data.amount : -data.amount
   if (idx >= 0) {
-    accounts[idx] = { ...accounts[idx], balance: accounts[idx].balance + delta }
-    lsSet(LS_KEYS.CASH_ACCOUNTS, accounts)
+    const newBalance = accounts[idx].balance + delta
+    if (Math.abs(newBalance) < 0.001) {
+      lsSet(LS_KEYS.CASH_ACCOUNTS, accounts.filter((_, i) => i !== idx))
+    } else {
+      accounts[idx] = { ...accounts[idx], balance: newBalance }
+      lsSet(LS_KEYS.CASH_ACCOUNTS, accounts)
+    }
   } else {
     const newAccount: CashAccount = {
       id: nextId(accounts),
@@ -259,6 +265,26 @@ export async function getCashTransactions(portfolioId?: number): Promise<CashTra
   if (isElectron()) return window.electronAPI!.cash.getTransactions(portfolioId)
   const txs = lsGet<CashTransaction[]>(LS_KEYS.CASH_TRANSACTIONS, [])
   return portfolioId !== undefined ? txs.filter(t => t.portfolio_id === portfolioId) : txs
+}
+
+export async function deleteCashTransaction(id: number): Promise<void> {
+  if (isElectron()) { await window.electronAPI!.cash.deleteTransaction(id); return }
+  const txs = lsGet<CashTransaction[]>(LS_KEYS.CASH_TRANSACTIONS, [])
+  const tx = txs.find(t => t.id === id)
+  if (!tx) return
+  lsSet(LS_KEYS.CASH_TRANSACTIONS, txs.filter(t => t.id !== id))
+  // Odwróć efekt na saldo
+  const accounts = lsGet<CashAccount[]>(LS_KEYS.CASH_ACCOUNTS, [])
+  const delta = tx.type === 'deposit' ? -tx.amount : tx.amount
+  const idx = accounts.findIndex(a => a.portfolio_id === tx.portfolio_id && a.currency === tx.currency)
+  if (idx >= 0) {
+    accounts[idx].balance += delta
+    // Usuń konto gdy saldo = 0
+    const updated = Math.abs(accounts[idx].balance) < 0.001
+      ? accounts.filter((_, i) => i !== idx)
+      : accounts
+    lsSet(LS_KEYS.CASH_ACCOUNTS, updated)
+  }
 }
 
 // ─── API: portfolio_assets ────────────────────────────────────────────────────

@@ -283,6 +283,7 @@ export default function PortfolioView() {
           onSuccess={() => { setCashModalPortfolioId(null); loadData() }}
         />
       )}
+
     </div>
   )
 }

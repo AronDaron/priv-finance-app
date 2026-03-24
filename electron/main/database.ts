@@ -540,6 +540,13 @@ export function addCashTransaction(data: DBNewCashTransaction): DBCashTransactio
     ON CONFLICT(portfolio_id, currency) DO UPDATE SET balance = balance + @delta
   `).run({ portfolio_id: data.portfolio_id, currency: data.currency, delta })
 
+  // Usuń konto gdy saldo = 0
+  const account = db.prepare('SELECT balance FROM cash_accounts WHERE portfolio_id = ? AND currency = ?')
+    .get(data.portfolio_id, data.currency) as { balance: number } | undefined
+  if (account && Math.abs(account.balance) < 0.001) {
+    db.prepare('DELETE FROM cash_accounts WHERE portfolio_id = ? AND currency = ?').run(data.portfolio_id, data.currency)
+  }
+
   return db
     .prepare('SELECT * FROM cash_transactions WHERE id = ?')
     .get(result.lastInsertRowid) as DBCashTransaction
@@ -552,6 +559,25 @@ export function getCashTransactions(portfolioId?: number): DBCashTransaction[] {
       .all(portfolioId) as DBCashTransaction[]
   }
   return db.prepare('SELECT * FROM cash_transactions ORDER BY date DESC').all() as DBCashTransaction[]
+}
+
+export function deleteCashTransaction(id: number): void {
+  const tx = db.prepare('SELECT * FROM cash_transactions WHERE id = ?').get(id) as DBCashTransaction | undefined
+  if (!tx) return
+  // Odwróć efekt na saldo konta
+  const delta = tx.type === 'deposit' ? -tx.amount : tx.amount
+  db.prepare(`
+    INSERT INTO cash_accounts (portfolio_id, currency, balance)
+    VALUES (@portfolio_id, @currency, @delta)
+    ON CONFLICT(portfolio_id, currency) DO UPDATE SET balance = balance + @delta
+  `).run({ portfolio_id: tx.portfolio_id, currency: tx.currency, delta })
+  db.prepare('DELETE FROM cash_transactions WHERE id = ?').run(id)
+  // Usuń konto gotówkowe jeśli saldo wynosi 0
+  const account = db.prepare('SELECT balance FROM cash_accounts WHERE portfolio_id = ? AND currency = ?')
+    .get(tx.portfolio_id, tx.currency) as { balance: number } | undefined
+  if (account && Math.abs(account.balance) < 0.001) {
+    db.prepare('DELETE FROM cash_accounts WHERE portfolio_id = ? AND currency = ?').run(tx.portfolio_id, tx.currency)
+  }
 }
 
 // ─── news_archive ──────────────────────────────────────────────────────────────

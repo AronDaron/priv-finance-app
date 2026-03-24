@@ -117,14 +117,26 @@ export default function DashboardView() {
     return cashAccounts.reduce((sum, a) => sum + a.balance * (fxRates.get(a.currency) ?? 1), 0)
   }, [cashAccounts, fxRates])
 
+  const CURRENCY_REGION: Record<string, string> = {
+    PLN: 'Europa', EUR: 'Europa', CHF: 'Europa', GBP: 'Europa', NOK: 'Europa', SEK: 'Europa',
+    USD: 'Ameryka Północna', JPY: 'Azja',
+  }
+
   const regionData = useMemo(() => {
     const map = new Map<string, number>()
     assets.forEach(a => {
       const key = a.region ?? 'Inne'
       map.set(key, (map.get(key) ?? 0) + a.valueInPLN)
     })
+    cashAccounts.forEach(a => {
+      const val = a.balance * (fxRates.get(a.currency) ?? 1)
+      if (val > 0) {
+        const key = CURRENCY_REGION[a.currency] ?? 'Inne'
+        map.set(key, (map.get(key) ?? 0) + val)
+      }
+    })
     return Array.from(map, ([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value)
-  }, [assets])
+  }, [assets, cashAccounts, fxRates])
 
   const sectorData = useMemo(() => {
     const map = new Map<string, number>()
@@ -132,8 +144,9 @@ export default function DashboardView() {
       const key = a.sector ?? 'Inne'
       map.set(key, (map.get(key) ?? 0) + a.valueInPLN)
     })
+    if (cashValuePLN > 0) map.set('Gotówka', (map.get('Gotówka') ?? 0) + cashValuePLN)
     return Array.from(map, ([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value)
-  }, [assets])
+  }, [assets, cashValuePLN])
 
   const typeData = useMemo(() => {
     const map = new Map<string, number>()
