@@ -5,6 +5,20 @@ import { usePortfolio } from '../../contexts/PortfolioContext'
 import { PHYSICAL_METAL_COINS, gramsToTroyOz, BOND_TYPES, parseBondTickerClient, SUPPORTED_CURRENCIES } from '../../lib/types'
 import type { PortfolioAsset, BondType } from '../../lib/types'
 
+// Oblicza datę emisji obligacji z daty zapadalności i okresu (np. EDO0336 → 2026-03-01)
+function getBondEmissionDate(maturityMonth: number, maturityYear: number, bondType: BondType): string {
+  const period = BOND_TYPES[bondType].period
+  let emMonth = maturityMonth
+  let emYear = maturityYear
+  if (period.endsWith('M')) {
+    emMonth -= parseInt(period, 10)
+    if (emMonth <= 0) { emMonth += 12; emYear -= 1 }
+  } else {
+    emYear -= parseInt(period, 10)
+  }
+  return `${emYear}-${String(emMonth).padStart(2, '0')}-01`
+}
+
 interface Props {
   onClose: () => void
   onSuccess: () => void
@@ -92,7 +106,7 @@ export default function AddAssetModal({ onClose, onSuccess, editAsset }: Props) 
       const parsed = parseBondTickerClient(ticker)
       // Dla obligacji: auto-ustaw walutę PLN i cenę 100
       if (parsed) {
-        return { ...f, ticker, name: name || ticker, currency: 'PLN', purchase_price: '100' }
+        return { ...f, ticker, name: name || ticker, currency: 'PLN', purchase_price: '100', purchase_date: getBondEmissionDate(parsed.maturityMonth, parsed.maturityYear, parsed.bondType) }
       }
       return { ...f, ticker, name }
     })
@@ -203,7 +217,7 @@ export default function AddAssetModal({ onClose, onSuccess, editAsset }: Props) 
                 setForm((f) => ({
                   ...f,
                   ticker: newTicker,
-                  ...(parsed ? { currency: 'PLN', purchase_price: '100' } : {}),
+                  ...(parsed ? { currency: 'PLN', purchase_price: '100', purchase_date: getBondEmissionDate(parsed.maturityMonth, parsed.maturityYear, parsed.bondType) } : {}),
                 }))
                 setSelectedCoinId('')
                 setCustomGrams('')
