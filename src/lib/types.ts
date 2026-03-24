@@ -103,6 +103,9 @@ export interface CashTransaction {
   amount: number
   currency: SupportedCurrency
   date: string
+  time?: string | null
+  purchase_rate?: number | null      // kurs 1 jednostki → PLN w chwili zakupu
+  purchase_currency?: string | null  // waluta zakupu (metadane)
   notes?: string
   created_at: string
 }

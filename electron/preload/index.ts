@@ -31,6 +31,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       amount: number
       currency: string
       date: string
+      time?: string | null
+      purchase_rate?: number | null
+      purchase_currency?: string | null
       notes?: string | null
     }) => ipcRenderer.invoke('db:cash:addTransaction', data),
     getTransactions: (portfolioId?: number) => ipcRenderer.invoke('db:cash:getTransactions', { portfolioId }),

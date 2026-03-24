@@ -46,6 +46,9 @@ export interface DBCashTransaction {
   amount: number
   currency: string
   date: string
+  time: string | null
+  purchase_rate: number | null      // kurs 1 jednostki waluty → PLN w chwili zakupu
+  purchase_currency: string | null  // waluta w jakiej kupiono (np. PLN, USD) — tylko metadane
   notes: string | null
   created_at: string
 }
@@ -56,6 +59,9 @@ export interface DBNewCashTransaction {
   amount: number
   currency: string
   date: string
+  time?: string | null
+  purchase_rate?: number | null
+  purchase_currency?: string | null
   notes?: string | null
 }
 
@@ -274,6 +280,17 @@ function migrateDatabase(): void {
   }
   if (!txCols.find(c => c.name === 'time')) {
     db.exec(`ALTER TABLE transactions ADD COLUMN time TEXT`)
+  }
+
+  const cashTxCols = db.prepare("PRAGMA table_info(cash_transactions)").all() as { name: string }[]
+  if (!cashTxCols.find(c => c.name === 'time')) {
+    db.exec(`ALTER TABLE cash_transactions ADD COLUMN time TEXT`)
+  }
+  if (!cashTxCols.find(c => c.name === 'purchase_rate')) {
+    db.exec(`ALTER TABLE cash_transactions ADD COLUMN purchase_rate REAL`)
+  }
+  if (!cashTxCols.find(c => c.name === 'purchase_currency')) {
+    db.exec(`ALTER TABLE cash_transactions ADD COLUMN purchase_currency TEXT`)
   }
 
   // Usuń UNIQUE constraint z ticker (pozwól na wiele pozycji złota z tym samym tickerem)
@@ -528,9 +545,9 @@ export function getCashAccounts(portfolioId?: number): DBCashAccount[] {
 export function addCashTransaction(data: DBNewCashTransaction): DBCashTransaction {
   // Dodaj transakcję
   const result = db.prepare(`
-    INSERT INTO cash_transactions (portfolio_id, type, amount, currency, date, notes)
-    VALUES (@portfolio_id, @type, @amount, @currency, @date, @notes)
-  `).run({ ...data, notes: data.notes ?? null })
+    INSERT INTO cash_transactions (portfolio_id, type, amount, currency, date, time, purchase_rate, purchase_currency, notes)
+    VALUES (@portfolio_id, @type, @amount, @currency, @date, @time, @purchase_rate, @purchase_currency, @notes)
+  `).run({ ...data, time: data.time ?? null, purchase_rate: data.purchase_rate ?? null, purchase_currency: data.purchase_currency ?? null, notes: data.notes ?? null })
 
   // Zaktualizuj saldo konta gotówkowego (INSERT OR REPLACE)
   const delta = data.type === 'deposit' ? data.amount : -data.amount

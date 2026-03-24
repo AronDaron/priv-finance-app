@@ -1,13 +1,14 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import type { ReactNode } from 'react'
 import type { Portfolio } from '../lib/types'
-import { getPortfolios, createPortfolio as apiCreatePortfolio, deletePortfolio as apiDeletePortfolio } from '../lib/api'
+import { getPortfolios, createPortfolio as apiCreatePortfolio, renamePortfolio as apiRenamePortfolio, deletePortfolio as apiDeletePortfolio } from '../lib/api'
 
 interface PortfolioContextType {
   portfolios: Portfolio[]
   activePortfolioId: number | null // null = wszystkie
   setActivePortfolioId: (id: number | null) => void
   createPortfolio: (name: string) => Promise<void>
+  renamePortfolio: (id: number, name: string) => Promise<void>
   deletePortfolio: (id: number) => Promise<void>
   refreshPortfolios: () => Promise<void>
 }
@@ -44,6 +45,11 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
     await refreshPortfolios()
   }, [refreshPortfolios])
 
+  const renamePortfolio = useCallback(async (id: number, name: string) => {
+    await apiRenamePortfolio(id, name)
+    await refreshPortfolios()
+  }, [refreshPortfolios])
+
   const deletePortfolio = useCallback(async (id: number) => {
     await apiDeletePortfolio(id)
     if (activePortfolioId === id) setActivePortfolioId(null)
@@ -56,6 +62,7 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
       activePortfolioId,
       setActivePortfolioId,
       createPortfolio,
+      renamePortfolio,
       deletePortfolio,
       refreshPortfolios,
     }}>

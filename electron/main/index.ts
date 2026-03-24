@@ -61,6 +61,7 @@ import {
   type DBPortfolioAsset,
   type DBPortfolio,
   type DBCashAccount,
+  type DBCashTransaction,
   type DBTransaction,
   type DBAIReport,
 } from './database'
@@ -131,6 +132,26 @@ function buildNewsQuery(question: string, assets: Array<{ ticker: string; name: 
   return Array.from(terms).slice(0, 12).join(' OR ')
 }
 
+/** Liczy średni ważony kurs zakupu i P&L dla konta gotówkowego */
+function calcCashPnl(
+  cashTxs: DBCashTransaction[],
+  portfolioId: number,
+  currency: string,
+  currentRatePln: number
+): { avgRate: number; trackedAmount: number; pnl: number; pnlPct: number } | null {
+  if (currency === 'PLN') return null
+  const deposits = cashTxs.filter(
+    t => t.portfolio_id === portfolioId && t.currency === currency && t.type === 'deposit' && t.purchase_rate != null
+  )
+  if (deposits.length === 0) return null
+  const trackedAmount = deposits.reduce((s, t) => s + t.amount, 0)
+  const totalCost = deposits.reduce((s, t) => s + t.amount * (t.purchase_rate ?? 0), 0)
+  const avgRate = totalCost / trackedAmount
+  const pnl = trackedAmount * (currentRatePln - avgRate)
+  const pnlPct = ((currentRatePln / avgRate) - 1) * 100
+  return { avgRate, trackedAmount, pnl, pnlPct }
+}
+
 /** Buduje system prompt z pełnym kontekstem portfela dla AI Agenta */
 function buildChatSystemContext(params: {
   assets: DBPortfolioAsset[]
@@ -138,6 +159,7 @@ function buildChatSystemContext(params: {
   portfolios: DBPortfolio[]
   transactions: DBTransaction[]
   cashAccounts: DBCashAccount[]
+  cashTransactions: DBCashTransaction[]
   priceHistories: Map<string, ReturnType<typeof aggregateToMonthly>>
   globalMarket: GlobalMarketData | null
   regime: MarketRegime | null
@@ -148,7 +170,7 @@ function buildChatSystemContext(params: {
   today: string
   bondValues?: Map<number, { totalValue: number; bondYearNum: number; currentYearRate: number; maturityDate: string; isMatured: boolean }>
 }): string {
-  const { assets, quotes, portfolios, transactions, cashAccounts, priceHistories, globalMarket, regime, news, aiReports, usdPln, eurPln, today, bondValues } = params
+  const { assets, quotes, portfolios, transactions, cashAccounts, cashTransactions, priceHistories, globalMarket, regime, news, aiReports, usdPln, eurPln, today, bondValues } = params
   const toPln = (amount: number, currency: string) =>
     currency === 'PLN' ? amount : currency === 'USD' ? amount * usdPln : currency === 'EUR' ? amount * eurPln : amount
 
@@ -207,10 +229,15 @@ function buildChatSystemContext(params: {
   const cashLines = cashAccounts
     .filter(c => c.balance !== 0)
     .map(c => {
-      const valuePLN = c.balance * (toPln(1, c.currency))
+      const currentRatePln = toPln(1, c.currency)
+      const valuePLN = c.balance * currentRatePln
       cashTotalPLN += valuePLN
       const plnNote = c.currency !== 'PLN' ? ` (~${valuePLN.toFixed(0)} PLN)` : ''
-      return `  ${c.currency}: ${c.balance.toFixed(2)}${plnNote}`
+      const pnl = calcCashPnl(cashTransactions, c.portfolio_id, c.currency, currentRatePln)
+      const pnlNote = pnl
+        ? ` | P&L: ${pnl.pnl >= 0 ? '+' : ''}${pnl.pnl.toFixed(2)} PLN (${pnl.pnlPct >= 0 ? '+' : ''}${pnl.pnlPct.toFixed(2)}%, kurs zakupu: ${pnl.avgRate.toFixed(4)}, obecny: ${currentRatePln.toFixed(4)}, śledzone: ${pnl.trackedAmount.toFixed(2)} ${c.currency})`
+        : ''
+      return `  ${c.currency}: ${c.balance.toFixed(2)}${plnNote}${pnlNote}`
     })
   sections.push('', 'GOTÓWKA (konta gotówkowe):',
     ...(cashLines.length > 0 ? cashLines : ['  brak depozytów gotówkowych']),
@@ -609,6 +636,7 @@ function registerIpcHandlers(): void {
     const transactions = getAllTransactions()
     const portfolios = getPortfolios()
     const cashAccounts = getCashAccounts()
+    const cashTransactions = getCashTransactions()
 
     const chatRegime = globalMarket ? detectMarketRegime(globalMarket) : null
 
@@ -619,6 +647,7 @@ function registerIpcHandlers(): void {
       portfolios,
       transactions,
       cashAccounts,
+      cashTransactions,
       priceHistories,
       globalMarket,
       regime: chatRegime,
@@ -757,13 +786,19 @@ function registerIpcHandlers(): void {
 
     // Gotówka na kontach
     const cashAccounts = getCashAccounts()
+    const cashTxsForAI = getCashTransactions()
     let cashTotalPLN = 0
     const cashSummaryLines: string[] = []
     for (const acc of cashAccounts.filter(c => c.balance !== 0)) {
-      const valuePLN = acc.balance * (fxRatesAI.get(acc.currency) ?? 1)
+      const currentRatePln = fxRatesAI.get(acc.currency) ?? 1
+      const valuePLN = acc.balance * currentRatePln
       cashTotalPLN += valuePLN
       const plnNote = acc.currency !== 'PLN' ? ` (~${valuePLN.toFixed(0)} PLN)` : ''
-      cashSummaryLines.push(`- ${acc.currency}: ${acc.balance.toFixed(2)}${plnNote}`)
+      const pnl = calcCashPnl(cashTxsForAI, acc.portfolio_id, acc.currency, currentRatePln)
+      const pnlNote = pnl
+        ? ` | P&L: ${pnl.pnl >= 0 ? '+' : ''}${pnl.pnl.toFixed(2)} PLN (${pnl.pnlPct >= 0 ? '+' : ''}${pnl.pnlPct.toFixed(2)}%, kurs zakupu: ${pnl.avgRate.toFixed(4)}, obecny: ${currentRatePln.toFixed(4)})`
+        : ''
+      cashSummaryLines.push(`- ${acc.currency}: ${acc.balance.toFixed(2)}${plnNote}${pnlNote}`)
     }
     const cashSummary = cashSummaryLines.length > 0 ? cashSummaryLines.join('\n') : undefined
 
