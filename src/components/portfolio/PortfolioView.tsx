@@ -287,9 +287,9 @@ export default function PortfolioView() {
                   Brak spółek w tym portfelu.
                 </div>
               ) : (
-                <div className="glass-card rounded-xl overflow-x-auto">
+                <div className="glass-card rounded-xl overflow-x-auto overflow-y-auto max-h-[480px]">
                   <table className="w-full text-sm">
-                    <thead>
+                    <thead className="sticky top-0 z-10 bg-[#1f2937]">
                       <tr className="text-xs text-gray-500 uppercase tracking-widest border-b border-gray-700/70">
                         <th className="px-4 py-3 text-left">Ticker</th>
                         <th className="px-4 py-3 text-left">Nazwa</th>
@@ -328,9 +328,9 @@ export default function PortfolioView() {
           {orphaned.length > 0 && (
             <div className="mb-8">
               <h3 className="text-base font-semibold text-gray-400 mb-3">Nieprzypisane</h3>
-              <div className="glass-card rounded-xl overflow-x-auto">
+              <div className="glass-card rounded-xl overflow-x-auto overflow-y-auto max-h-[480px]">
                 <table className="w-full text-sm">
-                  <thead>
+                  <thead className="sticky top-0 z-10 bg-[#1f2937]">
                     <tr className="text-xs text-gray-400 uppercase tracking-wider border-b border-gray-700">
                       <th className="px-4 py-3 text-left">Ticker</th>
                       <th className="px-4 py-3 text-left">Nazwa</th>

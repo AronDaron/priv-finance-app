@@ -57,6 +57,7 @@ import {
   cacheBondMargin,
   getCpiForMonth,
   upsertMonthlyCpi,
+  getStooqMarkedMonthlyCpi,
   type DBNewsItem,
   type DBPortfolioAsset,
   type DBPortfolio,
@@ -66,7 +67,7 @@ import {
   type DBAIReport,
 } from './database'
 import { analyzeStock, analyzePortfolio, analyzeRegion, chatWithPortfolio, WORKER_MODEL, MANAGER_MODEL, WORLD_MODEL, type ChatMessage, type GlobalMacroContext } from './ai'
-import { calculateBondValue, fetchNbpRates, fetchBondYear1Rate, fetchGusAnnualCpi, fetchMonthlyCpi } from './bonds'
+import { calculateBondValue, fetchNbpRates, fetchBondYear1Rate, fetchGusAnnualCpi, fetchGusMonthCpi, fetchStooqMonthCpi } from './bonds'
 import { fetchNewsForRegion } from './news'
 import type { NewsRegion } from './news'
 
@@ -828,18 +829,40 @@ function registerIpcHandlers(): void {
   })
 
   // ── obligacje skarbowe ─────────────────────────────────────────────────────
-  ipcMain.handle('bonds:getBatchValues', (_event, assetIds: number[]) => {
+  ipcMain.handle('bonds:getBatchValues', async (_event, assetIds: number[]) => {
     const today = new Date().toISOString().split('T')[0]
-    return assetIds.map(id => {
+    const results = []
+    for (const id of assetIds) {
       const asset = getAssetById(id)
-      if (!asset || asset.asset_type !== 'bond') return { id, error: 'not_a_bond' }
-      try {
-        const lookupMargin = () => getCachedBondMargin(asset.ticker)
-        return { id, ...calculateBondValue(asset, today, getCpiForYear, getNbpRateForDate, lookupMargin, getCpiForMonth) }
-      } catch (err) {
-        return { id, error: String(err) }
+      if (!asset || asset.asset_type !== 'bond') { results.push({ id, error: 'not_a_bond' }); continue }
+      let attempts = 0
+      while (attempts < 4) {
+        try {
+          const lookupMargin = () => getCachedBondMargin(asset.ticker)
+          results.push({ id, ...calculateBondValue(asset, today, getCpiForYear, getNbpRateForDate, lookupMargin, getCpiForMonth) })
+          break
+        } catch (err) {
+          const msg = String(err)
+          const pending = msg.match(/PENDING_GUS_DATA:(\d{4})-(\d{2})/)
+          if (pending && attempts < 3) {
+            if (attempts > 0) await new Promise(r => setTimeout(r, 1000 * attempts))
+            const yr = parseInt(pending[1]), mo = parseInt(pending[2])
+            const cpi = await fetchGusMonthCpi(yr, mo)
+            if (cpi !== null) {
+              upsertMonthlyCpi(yr, mo, cpi, 'gus_sdp')
+            } else {
+              // GUS SDP jeszcze nie ma danych — tymczasowy fallback do stooq
+              const stooqCpi = await fetchStooqMonthCpi(yr, mo)
+              if (stooqCpi !== null) upsertMonthlyCpi(yr, mo, stooqCpi, 'stooq')
+            }
+            attempts++
+          } else {
+            results.push({ id, error: msg }); break
+          }
+        }
       }
-    })
+    }
+    return results
   })
 
   ipcMain.handle('bonds:syncNbpRate', async () => {
@@ -886,10 +909,14 @@ app.whenReady().then(() => {
     for (const { year, value } of cpiData) upsertCpi(year, value)
   }).catch(() => {})
 
-  // Synchronizuj miesięczne CPI ze stooq — dokładne dane do obliczeń obligacji
-  fetchMonthlyCpi().then(cpiData => {
-    for (const { year, month, value } of cpiData) upsertMonthlyCpi(year, month, value)
-  }).catch(() => {})
+  // Odśwież tymczasowe dane CPI ze stooq gdy GUS SDP już je opublikował
+  ;(async () => {
+    for (const { year, month } of getStooqMarkedMonthlyCpi()) {
+      const cpi = await fetchGusMonthCpi(year, month)
+      if (cpi !== null) upsertMonthlyCpi(year, month, cpi, 'gus_sdp')
+    }
+  })().catch(() => {})
+
 
   // Usuń obligacje po dacie zapadalności
   const today = new Date().toISOString().slice(0, 10)

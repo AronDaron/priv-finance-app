@@ -4,41 +4,17 @@ import type { HistoryPeriod } from '../src/lib/types'
 import { gramsToTroyOz } from '../src/lib/types'
 
 // ─── Cache danych CPI dla dev mode ───────────────────────────────────────────
-// Pobiera prawdziwe dane z GUS BDL tak jak tryb Electron, bez hardkodowanych wartości
+// Roczne CPI: fallback + fetch z GUS BDL przy starcie
+// Miesięczne CPI: puste na starcie, wypełniane on-demand z GUS SDP przy obliczeniach obligacji
 
-const CPI_ANNUAL_FALLBACK: Record<number, number> = {
+const _annualCpi: Record<number, number> = {
   2015: -0.9, 2016: -0.6, 2017: 2.0, 2018: 1.6, 2019: 2.3,
   2020: 3.4, 2021: 5.1, 2022: 14.4, 2023: 11.4, 2024: 3.6, 2025: 4.9,
 }
+const _monthlyCpi: Record<string, { value: number; source: 'gus_sdp' | 'stooq' }> = {}
 
-let _cpiCache: { annual: Record<number, number>; monthly: Record<string, number>; fetchedAt: number } | null = null
-const CPI_CACHE_TTL_MS = 60 * 60 * 1000  // 1 godzina
-
-async function getDevCpiData(): Promise<{ annual: Record<number, number>; monthly: Record<string, number> }> {
-  const now = Date.now()
-  if (_cpiCache && now - _cpiCache.fetchedAt < CPI_CACHE_TTL_MS) return _cpiCache
-
-  try {
-    const { fetchGusAnnualCpi, fetchMonthlyCpi } = await import('./main/bonds')
-    const [annualData, monthlyData] = await Promise.all([
-      fetchGusAnnualCpi().catch(() => []),
-      fetchMonthlyCpi().catch(() => []),
-    ])
-
-    const annual = { ...CPI_ANNUAL_FALLBACK }
-    for (const { year, value } of annualData) annual[year] = value
-
-    const monthly: Record<string, number> = {}
-    for (const { year, month, value } of monthlyData) {
-      monthly[`${year}-${String(month).padStart(2, '0')}`] = value
-    }
-
-    _cpiCache = { annual, monthly, fetchedAt: now }
-  } catch {
-    _cpiCache = { annual: { ...CPI_ANNUAL_FALLBACK }, monthly: {}, fetchedAt: now }
-  }
-
-  return _cpiCache
+function getDevCpiData() {
+  return { annual: _annualCpi, monthly: _monthlyCpi }
 }
 
 function readBody(req: IncomingMessage): Promise<Record<string, string>> {
@@ -62,6 +38,18 @@ export function financeDevApiPlugin(): Plugin {
   return {
     name: 'finance-dev-api',
     configureServer(server) {
+      // Zaktualizuj roczne CPI + odśwież stooq-marked miesięczne CPI w tle przy starcie
+      import('./main/bonds').then(async ({ fetchGusAnnualCpi, fetchGusMonthCpi }) => {
+        fetchGusAnnualCpi().then(data => { for (const { year, value } of data) _annualCpi[year] = value }).catch(() => {})
+        // Odśwież tymczasowe dane ze stooq gdy GUS SDP już je opublikował
+        for (const [key, entry] of Object.entries(_monthlyCpi)) {
+          if (entry.source !== 'stooq') continue
+          const [yearStr, monthStr] = key.split('-')
+          const cpi = await fetchGusMonthCpi(parseInt(yearStr), parseInt(monthStr))
+          if (cpi !== null) _monthlyCpi[key] = { value: cpi, source: 'gus_sdp' }
+        }
+      }).catch(() => {})
+
       server.middlewares.use(async (req, res, next) => {
         if (!req.url?.startsWith('/api/')) return next()
 
@@ -109,11 +97,11 @@ export function financeDevApiPlugin(): Plugin {
                 JSON.parse(body.cashTransactions ?? '[]')
               const pfPeriod = body.period ?? '1y'
               const marginCache: Record<string, number> = body.marginCache ? JSON.parse(body.marginCache) : {}
-              const { annual: annualCpi, monthly: monthlyCpi } = await getDevCpiData()
+              const { annual: annualCpi, monthly: monthlyCpi } = getDevCpiData()
               const { calculateBondValue: calcBV } = await import('./main/bonds')
               const lookupCpi = (year: number) => annualCpi[year] ?? null
               const lookupMonthlyCpi = (year: number, month: number) =>
-                monthlyCpi[`${year}-${String(month).padStart(2, '0')}`] ?? null
+                monthlyCpi[`${year}-${String(month).padStart(2, '0')}`]?.value ?? null
               const bondCalc = (asset: any, date: string): number => {
                 try {
                   const lookupMargin = () => marginCache[(asset.ticker as string)?.toUpperCase()] ?? null
@@ -488,21 +476,16 @@ export function financeDevApiPlugin(): Plugin {
               const body = await readBody(req)
               const assetIds: number[] = body.assetIds ? JSON.parse(body.assetIds) : []
               const assetsData: Array<Record<string, unknown>> = body.assets ? JSON.parse(body.assets) : []
-              const { calculateBondValue } = await import('./main/bonds')
+              const { calculateBondValue, fetchGusMonthCpi } = await import('./main/bonds')
               const today = new Date().toISOString().split('T')[0]
-
-              // Pobierz prawdziwe dane CPI z GUS BDL (cache 1h) — identycznie jak tryb Electron
-              const { annual: annualCpi, monthly: monthlyCpi } = await getDevCpiData()
-              const lookupCpi = (year: number) => annualCpi[year] ?? null
-              const lookupNbpRate = (_date: string) => 5.75  // fallback — brak DB w dev
+              const lookupCpi = (year: number) => _annualCpi[year] ?? null
+              const lookupNbpRate = (_date: string) => 5.75
               const lookupMonthlyCpi = (year: number, month: number) =>
-                monthlyCpi[`${year}-${String(month).padStart(2, '0')}`] ?? null
-
-              // Cache marż pobranych przy dodawaniu obligacji (localStorage)
+                _monthlyCpi[`${year}-${String(month).padStart(2, '0')}`]?.value ?? null
               const marginCache: Record<string, number> = body.marginCache ? JSON.parse(body.marginCache) : {}
-              data = assetsData
-                .filter(a => assetIds.includes(a.id as number))
-                .map(a => {
+              const calcWithRetry = async (a: Record<string, unknown>) => {
+                let attempts = 0
+                while (attempts < 4) {
                   try {
                     const ticker = (a.ticker as string ?? '').toUpperCase()
                     const lookupMargin = () => marginCache[ticker] ?? null
@@ -511,9 +494,28 @@ export function financeDevApiPlugin(): Plugin {
                       today, lookupCpi, lookupNbpRate, lookupMargin, lookupMonthlyCpi
                     )}
                   } catch (e) {
-                    return { id: a.id, error: String(e) }
+                    const msg = String(e)
+                    const pending = msg.match(/PENDING_GUS_DATA:(\d{4})-(\d{2})/)
+                    if (pending && attempts < 3) {
+                      if (attempts > 0) await new Promise(r => setTimeout(r, 1000 * attempts))
+                      const yr = parseInt(pending[1]), mo = parseInt(pending[2])
+                      const cpi = await fetchGusMonthCpi(yr, mo)
+                      if (cpi !== null) {
+                        _monthlyCpi[`${pending[1]}-${pending[2]}`] = { value: cpi, source: 'gus_sdp' }
+                      } else {
+                        const { fetchStooqMonthCpi } = await import('./main/bonds')
+                        const stooqCpi = await fetchStooqMonthCpi(yr, mo)
+                        if (stooqCpi !== null) _monthlyCpi[`${pending[1]}-${pending[2]}`] = { value: stooqCpi, source: 'stooq' }
+                      }
+                      attempts++
+                    } else {
+                      return { id: a.id, error: msg }
+                    }
                   }
-                })
+                }
+                return { id: a.id, error: 'max retries' }
+              }
+              data = await Promise.all(assetsData.filter(a => assetIds.includes(a.id as number)).map(calcWithRetry))
               break
             }
             case '/bonds/sync-nbp': {

@@ -434,36 +434,51 @@ export async function fetchGusAnnualCpi(): Promise<Array<{ year: number; value: 
   }
 }
 
-// ─── Synchronizacja miesięcznego CPI ze stooq.pl ─────────────────────────────
-// Symbol CPIYPL.M = CPI r/r, Polska, miesięczny
-// Kolumna Zamkniecie = wartość r/r w % (np. 4.1 = 4.1% inflacji)
-// Zwraca pobrane dane — zapisanie do DB należy do wywołującego (index.ts)
+// ─── Jednorazowy fetch CPI z GUS SDP dla konkretnego miesiąca ────────────────
+// Używany on-demand gdy bond calculation rzuca PENDING_GUS_DATA:YYYY-MM.
+// GUS SDP: id-zmienna=305, id-przekroj=739, id-pozycja-2=6656078 (ogółem)
+//          id-sposob-prezentacji-miara=5 (r/r), id-okres=246+miesiąc
+//          wartosc: 102.90000 → 2.90% (odejmujemy 100)
 
-export async function fetchMonthlyCpi(): Promise<Array<{ year: number; month: number; value: number }>> {
+export async function fetchGusMonthCpi(year: number, month: number): Promise<number | null> {
+  const url = `https://api-sdp.stat.gov.pl/api/variable/variable-data-section?id-zmienna=305&id-przekroj=739&id-rok=${year}&id-okres=${246 + month}&page-size=5000&page=0&lang=en`
   try {
-    const url = 'https://stooq.pl/q/d/l/?s=cpiypl.m&i=m'
     const response = await fetch(url)
-    if (!response.ok) return []
+    if (!response.ok) return null
+    const data = await response.json() as {
+      data?: Array<{ 'id-pozycja-2': number; 'id-sposob-prezentacji-miara': number; wartosc: number | null }>
+    }
+    const entry = (data.data ?? []).find(e =>
+      e['id-sposob-prezentacji-miara'] === 5 && e['id-pozycja-2'] === 6656078 && e.wartosc !== null
+    )
+    return entry ? Math.round((entry.wartosc! - 100) * 100) / 100 : null
+  } catch {
+    return null
+  }
+}
 
-    const text = await response.text()
-    const lines = text.trim().split('\n')
-    // Pierwsza linia to nagłówek: Data,Otwarcie,Najwyzszy,Najnizszy,Zamkniecie
-    const result: Array<{ year: number; month: number; value: number }> = []
-    for (const line of lines.slice(1)) {
+
+// ─── Fallback CPI ze stooq.pl (gdy GUS SDP jeszcze nie opublikował miesiąca) ──
+// Używany jako tymczasowe źródło gdy fetchGusMonthCpi zwraca null.
+// Dane są zaokrąglane do 1 miejsca po przecinku — dokładność niższa niż GUS SDP.
+// W DB oznaczane source='stooq'; przy kolejnym starcie aplikacji próbowane jest
+// nadpisanie precyzyjnymi danymi z GUS SDP.
+
+export async function fetchStooqMonthCpi(year: number, month: number): Promise<number | null> {
+  try {
+    const response = await fetch('https://stooq.pl/q/d/l/?s=cpiypl.m&i=m')
+    if (!response.ok) return null
+    const target = `${year}-${String(month).padStart(2, '0')}`
+    for (const line of (await response.text()).trim().split('\n').slice(1)) {
       const parts = line.split(',')
       if (parts.length < 5) continue
-      const dateStr = parts[0].trim()       // 'YYYY-MM-DD'
-      const val = parseFloat(parts[4].trim())  // Zamkniecie = CPI r/r %
-      if (!dateStr || isNaN(val)) continue
-      const [yearStr, monthStr] = dateStr.split('-')
-      const year = parseInt(yearStr, 10)
-      const month = parseInt(monthStr, 10)
-      if (isNaN(year) || isNaN(month)) continue
-      result.push({ year, month, value: val })
+      if (!parts[0].trim().startsWith(target)) continue
+      const val = parseFloat(parts[4].trim())
+      return isNaN(val) ? null : Math.round(val * 100) / 100
     }
-    return result
+    return null
   } catch {
-    return []
+    return null
   }
 }
 

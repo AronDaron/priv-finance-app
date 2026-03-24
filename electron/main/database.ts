@@ -147,14 +147,20 @@ function createTables(): void {
     );
 
     CREATE TABLE IF NOT EXISTS portfolio_assets (
-      id             INTEGER PRIMARY KEY AUTOINCREMENT,
-      ticker         TEXT NOT NULL UNIQUE,
-      name           TEXT NOT NULL,
-      quantity       REAL NOT NULL DEFAULT 0,
-      purchase_price REAL NOT NULL DEFAULT 0,
-      currency       TEXT NOT NULL DEFAULT 'USD',
-      created_at     TEXT NOT NULL DEFAULT (datetime('now')),
-      portfolio_id   INTEGER DEFAULT 1
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      ticker            TEXT NOT NULL,
+      name              TEXT NOT NULL,
+      quantity          REAL NOT NULL DEFAULT 0,
+      purchase_price    REAL NOT NULL DEFAULT 0,
+      currency          TEXT NOT NULL DEFAULT 'USD',
+      created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+      portfolio_id      INTEGER DEFAULT 1,
+      purchase_date     TEXT,
+      gold_grams        REAL,
+      asset_type        TEXT DEFAULT 'stock',
+      bond_type         TEXT,
+      bond_year1_rate   REAL,
+      bond_maturity_date TEXT
     );
 
     CREATE TABLE IF NOT EXISTS cash_accounts (
@@ -234,6 +240,7 @@ function createTables(): void {
       year      INTEGER,
       date      TEXT,
       value     REAL NOT NULL,
+      source    TEXT NOT NULL DEFAULT 'gus_sdp',
       UNIQUE(data_type, year, date)
     );
   `)
@@ -280,6 +287,12 @@ function migrateDatabase(): void {
   }
   if (!txCols.find(c => c.name === 'time')) {
     db.exec(`ALTER TABLE transactions ADD COLUMN time TEXT`)
+  }
+
+  // Dodaj kolumnę source do bond_reference_data (oznaczenie źródła CPI: gus_sdp / stooq)
+  const brdCols = db.prepare("PRAGMA table_info(bond_reference_data)").all() as { name: string }[]
+  if (!brdCols.find(c => c.name === 'source')) {
+    db.exec(`ALTER TABLE bond_reference_data ADD COLUMN source TEXT NOT NULL DEFAULT 'gus_sdp'`)
   }
 
   const cashTxCols = db.prepare("PRAGMA table_info(cash_transactions)").all() as { name: string }[]
@@ -697,13 +710,28 @@ export function getCpiForMonth(year: number, month: number): number | null {
   return row?.value ?? null
 }
 
-export function upsertMonthlyCpi(year: number, month: number, value: number): void {
+export function deleteRecentMonthlyCpi(fromYear: number): void {
+  db.prepare(`DELETE FROM bond_reference_data WHERE data_type = 'CPI_MONTHLY' AND year >= ?`).run(fromYear)
+}
+
+export function upsertMonthlyCpi(year: number, month: number, value: number, source: 'gus_sdp' | 'stooq' = 'gus_sdp'): void {
   const dateKey = `${year}-${String(month).padStart(2, '0')}`
+  // gus_sdp zawsze nadpisuje; stooq nadpisuje tylko jeśli dotychczasowa wartość też jest ze stooq
   db.prepare(`
-    INSERT INTO bond_reference_data (data_type, year, date, value)
-    VALUES ('CPI_MONTHLY', ?, ?, ?)
-    ON CONFLICT(data_type, year, date) DO UPDATE SET value = excluded.value
-  `).run(year, dateKey, value)
+    INSERT INTO bond_reference_data (data_type, year, date, value, source)
+    VALUES ('CPI_MONTHLY', ?, ?, ?, ?)
+    ON CONFLICT(data_type, year, date) DO UPDATE SET
+      value = excluded.value,
+      source = excluded.source
+    WHERE excluded.source = 'gus_sdp' OR bond_reference_data.source = 'stooq'
+  `).run(year, dateKey, value, source)
+}
+
+export function getStooqMarkedMonthlyCpi(): Array<{ year: number; month: number }> {
+  const rows = db.prepare(
+    `SELECT year, date FROM bond_reference_data WHERE data_type = 'CPI_MONTHLY' AND source = 'stooq'`
+  ).all() as Array<{ year: number; date: string }>
+  return rows.map(r => ({ year: r.year, month: parseInt(r.date.split('-')[1], 10) }))
 }
 
 export function getCachedBondRate(ticker: string): number | null {

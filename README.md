@@ -85,7 +85,7 @@ Obsługa wszystkich 8 typów obligacji Ministerstwa Finansów z deterministyczn�
 
 - **Auto-wykrywanie tickera** — wpisz np. `EDO0335`, aplikacja rozpoznaje typ i pobiera oprocentowanie z `obligacjeskarbowe.pl`
 - **Trzy modele obliczeniowe** — kapitalizacja roczna (EDO/ROS/ROD), kupon roczny (COI), kupon miesięczny (ROR/DOR); zaokrąglenie groszowe per sztuka zgodne z metodologią MF
-- **Dane makro automatycznie** — stopa NBP z `api.nbp.pl`, CPI miesięczny ze `stooq.pl` (CPIYPL.M); obowiązuje zasada T-2
+- **Dane makro automatycznie** — stopa NBP z `api.nbp.pl`, CPI miesięczny z `api-sdp.stat.gov.pl` (GUS SDP, oficjalne dane); obowiązuje zasada T-2
 - **Stan „CPI pending"** — gdy GUS nie opublikował jeszcze danych za dany miesiąc, aplikacja wyświetla żółty status zamiast błędnej wartości
 - **Modal szczegółów** — bieżąca wartość, P&L vs nominał, narosłe odsetki, rok obligacji, bieżąca stopa, data zapadalności
 
