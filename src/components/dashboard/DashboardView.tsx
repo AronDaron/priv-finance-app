@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getAssets, getQuote, getAssetMeta, getFundamentals, getCashAccounts, getBondValues } from '../../lib/api'
-import type { EnrichedAsset, CashAccount } from '../../lib/types'
+import { getAssets, getQuote, getAssetMeta, getFundamentals, getCashAccounts, getBondValues, getFxRates } from '../../lib/api'
+import type { EnrichedAsset, CashAccount, SupportedCurrency } from '../../lib/types'
 import { gramsToTroyOz, BOND_TYPES } from '../../lib/types'
 import type { BondType } from '../../lib/types'
 import { usePortfolio } from '../../contexts/PortfolioContext'
@@ -11,15 +11,6 @@ import PortfolioHistoryChart from './PortfolioHistoryChart'
 import LoadingSpinner from '../ui/LoadingSpinner'
 import ErrorMessage from '../ui/ErrorMessage'
 import * as api from '../../lib/api'
-
-async function getRate(ticker: string): Promise<number> {
-  try {
-    const q = await getQuote(ticker)
-    return q.price ?? 1
-  } catch {
-    return 1
-  }
-}
 
 export default function DashboardView() {
   const navigate = useNavigate()
@@ -31,29 +22,21 @@ export default function DashboardView() {
   const [error, setError] = useState<string | null>(null)
   const [newPortfolioName, setNewPortfolioName] = useState('')
   const [showNewPortfolioInput, setShowNewPortfolioInput] = useState(false)
-  const [usdPln, setUsdPln] = useState(4.0)
-  const [eurPln, setEurPln] = useState(4.3)
+  const [fxRates, setFxRates] = useState<Map<SupportedCurrency, number>>(new Map([['PLN', 1]]))
 
   const loadData = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const [list, usd, eur, cash] = await Promise.all([
+      const [list, rates, cash] = await Promise.all([
         getAssets(activePortfolioId ?? undefined),
-        getRate('USDPLN=X'),
-        getRate('EURPLN=X'),
+        getFxRates(),
         getCashAccounts(activePortfolioId ?? undefined),
       ])
-      setUsdPln(usd)
-      setEurPln(eur)
+      setFxRates(rates)
       setCashAccounts(cash)
 
-      const toPlnRate = (currency: string): number => {
-        if (currency === 'PLN') return 1
-        if (currency === 'USD') return usd
-        if (currency === 'EUR') return eur
-        return 1
-      }
+      const toPlnRate = (currency: string): number => rates.get(currency as SupportedCurrency) ?? 1
 
       const bondAssets = list.filter(a => a.asset_type === 'bond')
       const stockAssets = list.filter(a => a.asset_type !== 'bond')
@@ -131,9 +114,8 @@ export default function DashboardView() {
   }, [loadData])
 
   const cashValuePLN = useMemo(() => {
-    const toPlnRate = (cur: string) => cur === 'PLN' ? 1 : cur === 'USD' ? usdPln : cur === 'EUR' ? eurPln : 1
-    return cashAccounts.reduce((sum, a) => sum + a.balance * toPlnRate(a.currency), 0)
-  }, [cashAccounts, usdPln, eurPln])
+    return cashAccounts.reduce((sum, a) => sum + a.balance * (fxRates.get(a.currency) ?? 1), 0)
+  }, [cashAccounts, fxRates])
 
   const regionData = useMemo(() => {
     const map = new Map<string, number>()
@@ -209,6 +191,10 @@ export default function DashboardView() {
         name = a.name
       }
       map.set(name, (map.get(name) ?? 0) + a.valueInPLN)
+    })
+    cashAccounts.forEach(a => {
+      const val = a.balance * (fxRates.get(a.currency) ?? 1)
+      if (val > 0) map.set(`Gotówka ${a.currency}`, (map.get(`Gotówka ${a.currency}`) ?? 0) + val)
     })
     return Array.from(map, ([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value)
   })()

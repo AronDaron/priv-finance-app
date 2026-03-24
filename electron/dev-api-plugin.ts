@@ -179,21 +179,27 @@ export function financeDevApiPlugin(): Plugin {
             }
             case '/ai/analyze-portfolio': {
               const body = await readBody(req)
-              const { assets: assetsJson, apiKey } = body
+              const { assets: assetsJson, bondAssets: bondAssetsJson, cashAccounts: cashJson, apiKey } = body
               if (!assetsJson) { res.statusCode = 400; res.end(JSON.stringify({ error: 'Brak assets' })); return }
               const ai = await import('./main/ai')
               const assetsList: Array<{ ticker: string; name: string; quantity: number; purchase_price: number; currency: string; gold_grams?: number | null }> =
                 JSON.parse(assetsJson)
+              const bondAssetsList: Array<{ id: number; ticker: string; name: string; quantity: number; bond_type?: string | null }> =
+                JSON.parse(bondAssetsJson ?? '[]')
+              const cashAccountsList: Array<{ id: number; currency: string; balance: number }> =
+                JSON.parse(cashJson ?? '[]')
 
               // Pobierz kursy walut — wszystkie wartości będą w PLN
-              const [usdPlnQ, eurPlnQ] = await Promise.all([
-                finance.fetchQuote('USDPLN=X').catch(() => ({ price: 4.0 })),
-                finance.fetchQuote('EURPLN=X').catch(() => ({ price: 4.3 })),
-              ])
-              const usdPln = usdPlnQ.price
-              const eurPln = eurPlnQ.price
-              const toPln = (amount: number, currency: string) =>
-                currency === 'PLN' ? amount : currency === 'USD' ? amount * usdPln : currency === 'EUR' ? amount * eurPln : amount
+              const fxPairsAI = [
+                ['USD', 'USDPLN=X', 4.0], ['EUR', 'EURPLN=X', 4.3], ['CHF', 'CHFPLN=X', 4.5],
+                ['GBP', 'GBPPLN=X', 5.1], ['JPY', 'JPYPLN=X', 0.027], ['NOK', 'NOKPLN=X', 0.37], ['SEK', 'SEKPLN=X', 0.37],
+              ] as const
+              const fxResultsAI = await Promise.all(fxPairsAI.map(([, ticker, fallback]) =>
+                finance.fetchQuote(ticker).catch(() => ({ price: fallback }))
+              ))
+              const fxMapAI = new Map<string, number>([['PLN', 1]])
+              fxPairsAI.forEach(([cur], i) => fxMapAI.set(cur, fxResultsAI[i].price))
+              const toPln = (amount: number, currency: string) => amount * (fxMapAI.get(currency) ?? 1)
 
               const enrichedAssets = await Promise.all(assetsList.map(async (assetFromList) => {
                 const t = assetFromList.ticker
@@ -225,12 +231,32 @@ export function financeDevApiPlugin(): Plugin {
                   gold_grams: assetFromList.gold_grams ?? null,
                 }
               }))
-              const totalValuePLN = enrichedAssets.reduce((s, a) => s + a.quantity * a.currentPrice, 0)
+              const stocksValuePLN = enrichedAssets.reduce((s, a) => s + a.quantity * a.currentPrice, 0)
               const totalCostPLN = enrichedAssets.reduce((s, a) => s + a.quantity * a.purchasePrice, 0)
-              enrichedAssets.forEach(a => { a.portfolioSharePercent = (a.quantity * a.currentPrice / totalValuePLN) * 100 })
+              enrichedAssets.forEach(a => { a.portfolioSharePercent = (a.quantity * a.currentPrice / (stocksValuePLN || 1)) * 100 })
+
+              // Podsumowanie obligacji
+              const bondTotalPLN = bondAssetsList.reduce((s, b) => s + b.quantity * 100, 0)
+              const bondSummaryLines = bondAssetsList.map(b =>
+                `- ${b.ticker} (${b.bond_type ?? 'obligacja'}, ${b.name}): ${b.quantity} szt., nominał ${(b.quantity * 100).toFixed(0)} PLN`
+              )
+              const bondsSummary = bondSummaryLines.length > 0 ? bondSummaryLines.join('\n') : undefined
+
+              // Podsumowanie gotówki
+              const cashByKey = new Map<string, number>()
+              cashAccountsList.forEach(a => cashByKey.set(a.currency, (cashByKey.get(a.currency) ?? 0) + a.balance))
+              const cashTotalPLN = cashAccountsList.reduce((s, a) => s + toPln(a.balance, a.currency), 0)
+              const cashLines = [...cashByKey.entries()].map(([cur, bal]) =>
+                `- ${cur}: ${bal.toFixed(2)}${cur !== 'PLN' ? ` (~${toPln(bal, cur).toFixed(0)} PLN)` : ''}`
+              )
+              const cashSummary = cashLines.length > 0 ? cashLines.join('\n') : undefined
+
+              const totalValuePLN = stocksValuePLN + bondTotalPLN + cashTotalPLN
               const report_text = await ai.analyzePortfolio({
                 apiKey, assets: enrichedAssets, totalValuePLN,
-                totalPnlPercent: totalCostPLN > 0 ? ((totalValuePLN - totalCostPLN) / totalCostPLN) * 100 : 0,
+                totalPnlPercent: totalCostPLN > 0 ? ((stocksValuePLN - totalCostPLN) / totalCostPLN) * 100 : 0,
+                bondsSummary,
+                cashSummary,
               })
               data = { report_text, model: ai.MANAGER_MODEL }
               break
@@ -252,23 +278,31 @@ export function financeDevApiPlugin(): Plugin {
             }
             case '/ai/chat': {
               const body = await readBody(req)
-              const { messages: msgsJson, assets: assetsJson, reports: reportsJson, apiKey: ak } = body
+              const { messages: msgsJson, assets: assetsJson, bondAssets: bondAssetsJson, cashAccounts: cashJson, reports: reportsJson, apiKey: ak } = body
               if (!msgsJson) { res.statusCode = 400; res.end(JSON.stringify({ error: 'Brak messages' })); return }
               const ai = await import('./main/ai')
               const messages: Array<{ role: 'user' | 'assistant'; content: string }> = JSON.parse(msgsJson)
               const assetsRaw: Array<{ ticker: string; name: string; quantity: number; purchase_price: number; currency: string }> =
                 JSON.parse(assetsJson ?? '[]')
+              const bondAssetsRaw: Array<{ id: number; ticker: string; name: string; quantity: number; bond_type?: string | null }> =
+                JSON.parse(bondAssetsJson ?? '[]')
+              const cashAccountsRaw: Array<{ id: number; currency: string; balance: number }> =
+                JSON.parse(cashJson ?? '[]')
               const reportsRaw: Array<{ ticker: string; report_text: string; created_at: string }> =
                 JSON.parse(reportsJson ?? '[]')
 
-              const [usdPlnQ, eurPlnQ] = await Promise.all([
-                finance.fetchQuote('USDPLN=X').catch(() => ({ price: 4.0 })),
-                finance.fetchQuote('EURPLN=X').catch(() => ({ price: 4.3 })),
-              ])
-              const usdPln = usdPlnQ.price
-              const eurPln = eurPlnQ.price
-              const toPln = (amount: number, currency: string) =>
-                currency === 'PLN' ? amount : currency === 'USD' ? amount * usdPln : currency === 'EUR' ? amount * eurPln : amount
+              const fxPairsChat = [
+                ['USD', 'USDPLN=X', 4.0], ['EUR', 'EURPLN=X', 4.3], ['CHF', 'CHFPLN=X', 4.5],
+                ['GBP', 'GBPPLN=X', 5.1], ['JPY', 'JPYPLN=X', 0.027], ['NOK', 'NOKPLN=X', 0.37], ['SEK', 'SEKPLN=X', 0.37],
+              ] as const
+              const fxResultsChat = await Promise.all(fxPairsChat.map(([, ticker, fallback]) =>
+                finance.fetchQuote(ticker).catch(() => ({ price: fallback }))
+              ))
+              const fxMapChat = new Map<string, number>([['PLN', 1]])
+              fxPairsChat.forEach(([cur], i) => fxMapChat.set(cur, fxResultsChat[i].price))
+              const usdPln = fxMapChat.get('USD')!
+              const eurPln = fxMapChat.get('EUR')!
+              const toPln = (amount: number, currency: string) => amount * (fxMapChat.get(currency) ?? 1)
 
               // Quotes
               const quoteMap = new Map<string, { price: number; currency: string; changePercent: number }>()
@@ -288,7 +322,7 @@ export function financeDevApiPlugin(): Plugin {
               const lastQuestion = [...messages].reverse().find(m => m.role === 'user')?.content ?? ''
               const IGNORE_WORDS = new Set(['USD', 'PLN', 'EUR', 'GBP', 'CHF', 'JPY', 'ETF', 'AI', 'OK', 'IT', 'PE', 'EPS', 'CEO', 'IPO', 'USA', 'EU', 'UK', 'GDP', 'FED', 'ECB', 'IMF', 'RSI'])
               const mentionedTickers = [...new Set((lastQuestion.match(/\b[A-Z]{2,5}(?:\.WA)?\b/g) ?? []).filter(t => !IGNORE_WORDS.has(t)))]
-              const portfolioTickerSet = new Set(assetsRaw.map(a => a.ticker))
+              const portfolioTickerSet = new Set([...assetsRaw.map(a => a.ticker), ...bondAssetsRaw.map(b => b.ticker)])
               const nonPortfolioTickers = mentionedTickers.filter(t => !portfolioTickerSet.has(t))
 
               // Fetch quote + fundamentals for non-portfolio tickers mentioned in question
@@ -340,7 +374,10 @@ export function financeDevApiPlugin(): Plugin {
                 const ch = q ? (q.changePercent >= 0 ? `+${q.changePercent.toFixed(2)}%` : `${q.changePercent.toFixed(2)}%`) : 'N/A'
                 return `  ${a.ticker} (${a.name}): ${a.quantity} szt. × ${price.toFixed(2)} ${curr} | P&L: ${parseFloat(pnl) >= 0 ? '+' : ''}${pnl}% | Dziś: ${ch}`
               })
-              const totalPLN = assetsRaw.reduce((s, a) => { const q = quoteMap.get(a.ticker); const p = q?.price ?? a.purchase_price; const c = q?.currency ?? a.currency; return s + toPln(p, c) * a.quantity }, 0)
+              const stocksTotalPLN = assetsRaw.reduce((s, a) => { const q = quoteMap.get(a.ticker); const p = q?.price ?? a.purchase_price; const c = q?.currency ?? a.currency; return s + toPln(p, c) * a.quantity }, 0)
+              const bondsTotalPLN = bondAssetsRaw.reduce((s, b) => s + b.quantity * 100, 0)
+              const cashTotalChatPLN = cashAccountsRaw.reduce((s, a) => s + toPln(a.balance, a.currency), 0)
+              const totalPLN = stocksTotalPLN + bondsTotalPLN + cashTotalChatPLN
 
               const histLines: string[] = []
               for (const [ticker, monthly] of priceHistories) {
@@ -398,10 +435,28 @@ export function financeDevApiPlugin(): Plugin {
                 reportLines.push(`\n--- Analiza ${r.ticker} ${label} (${r.created_at.slice(0, 10)}) ---\n${truncated}`)
               }
 
+              // Obligacje skarbowe
+              const bondContextLines = bondAssetsRaw.length > 0
+                ? bondAssetsRaw.map(b => `  ${b.ticker} (${b.bond_type ?? 'obligacja'}, ${b.name}): ${b.quantity} szt. × 100 PLN nom.`)
+                : ['  brak obligacji skarbowych']
+
+              // Gotówka
+              const cashByKeyChat = new Map<string, number>()
+              cashAccountsRaw.forEach(a => cashByKeyChat.set(a.currency, (cashByKeyChat.get(a.currency) ?? 0) + a.balance))
+              const cashContextLines = cashAccountsRaw.length > 0
+                ? [...cashByKeyChat.entries()].map(([cur, bal]) => `  ${cur}: ${bal.toFixed(2)}${cur !== 'PLN' ? ` (~${toPln(bal, cur).toFixed(0)} PLN)` : ''}`)
+                : ['  brak depozytów gotówkowych']
+
               const systemContext = [
                 `Jesteś asystentem finansowym z dostępem do portfela inwestycyjnego użytkownika. Odpowiadaj po polsku. Data: ${today}.`,
-                '', `=== PORTFEL (${today}) ===`, `Łączna wartość: ~${totalPLN.toFixed(0)} PLN | USD/PLN: ${usdPln.toFixed(2)} | EUR/PLN: ${eurPln.toFixed(2)}`,
+                '', `=== PORTFEL (${today}) ===`, `Łączna wartość aktywów: ~${stocksTotalPLN.toFixed(0)} PLN | USD/PLN: ${usdPln.toFixed(2)} | EUR/PLN: ${eurPln.toFixed(2)}`,
                 ...assetLines,
+                '', '=== OBLIGACJE SKARBOWE ===',
+                ...bondContextLines,
+                '', '=== GOTÓWKA ===',
+                ...cashContextLines,
+                `  Razem gotówka: ~${cashTotalChatPLN.toFixed(0)} PLN`,
+                `  ŁĄCZNIE (aktywa + obligacje + gotówka): ~${totalPLN.toFixed(0)} PLN`,
                 ...(histLines.length > 0 ? ['', '=== HISTORIA CEN (miesięczna, 2 lata) ===', ...histLines] : []),
                 ...(extraFundLines.length > 0 ? ['', '=== FUNDAMENTY SPÓŁEK (z pytania) ===', ...extraFundLines] : []),
                 ...(macroLines.length > 0 ? ['', '=== MAKROEKONOMIA ===', ...macroLines] : []),

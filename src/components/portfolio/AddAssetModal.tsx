@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { addAsset, updateAsset, addTransaction, fetchBondYear1Rate } from '../../lib/api'
 import { StockSearch } from '../StockSearch'
 import { usePortfolio } from '../../contexts/PortfolioContext'
-import { PHYSICAL_METAL_COINS, gramsToTroyOz, BOND_TYPES, parseBondTickerClient } from '../../lib/types'
+import { PHYSICAL_METAL_COINS, gramsToTroyOz, BOND_TYPES, parseBondTickerClient, SUPPORTED_CURRENCIES } from '../../lib/types'
 import type { PortfolioAsset, BondType } from '../../lib/types'
 
 interface Props {
@@ -370,9 +370,7 @@ export default function AddAssetModal({ onClose, onSuccess, editAsset }: Props) 
                 onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))}
                 className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-finance-green"
               >
-                <option value="USD">USD</option>
-                <option value="PLN">PLN</option>
-                <option value="EUR">EUR</option>
+                {SUPPORTED_CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
           )}

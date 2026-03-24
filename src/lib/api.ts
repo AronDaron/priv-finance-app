@@ -14,6 +14,7 @@ import type {
   AIReport,
   NewPortfolioAsset,
   NewTransaction,
+  SupportedCurrency,
   NewAIReport,
   OHLCCandle,
   StockQuote,
@@ -33,8 +34,28 @@ import type {
   ChatMessage,
   BondValueResult,
 } from './types'
+import { FX_TICKERS } from './types'
 
 export type { ChatMessage }
+
+// ─── Kursy walut → PLN ────────────────────────────────────────────────────────
+
+/** Pobiera kursy wszystkich obsługiwanych walut względem PLN.
+ *  Zawsze zawiera PLN → 1. Dla walut których nie można pobrać — fallback 1. */
+export async function getFxRates(): Promise<Map<SupportedCurrency, number>> {
+  const rates = new Map<SupportedCurrency, number>([['PLN', 1]])
+  await Promise.all(
+    (Object.entries(FX_TICKERS) as [SupportedCurrency, string][]).map(async ([cur, ticker]) => {
+      try {
+        const q = await getQuote(ticker)
+        rates.set(cur, q.price ?? 1)
+      } catch {
+        rates.set(cur, 1)
+      }
+    })
+  )
+  return rates
+}
 
 // ─── Deklaracja typów dla window.electronAPI ─────────────────────────────────
 // TypeScript renderer nie importuje typów Electrona — deklarujemy ręcznie.
@@ -550,9 +571,16 @@ export async function analyzeStock(ticker: string): Promise<AIReport> {
 export async function analyzePortfolio(): Promise<AIReport> {
   if (isElectron()) return window.electronAPI!.ai.analyzePortfolio()
   const apiKey = await getSetting('openrouter_api_key')
-  const assets = await getAssets()
+  const [allAssets, cash] = await Promise.all([getAssets(), getCashAccounts()])
+  const assets = allAssets.filter(a => a.asset_type !== 'bond')
+  const bondAssets = allAssets.filter(a => a.asset_type === 'bond')
   const result = await devApiPost<{ report_text: string; model: string }>(
-    '/ai/analyze-portfolio', { assets: JSON.stringify(assets), apiKey: apiKey ?? '' }
+    '/ai/analyze-portfolio', {
+      assets: JSON.stringify(assets),
+      bondAssets: JSON.stringify(bondAssets),
+      cashAccounts: JSON.stringify(cash),
+      apiKey: apiKey ?? '',
+    }
   )
   return addReport({ ticker: '__PORTFOLIO__', model: result.model, report_text: result.report_text })
 }
@@ -615,10 +643,14 @@ export async function analyzeRegionAI(regionId: RegionId, newsHeadlines: string[
 export async function chatPortfolio(messages: ChatMessage[]): Promise<string> {
   if (isElectron()) return window.electronAPI!.ai.chat(messages)
   const apiKey = await getSetting('openrouter_api_key')
-  const [assets, reports] = await Promise.all([getAssets(), getReports()])
+  const [allAssets, reports, cash] = await Promise.all([getAssets(), getReports(), getCashAccounts()])
+  const stockAssets = allAssets.filter(a => a.asset_type !== 'bond')
+  const bondAssets = allAssets.filter(a => a.asset_type === 'bond')
   return devApiPost<string>('/ai/chat', {
     messages: JSON.stringify(messages),
-    assets: JSON.stringify(assets),
+    assets: JSON.stringify(stockAssets),
+    bondAssets: JSON.stringify(bondAssets),
+    cashAccounts: JSON.stringify(cash),
     reports: JSON.stringify(reports),
     apiKey: apiKey ?? '',
   })

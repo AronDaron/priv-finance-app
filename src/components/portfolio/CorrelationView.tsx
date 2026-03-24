@@ -1,9 +1,64 @@
 import { useState, useEffect } from 'react'
 import { getAssets, getHistory } from '../../lib/api'
-import type { PortfolioAsset, HistoryPeriod } from '../../lib/types'
+import type { PortfolioAsset, HistoryPeriod, BondType } from '../../lib/types'
+import { BOND_TYPES } from '../../lib/types'
 import { calcDailyReturns, buildCorrelationMatrix } from '../../lib/correlationMath'
 import type { CorrelationResult } from '../../lib/correlationMath'
 import LoadingSpinner from '../ui/LoadingSpinner'
+
+// ─── Statyczne korelacje dla obligacji (grupowane po typie) ───────────────────
+
+function isCommodityTicker(asset: PortfolioAsset): boolean {
+  return asset.ticker.endsWith('=F') || (asset.gold_grams != null && asset.gold_grams > 0)
+}
+
+function isBondType(ticker: string): boolean {
+  return ticker in BOND_TYPES
+}
+
+function expandMatrixWithBonds(
+  base: CorrelationResult,
+  bondTypes: BondType[],
+  allAssets: PortfolioAsset[],
+): CorrelationResult {
+  if (bondTypes.length === 0) return base
+
+  const n = base.tickers.length
+  const m = bondTypes.length
+  const total = n + m
+  const allTickers = [...base.tickers, ...bondTypes]
+
+  const matrix: number[][] = Array.from({ length: total }, (_, i) =>
+    Array.from({ length: total }, (_, j) => {
+      if (i < n && j < n) return base.matrix[i][j]
+      return 0
+    })
+  )
+
+  for (let bi = 0; bi < m; bi++) {
+    matrix[n + bi][n + bi] = 1.0
+    const isInflation = BOND_TYPES[bondTypes[bi]].inflationLinked
+
+    // bond type vs non-bond
+    for (let ni = 0; ni < n; ni++) {
+      const nonBondAsset = allAssets.find(a => a.ticker === base.tickers[ni] && a.asset_type !== 'bond')
+      let corr = isInflation ? 0.05 : -0.05
+      if (nonBondAsset && isCommodityTicker(nonBondAsset)) corr = isInflation ? 0.12 : 0.02
+      matrix[n + bi][ni] = corr
+      matrix[ni][n + bi] = corr
+    }
+
+    // bond type vs bond type
+    for (let bj = bi + 1; bj < m; bj++) {
+      const otherInflation = BOND_TYPES[bondTypes[bj]].inflationLinked
+      const corr = isInflation === otherInflation ? (isInflation ? 0.90 : 0.88) : 0.70
+      matrix[n + bi][n + bj] = corr
+      matrix[n + bj][n + bi] = corr
+    }
+  }
+
+  return { matrix, tickers: allTickers, insufficientData: base.insufficientData }
+}
 
 // ─── Kolory heatmapy ──────────────────────────────────────────────────────────
 
@@ -29,6 +84,7 @@ function generateInsights(result: CorrelationResult): { type: InsightType; text:
 
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
+      if (isBondType(tickers[i]) && isBondType(tickers[j])) continue
       const c = matrix[i][j]
       if (c > 0.8)
         out.push({ type: 'warn',   text: `${tickers[i]} i ${tickers[j]}: wysoka korelacja (${c.toFixed(2)}) — rozważ redukcję ekspozycji na jeden z nich.` })
@@ -69,6 +125,7 @@ export default function CorrelationView() {
   const [assets, setAssets]           = useState<PortfolioAsset[]>([])
   const [period, setPeriod]           = useState<HistoryPeriod>('3mo')
   const [result, setResult]           = useState<CorrelationResult | null>(null)
+  const [hasBonds, setHasBonds]       = useState(false)
   const [loading, setLoading]         = useState(false)
   const [loadingAssets, setLoadingAssets] = useState(true)
   const [hoveredCell, setHoveredCell] = useState<{ i: number; j: number } | null>(null)
@@ -78,11 +135,19 @@ export default function CorrelationView() {
   }, [])
 
   useEffect(() => {
-    const tickers = [...new Set(assets.map(a => a.ticker))]
-    if (tickers.length < 2) { setResult(null); return }
+    const allTickers = [...new Set(assets.map(a => a.ticker))]
+    if (allTickers.length < 2) { setResult(null); return }
+
+    const bondAssets    = assets.filter(a => a.asset_type === 'bond')
+    const nonBondAssets = assets.filter(a => a.asset_type !== 'bond')
+    const bondTypes      = [...new Set(bondAssets.map(a => a.bond_type).filter(Boolean))] as BondType[]
+    const nonBondTickers = [...new Set(nonBondAssets.map(a => a.ticker))]
+
+    setHasBonds(bondTypes.length > 0)
     setLoading(true)
+
     Promise.all(
-      tickers.map(ticker =>
+      nonBondTickers.map(ticker =>
         getHistory(ticker, period)
           .then(candles => [ticker, candles] as const)
           .catch(() => [ticker, []] as const)
@@ -92,7 +157,8 @@ export default function CorrelationView() {
       entries.forEach(([ticker, candles]) => {
         returnSeries.set(ticker, calcDailyReturns(candles.map(c => c.close).filter(v => v > 0)))
       })
-      setResult(buildCorrelationMatrix(returnSeries, tickers))
+      const baseResult = buildCorrelationMatrix(returnSeries, nonBondTickers)
+      setResult(expandMatrixWithBonds(baseResult, bondTypes, assets))
     }).finally(() => setLoading(false))
   }, [assets, period])
 
@@ -141,6 +207,14 @@ export default function CorrelationView() {
             <div className="flex items-center gap-3 glass-card rounded-xl px-4 py-3 text-sm text-amber-300 border border-amber-700/30">
               <span>⚠</span>
               <span>Niewystarczające dane historyczne dla: <strong>{result.insufficientData.join(', ')}</strong></span>
+            </div>
+          )}
+
+          {/* ── Informacja o statycznych korelacjach obligacji ── */}
+          {hasBonds && (
+            <div className="flex items-center gap-3 glass-card rounded-xl px-4 py-3 text-sm text-indigo-300 border border-indigo-700/30">
+              <span>ℹ</span>
+              <span>Korelacje obligacji skarbowych są <strong>szacunkowe</strong> (brak danych rynkowych): inflacyjne vs akcje ≈ +0.05, vs złoto ≈ +0.12; stałoprocentowe vs akcje ≈ −0.05; obligacja vs obligacja ≈ +0.70–0.90.</span>
             </div>
           )}
 

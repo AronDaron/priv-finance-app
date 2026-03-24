@@ -300,18 +300,22 @@ export async function fetchPortfolioHistory(
     })
   )
 
-  let usdPln = 4.0
-  let eurPln = 4.3
-  try {
-    const [u, e] = await Promise.all([
-      yf.quoteSummary('USDPLN=X', { modules: ['price'] }),
-      yf.quoteSummary('EURPLN=X', { modules: ['price'] }),
-    ])
-    usdPln = (u.price as any)?.regularMarketPrice ?? 4.0
-    eurPln = (e.price as any)?.regularMarketPrice ?? 4.3
-  } catch {}
+  const FX_PAIRS: [string, string, number][] = [
+    ['USD', 'USDPLN=X', 4.0], ['EUR', 'EURPLN=X', 4.3],
+    ['CHF', 'CHFPLN=X', 4.5], ['GBP', 'GBPPLN=X', 5.1],
+    ['JPY', 'JPYPLN=X', 0.027], ['NOK', 'NOKPLN=X', 0.37], ['SEK', 'SEKPLN=X', 0.38],
+  ]
+  const fxRates = new Map<string, number>([['PLN', 1]])
+  await Promise.all(FX_PAIRS.map(async ([cur, ticker, fallback]) => {
+    try {
+      const res = await yf.quoteSummary(ticker, { modules: ['price'] })
+      fxRates.set(cur, (res.price as any)?.regularMarketPrice ?? fallback)
+    } catch {
+      fxRates.set(cur, fallback)
+    }
+  }))
 
-  const toPlnRate = (cur: string) => cur === 'PLN' ? 1 : cur === 'EUR' ? eurPln : usdPln
+  const toPlnRate = (cur: string) => fxRates.get(cur) ?? 1
 
   // Zbierz wszystkie daty z historii
   const dateSet = new Set<string>()

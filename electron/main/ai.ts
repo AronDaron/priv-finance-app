@@ -200,10 +200,11 @@ export interface PortfolioAnalysisParams {
   totalPnlPercent: number
   portfolios?: Array<{ id: number; name: string; tags?: string[] }>
   bondsSummary?: string  // Podsumowanie obligacji (bez Worker AI — wycena deterministyczna)
+  cashSummary?: string   // Gotówka na kontach (per waluta z wartością PLN)
 }
 
 export async function analyzePortfolio(params: PortfolioAnalysisParams): Promise<string> {
-  const { apiKey, assets, totalValuePLN, totalPnlPercent, portfolios, bondsSummary } = params
+  const { apiKey, assets, totalValuePLN, totalPnlPercent, portfolios, bondsSummary, cashSummary } = params
 
   const systemPrompt = `Jesteś zarządzającym portfelem inwestycyjnym. Piszesz po polsku. Twoje analizy są konkretne i actionable. Zawsze pisz pełną analizę z 4 sekcjami używając markdown: **bold** dla kluczowych wartości i wniosków, listy punktowane dla rekomendacji i ryzyk. Nigdy nie skracaj analizy.`
 
@@ -253,10 +254,10 @@ export async function analyzePortfolio(params: PortfolioAnalysisParams): Promise
   const userPrompt = `Oceń poniższy portfel inwestycyjny.
 ${portfolioContextSection}${physicalMetalNote}
 SKŁAD PORTFELA (${assets.length} pozycji${bondsSummary ? ' akcje/ETF/metal' : ''}):
-${assetLines}${bondsSummary ? `\nOBLIGACJE SKARBOWE (wycena deterministyczna, bez analizy Worker):\n${bondsSummary}` : ''}
+${assetLines}${bondsSummary ? `\nOBLIGACJE SKARBOWE (wycena deterministyczna, bez analizy Worker):\n${bondsSummary}` : ''}${cashSummary ? `\nGOTÓWKA (konta gotówkowe):\n${cashSummary}` : ''}
 
-ŁĄCZNA WARTOŚĆ: ~${totalValuePLN.toFixed(0)} PLN
-ŁĄCZNY P&L: ${totalPnlPercent.toFixed(2)}%
+ŁĄCZNA WARTOŚĆ (aktywa + gotówka): ~${totalValuePLN.toFixed(0)} PLN
+ŁĄCZNY P&L (aktywa inwestycyjne): ${totalPnlPercent.toFixed(2)}%
 
 ANALIZY PER SPÓŁKA (wygenerowane przez Worker AI):
 ${reportLines}

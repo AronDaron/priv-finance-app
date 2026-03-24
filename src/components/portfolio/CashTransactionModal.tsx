@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { addCashTransaction } from '../../lib/api'
 import type { NewCashTransaction } from '../../lib/types'
+import { SUPPORTED_CURRENCIES } from '../../lib/types'
 
 interface Props {
   portfolioId: number
@@ -11,7 +12,7 @@ interface Props {
 export default function CashTransactionModal({ portfolioId, onClose, onSuccess }: Props) {
   const [type, setType] = useState<'deposit' | 'withdrawal'>('deposit')
   const [amount, setAmount] = useState('')
-  const [currency, setCurrency] = useState<'PLN' | 'USD' | 'EUR'>('PLN')
+  const [currency, setCurrency] = useState<typeof SUPPORTED_CURRENCIES[number]>('PLN')
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [notes, setNotes] = useState('')
   const [loading, setLoading] = useState(false)
@@ -91,12 +92,10 @@ export default function CashTransactionModal({ portfolioId, onClose, onSuccess }
               <label className="block text-xs text-gray-400 mb-1">Waluta</label>
               <select
                 value={currency}
-                onChange={e => setCurrency(e.target.value as 'PLN' | 'USD' | 'EUR')}
+                onChange={e => setCurrency(e.target.value as typeof SUPPORTED_CURRENCIES[number])}
                 className="bg-gray-800 border border-gray-600 text-white px-3 py-2 rounded-lg text-sm focus:outline-none focus:border-finance-green"
               >
-                <option value="PLN">PLN</option>
-                <option value="USD">USD</option>
-                <option value="EUR">EUR</option>
+                {SUPPORTED_CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
           </div>

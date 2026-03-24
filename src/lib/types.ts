@@ -72,10 +72,26 @@ export const PORTFOLIO_TAGS = [
 ] as const
 export type PortfolioTag = typeof PORTFOLIO_TAGS[number]
 
+// ─── Waluty ───────────────────────────────────────────────────────────────────
+
+export const SUPPORTED_CURRENCIES = ['PLN', 'USD', 'EUR', 'CHF', 'GBP', 'JPY', 'NOK', 'SEK'] as const
+export type SupportedCurrency = typeof SUPPORTED_CURRENCIES[number]
+
+/** Yahoo Finance ticker dla kursu waluty → PLN */
+export const FX_TICKERS: Partial<Record<SupportedCurrency, string>> = {
+  USD: 'USDPLN=X',
+  EUR: 'EURPLN=X',
+  CHF: 'CHFPLN=X',
+  GBP: 'GBPPLN=X',
+  JPY: 'JPYPLN=X',
+  NOK: 'NOKPLN=X',
+  SEK: 'SEKPLN=X',
+}
+
 export interface CashAccount {
   id: number
   portfolio_id: number
-  currency: 'PLN' | 'USD' | 'EUR'
+  currency: SupportedCurrency
   balance: number
   created_at: string
 }
@@ -85,7 +101,7 @@ export interface CashTransaction {
   portfolio_id: number
   type: 'deposit' | 'withdrawal'
   amount: number
-  currency: 'PLN' | 'USD' | 'EUR'
+  currency: SupportedCurrency
   date: string
   notes?: string
   created_at: string

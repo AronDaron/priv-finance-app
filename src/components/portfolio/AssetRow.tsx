@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatCurrency, formatPercent } from '../../lib/utils'
-import type { PortfolioAsset, StockQuote, BondValueResult } from '../../lib/types'
+import type { PortfolioAsset, StockQuote, BondValueResult, SupportedCurrency } from '../../lib/types'
 import { gramsToTroyOz } from '../../lib/types'
 import Sparkline from '../ui/Sparkline'
 import BondDetailModal from './BondDetailModal'
@@ -10,20 +10,18 @@ interface Props {
   asset: PortfolioAsset
   quote: StockQuote | null
   sparkline?: number[]
-  usdPln?: number
-  eurPln?: number
+  fxRates?: Map<SupportedCurrency, number>
   onDelete: () => void
   bondValue?: BondValueResult
   bondPendingMonth?: string  // np. '2026-01' gdy CPI jeszcze nie opublikowane
 }
 
-export default function AssetRow({ asset, quote, sparkline, usdPln = 4.0, eurPln = 4.3, onDelete, bondValue, bondPendingMonth }: Props) {
+export default function AssetRow({ asset, quote, sparkline, fxRates, onDelete, bondValue, bondPendingMonth }: Props) {
   const navigate = useNavigate()
   const [showBondDetail, setShowBondDetail] = useState(false)
   const isBond = asset.asset_type === 'bond'
 
-  const toPlnRate = (currency: string) =>
-    currency === 'PLN' ? 1 : currency === 'USD' ? usdPln : currency === 'EUR' ? eurPln : 1
+  const toPlnRate = (currency: string) => fxRates?.get(currency as SupportedCurrency) ?? 1
 
   // Obliczenia dla obligacji
   const bondCurrentValuePerBond = bondValue?.currentValuePerBond ?? null

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
-import { getAssets, getQuote, getCashAccounts, getAssetMeta, getSetting, setSetting } from '../../lib/api'
-import type { PortfolioAsset, StockQuote, CashAccount } from '../../lib/types'
-import { gramsToTroyOz } from '../../lib/types'
+import { getAssets, getQuote, getCashAccounts, getAssetMeta, getSetting, setSetting, getBondValues, getFxRates } from '../../lib/api'
+import type { PortfolioAsset, StockQuote, CashAccount, BondValueResult, SupportedCurrency } from '../../lib/types'
+import { gramsToTroyOz, SUPPORTED_CURRENCIES } from '../../lib/types'
 import { formatCurrency } from '../../lib/utils'
 import LoadingSpinner from '../ui/LoadingSpinner'
 
@@ -18,9 +18,11 @@ const CATEGORY_MAP: Record<string, Category> = {
   surowiec: { key: 'commodity', label: 'Złoto / Surowce' },
   commodity: { key: 'commodity', label: 'Złoto / Surowce' },
   krypto: { key: 'other', label: 'Inne' }, other: { key: 'other', label: 'Inne' },
+  bond: { key: 'bond', label: 'Obligacje' },
 }
 
 function categorizeAsset(ticker: string, assetType: string, goldGrams?: number): Category {
+  if (assetType === 'bond') return CATEGORY_MAP.bond
   if (goldGrams != null && goldGrams > 0) return CATEGORY_MAP.złoto
   if (ticker.endsWith('=F')) return CATEGORY_MAP.złoto
   return CATEGORY_MAP[assetType.toLowerCase()] ?? CATEGORY_MAP.akcje
@@ -45,11 +47,8 @@ function accentForDiff(diff: number) {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function toPlnRate(c: string, usd: number, eur: number) {
-  return c === 'PLN' ? 1 : c === 'USD' ? usd : c === 'EUR' ? eur : 1
-}
-async function fetchRate(t: string) {
-  try { return (await getQuote(t)).price ?? 1 } catch { return 1 }
+function toPlnRate(c: string, rates: Map<SupportedCurrency, number>) {
+  return rates.get(c as SupportedCurrency) ?? 1
 }
 
 // ─── Komponent ────────────────────────────────────────────────────────────────
@@ -58,9 +57,9 @@ export default function RebalancingView() {
   const [assets, setAssets]             = useState<PortfolioAsset[]>([])
   const [quotes, setQuotes]             = useState<Map<string, StockQuote>>(new Map())
   const [cashAccounts, setCashAccounts] = useState<CashAccount[]>([])
-  const [usdPln, setUsdPln]             = useState(4.0)
-  const [eurPln, setEurPln]             = useState(4.3)
+  const [fxRates, setFxRates]           = useState<Map<SupportedCurrency, number>>(new Map([['PLN', 1]]))
   const [metaMap, setMetaMap]           = useState<Map<string, string>>(new Map())
+  const [bondValuesMap, setBondValuesMap] = useState<Map<number, BondValueResult>>(new Map())
   const [targets, setTargets]           = useState<Targets>({})
   const [savedTargets, setSavedTargets] = useState<Targets>({})
   const [investAmount, setInvestAmount] = useState('')
@@ -71,21 +70,24 @@ export default function RebalancingView() {
     async function load() {
       setLoading(true)
       try {
-        const [list, usd, eur, cash, savedRaw] = await Promise.all([
-          getAssets(), fetchRate('USDPLN=X'), fetchRate('EURPLN=X'),
+        const [list, rates, cash, savedRaw] = await Promise.all([
+          getAssets(), getFxRates(),
           getCashAccounts(), getSetting('rebalancing_targets'),
         ])
-        setAssets(list); setUsdPln(usd); setEurPln(eur); setCashAccounts(cash)
+        setAssets(list); setFxRates(rates); setCashAccounts(cash)
         if (savedRaw) {
           try { const p = JSON.parse(savedRaw) as Targets; setTargets(p); setSavedTargets(p) } catch {}
         }
-        const tickers = [...new Set(list.map(a => a.ticker))]
-        const [qE, mE] = await Promise.all([
-          Promise.all(tickers.map(t => getQuote(t).then(q => [t, q] as [string, StockQuote]).catch(() => null))),
-          Promise.all(tickers.map(t => getAssetMeta(t).then(m => [t, m.assetType] as [string, string]).catch(() => [t, 'akcje'] as [string, string]))),
+        const bondAssets = list.filter(a => a.asset_type === 'bond')
+        const nonBondTickers = [...new Set(list.filter(a => a.asset_type !== 'bond').map(a => a.ticker))]
+        const [qE, mE, bv] = await Promise.all([
+          Promise.all(nonBondTickers.map(t => getQuote(t).then(q => [t, q] as [string, StockQuote]).catch(() => null))),
+          Promise.all(nonBondTickers.map(t => getAssetMeta(t).then(m => [t, m.assetType] as [string, string]).catch(() => [t, 'akcje'] as [string, string]))),
+          getBondValues(bondAssets),
         ])
         const qMap = new Map<string, StockQuote>(); qE.forEach(e => { if (e) qMap.set(e[0], e[1]) }); setQuotes(qMap)
         const mMap = new Map<string, string>(); mE.forEach(([t, tp]) => mMap.set(t, tp)); setMetaMap(mMap)
+        setBondValuesMap(bv.values)
       } finally { setLoading(false) }
     }
     load()
@@ -95,13 +97,19 @@ export default function RebalancingView() {
     const catMap = new Map<string, { label: string; items: { asset: PortfolioAsset; valuePLN: number }[] }>()
     let total = 0
     assets.forEach(asset => {
-      const q = quotes.get(asset.ticker)
-      const spotPrice = q?.price ?? asset.purchase_price
-      const ozPerCoin = asset.gold_grams ? gramsToTroyOz(asset.gold_grams) : null
-      const unitPrice = ozPerCoin ? spotPrice * ozPerCoin : spotPrice
-      const val = asset.quantity * unitPrice * toPlnRate(q?.currency ?? asset.currency, usdPln, eurPln)
+      let val: number
+      if (asset.asset_type === 'bond') {
+        val = bondValuesMap.get(asset.id)?.totalValue ?? asset.purchase_price * asset.quantity
+      } else {
+        const q = quotes.get(asset.ticker)
+        const spotPrice = q?.price ?? asset.purchase_price
+        const ozPerCoin = asset.gold_grams ? gramsToTroyOz(asset.gold_grams) : null
+        const unitPrice = ozPerCoin ? spotPrice * ozPerCoin : spotPrice
+        val = asset.quantity * unitPrice * toPlnRate(q?.currency ?? asset.currency, fxRates)
+      }
       total += val
-      const { key, label } = categorizeAsset(asset.ticker, metaMap.get(asset.ticker) ?? 'akcje', asset.gold_grams)
+      const metaType = asset.asset_type === 'bond' ? 'bond' : (metaMap.get(asset.ticker) ?? 'akcje')
+      const { key, label } = categorizeAsset(asset.ticker, metaType, asset.gold_grams)
       if (!catMap.has(key)) catMap.set(key, { label, items: [] })
       catMap.get(key)!.items.push({ asset, valuePLN: val })
     })
@@ -112,10 +120,10 @@ export default function RebalancingView() {
                targetPct: targets[key] ?? 0,
                assets: items.sort((a, b) => b.valuePLN - a.valuePLN) }
     }).sort((a, b) => b.currentValuePLN - a.currentValuePLN)
-  }, [assets, quotes, metaMap, targets, usdPln, eurPln])
+  }, [assets, quotes, metaMap, bondValuesMap, targets, fxRates])
 
   const totalPLN       = useMemo(() => categories.reduce((s, c) => s + c.currentValuePLN, 0), [categories])
-  const cashPLN        = useMemo(() => cashAccounts.reduce((s, a) => s + a.balance * toPlnRate(a.currency, usdPln, eurPln), 0), [cashAccounts, usdPln, eurPln])
+  const cashPLN        = useMemo(() => cashAccounts.reduce((s, a) => s + a.balance * toPlnRate(a.currency, fxRates), 0), [cashAccounts, fxRates])
   const targetSum      = useMemo(() => Object.values(targets).reduce((s, v) => s + (Number(v) || 0), 0), [targets])
   const targetsValid   = Math.abs(targetSum - 100) < 0.5
   const maxDev         = useMemo(() => categories.reduce((m, c) => Math.max(m, Math.abs(c.currentPct - c.targetPct)), 0), [categories])

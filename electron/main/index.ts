@@ -191,7 +191,7 @@ function buildChatSystemContext(params: {
     `Jesteś asystentem finansowym z pełnym dostępem do portfela inwestycyjnego użytkownika. Odpowiadaj WYŁĄCZNIE po polsku. Używaj markdown do formatowania. Data: ${today}.`,
     '',
     `=== PORTFEL (${today}) ===`,
-    `Łączna wartość: ~${totalValuePLN.toFixed(0)} PLN | USD/PLN: ${usdPln.toFixed(2)} | EUR/PLN: ${eurPln.toFixed(2)}`,
+    `Łączna wartość aktywów: ~${totalValuePLN.toFixed(0)} PLN | USD/PLN: ${usdPln.toFixed(2)} | EUR/PLN: ${eurPln.toFixed(2)}`,
     ...assetLines,
     ...(bondLines.length > 0 ? ['', `OBLIGACJE SKARBOWE (${bondLines.length} poz.):`, ...bondLines] : []),
   ]
@@ -202,8 +202,20 @@ function buildChatSystemContext(params: {
   })
   if (pfLines.length > 0) sections.push('', 'PORTFELE:', ...pfLines)
 
-  const cashLines = cashAccounts.filter(c => c.balance !== 0).map(c => `  ${c.currency}: ${c.balance.toFixed(2)}`)
-  if (cashLines.length > 0) sections.push('', 'GOTÓWKA:', ...cashLines)
+  let cashTotalPLN = 0
+  const cashLines = cashAccounts
+    .filter(c => c.balance !== 0)
+    .map(c => {
+      const valuePLN = c.balance * (toPln(1, c.currency))
+      cashTotalPLN += valuePLN
+      const plnNote = c.currency !== 'PLN' ? ` (~${valuePLN.toFixed(0)} PLN)` : ''
+      return `  ${c.currency}: ${c.balance.toFixed(2)}${plnNote}`
+    })
+  sections.push('', 'GOTÓWKA (konta gotówkowe):',
+    ...(cashLines.length > 0 ? cashLines : ['  brak depozytów gotówkowych']),
+    `  Razem gotówka: ~${cashTotalPLN.toFixed(0)} PLN`,
+    `ŁĄCZNIE (aktywa + gotówka): ~${(totalValuePLN + cashTotalPLN).toFixed(0)} PLN`,
+  )
 
   // --- Transactions (last 12 months) ---
   const cutoffDate = new Date()
@@ -520,14 +532,21 @@ function registerIpcHandlers(): void {
     const question = [...messages].reverse().find(m => m.role === 'user')?.content ?? ''
 
     // Kursy walut
-    const [usdPlnQ, eurPlnQ] = await Promise.all([
-      fetchQuote('USDPLN=X').catch(() => ({ price: 4.0, currency: 'PLN', changePercent: 0 })),
-      fetchQuote('EURPLN=X').catch(() => ({ price: 4.3, currency: 'PLN', changePercent: 0 })),
-    ])
-    const usdPln = usdPlnQ.price
-    const eurPln = eurPlnQ.price
-    const toPln = (amount: number, currency: string) =>
-      currency === 'PLN' ? amount : currency === 'USD' ? amount * usdPln : currency === 'EUR' ? amount * eurPln : amount
+    const FX_PAIRS_CHAT: [string, string, number][] = [
+      ['USD', 'USDPLN=X', 4.0], ['EUR', 'EURPLN=X', 4.3],
+      ['CHF', 'CHFPLN=X', 4.5], ['GBP', 'GBPPLN=X', 5.1],
+      ['JPY', 'JPYPLN=X', 0.027], ['NOK', 'NOKPLN=X', 0.37], ['SEK', 'SEKPLN=X', 0.38],
+    ]
+    const chatFxRates = new Map<string, number>([['PLN', 1]])
+    await Promise.all(FX_PAIRS_CHAT.map(async ([cur, ticker, fallback]) => {
+      try {
+        const q = await fetchQuote(ticker)
+        chatFxRates.set(cur, q.price ?? fallback)
+      } catch { chatFxRates.set(cur, fallback) }
+    }))
+    const usdPln = chatFxRates.get('USD') ?? 4.0
+    const eurPln = chatFxRates.get('EUR') ?? 4.3
+    const toPln = (amount: number, currency: string) => amount * (chatFxRates.get(currency) ?? 1)
 
     // Aktualne kursy aktywów (obligacje pomijamy — brak kwotowań Yahoo Finance)
     const quoteMap = new Map<string, { price: number; currency: string; changePercent: number }>()
@@ -665,14 +684,19 @@ function registerIpcHandlers(): void {
     const bondsSummary = bondSummaryLines.length > 0 ? bondSummaryLines.join('\n') : undefined
 
     // Pobierz kursy walut — wszystkie wartości będą w PLN dla spójności
-    const [usdPlnQ, eurPlnQ] = await Promise.all([
-      fetchQuote('USDPLN=X').catch(() => ({ price: 4.0 } as { price: number })),
-      fetchQuote('EURPLN=X').catch(() => ({ price: 4.3 } as { price: number })),
-    ])
-    const usdPln = usdPlnQ.price
-    const eurPln = eurPlnQ.price
-    const toPln = (amount: number, currency: string) =>
-      currency === 'PLN' ? amount : currency === 'USD' ? amount * usdPln : currency === 'EUR' ? amount * eurPln : amount
+    const FX_PAIRS_AI: [string, string, number][] = [
+      ['USD', 'USDPLN=X', 4.0], ['EUR', 'EURPLN=X', 4.3],
+      ['CHF', 'CHFPLN=X', 4.5], ['GBP', 'GBPPLN=X', 5.1],
+      ['JPY', 'JPYPLN=X', 0.027], ['NOK', 'NOKPLN=X', 0.37], ['SEK', 'SEKPLN=X', 0.38],
+    ]
+    const fxRatesAI = new Map<string, number>([['PLN', 1]])
+    await Promise.all(FX_PAIRS_AI.map(async ([cur, ticker, fallback]) => {
+      try {
+        const q = await fetchQuote(ticker)
+        fxRatesAI.set(cur, q.price ?? fallback)
+      } catch { fxRatesAI.set(cur, fallback) }
+    }))
+    const toPln = (amount: number, currency: string) => amount * (fxRatesAI.get(currency) ?? 1)
 
     const enrichedAssets: Array<{
       ticker: string
@@ -728,9 +752,22 @@ function registerIpcHandlers(): void {
 
     const stocksValuePLN = enrichedAssets.reduce((sum, a) => sum + a.quantity * a.currentPrice, 0)
     const stocksCostPLN  = enrichedAssets.reduce((sum, a) => sum + a.quantity * a.purchasePrice, 0)
-    const totalValuePLN = stocksValuePLN + bondTotalPLN
+
+    // Gotówka na kontach
+    const cashAccounts = getCashAccounts()
+    let cashTotalPLN = 0
+    const cashSummaryLines: string[] = []
+    for (const acc of cashAccounts.filter(c => c.balance !== 0)) {
+      const valuePLN = acc.balance * (fxRatesAI.get(acc.currency) ?? 1)
+      cashTotalPLN += valuePLN
+      const plnNote = acc.currency !== 'PLN' ? ` (~${valuePLN.toFixed(0)} PLN)` : ''
+      cashSummaryLines.push(`- ${acc.currency}: ${acc.balance.toFixed(2)}${plnNote}`)
+    }
+    const cashSummary = cashSummaryLines.length > 0 ? cashSummaryLines.join('\n') : undefined
+
+    const totalValuePLN = stocksValuePLN + bondTotalPLN + cashTotalPLN
     const totalCostPLN  = stocksCostPLN + bondAssets.reduce((sum, a) => sum + a.quantity * 100, 0)
-    // portfolioSharePercent odnosi się do całości (akcje + obligacje)
+    // portfolioSharePercent odnosi się do całości (akcje + obligacje + gotówka)
     enrichedAssets.forEach(a => {
       a.portfolioSharePercent = (a.quantity * a.currentPrice / totalValuePLN) * 100
     })
@@ -747,6 +784,7 @@ function registerIpcHandlers(): void {
         tags: p.tags ? JSON.parse(p.tags) : [],
       })),
       bondsSummary,
+      cashSummary,
     })
 
     return addReport({ ticker: '__PORTFOLIO__', model: MANAGER_MODEL, report_text: reportText })
@@ -815,6 +853,12 @@ app.whenReady().then(() => {
   fetchMonthlyCpi().then(cpiData => {
     for (const { year, month, value } of cpiData) upsertMonthlyCpi(year, month, value)
   }).catch(() => {})
+
+  // Usuń obligacje po dacie zapadalności
+  const today = new Date().toISOString().slice(0, 10)
+  getAllAssets()
+    .filter(a => a.asset_type === 'bond' && a.bond_maturity_date != null && a.bond_maturity_date <= today)
+    .forEach(a => deleteAsset(a.id))
 
   // Pobierz brakujące marże dla obligacji indeksowanych inflacją (np. po upgradezie)
   const INFLATION_TYPES = new Set(['COI', 'EDO', 'ROS', 'ROD'])

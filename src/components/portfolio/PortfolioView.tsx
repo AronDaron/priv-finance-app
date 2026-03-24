@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { getAssets, deleteAsset, getQuote, getHistory, getCashAccounts, getBondValues } from '../../lib/api'
-import type { PortfolioAsset, StockQuote, CashAccount, BondValueResult } from '../../lib/types'
+import { getAssets, deleteAsset, getQuote, getHistory, getCashAccounts, getBondValues, getFxRates } from '../../lib/api'
+import type { PortfolioAsset, StockQuote, CashAccount, BondValueResult, SupportedCurrency } from '../../lib/types'
 import type { BondValuesResult } from '../../lib/api'
 import { usePortfolio } from '../../contexts/PortfolioContext'
 import AssetRow from './AssetRow'
@@ -11,14 +11,6 @@ import LoadingSpinner from '../ui/LoadingSpinner'
 import ErrorMessage from '../ui/ErrorMessage'
 import { formatCurrency } from '../../lib/utils'
 
-async function getRate(ticker: string): Promise<number> {
-  try {
-    const q = await getQuote(ticker)
-    return q.price ?? 1
-  } catch {
-    return 1
-  }
-}
 
 export default function PortfolioView() {
   const { portfolios, refreshPortfolios } = usePortfolio()
@@ -30,8 +22,7 @@ export default function PortfolioView() {
   const [error, setError] = useState<string | null>(null)
   const [showAddModal, setShowAddModal] = useState(false)
   const [cashModalPortfolioId, setCashModalPortfolioId] = useState<number | null>(null)
-  const [usdPln, setUsdPln] = useState(4.0)
-  const [eurPln, setEurPln] = useState(4.3)
+  const [fxRates, setFxRates] = useState<Map<SupportedCurrency, number>>(new Map([['PLN', 1]]))
   const [bondValuesMap, setBondValuesMap] = useState<Map<number, BondValueResult>>(new Map())
   const [bondPendingMap, setBondPendingMap] = useState<Map<number, string>>(new Map())
 
@@ -39,14 +30,12 @@ export default function PortfolioView() {
     setLoading(true)
     setError(null)
     try {
-      const [list, usdRate, eurRate, cash] = await Promise.all([
-        getAssets(), // wszystkie — bez filtra
-        getRate('USDPLN=X'),
-        getRate('EURPLN=X'),
-        getCashAccounts(), // wszystkie
+      const [list, rates, cash] = await Promise.all([
+        getAssets(),
+        getFxRates(),
+        getCashAccounts(),
       ])
-      setUsdPln(usdRate)
-      setEurPln(eurRate)
+      setFxRates(rates)
       setAssets(list)
       setCashAccounts(cash)
       const stockAssets = list.filter(a => a.asset_type !== 'bond')
@@ -105,7 +94,7 @@ export default function PortfolioView() {
     refreshPortfolios()
   }
 
-  const toPlnRate = (cur: string) => cur === 'PLN' ? 1 : cur === 'USD' ? usdPln : cur === 'EUR' ? eurPln : 1
+  const toPlnRate = (cur: string) => fxRates.get(cur as SupportedCurrency) ?? 1
 
   // Grupuj po portfelach; aktywa bez portfolio_id trafiają do portfolio 1
   const groups = portfolios.map(portfolio => ({
@@ -218,8 +207,7 @@ export default function PortfolioView() {
                           asset={asset}
                           quote={quotes.get(asset.ticker) ?? null}
                           sparkline={sparklines.get(asset.ticker)}
-                          usdPln={usdPln}
-                          eurPln={eurPln}
+                          fxRates={fxRates}
                           onDelete={() => handleDelete(asset.id)}
                           bondValue={bondValuesMap.get(asset.id)}
                           bondPendingMonth={bondPendingMap.get(asset.id)}
@@ -260,8 +248,7 @@ export default function PortfolioView() {
                         asset={asset}
                         quote={quotes.get(asset.ticker) ?? null}
                         sparkline={sparklines.get(asset.ticker)}
-                        usdPln={usdPln}
-                        eurPln={eurPln}
+                        fxRates={fxRates}
                         onDelete={() => handleDelete(asset.id)}
                         bondValue={bondValuesMap.get(asset.id)}
                         bondPendingMonth={bondPendingMap.get(asset.id)}

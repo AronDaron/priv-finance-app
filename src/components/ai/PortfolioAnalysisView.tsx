@@ -16,11 +16,12 @@ export default function PortfolioAnalysisView() {
     getSetting('openrouter_api_key').then(key => setHasApiKey(!!key))
 
     getAssets().then(async (all) => {
-      setAssets(all)
+      const nonBondAssets = all.filter(a => a.asset_type !== 'bond')
+      setAssets(nonBondAssets)
 
-      // Policz ile spółek ma raport
+      // Policz ile spółek ma raport (obligacje nie mają raportów Worker AI)
       const counts = await Promise.all(
-        all.map(a => getLatestReportByTicker(a.ticker).then(r => (r ? 1 : 0) as number))
+        nonBondAssets.map(a => getLatestReportByTicker(a.ticker).then(r => (r ? 1 : 0) as number))
       )
       setAnalyzedCount(counts.reduce((s, v) => s + v, 0))
     })
@@ -58,7 +59,6 @@ export default function PortfolioAnalysisView() {
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-white text-xl font-bold">Analiza Portfela</h1>
-          <p className="text-gray-500 text-xs mt-0.5">Model: google/gemini-3-flash-preview</p>
         </div>
         <button
           onClick={handleAnalyze}

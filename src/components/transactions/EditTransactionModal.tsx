@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { updateTransaction } from '../../lib/api'
 import type { Transaction } from '../../lib/types'
+import { SUPPORTED_CURRENCIES } from '../../lib/types'
 
 interface Props {
   transaction: Transaction
@@ -118,9 +119,7 @@ export default function EditTransactionModal({ transaction, onClose, onSuccess }
               onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))}
               className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-finance-green"
             >
-              <option value="USD">USD</option>
-              <option value="PLN">PLN</option>
-              <option value="EUR">EUR</option>
+              {SUPPORTED_CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
 
