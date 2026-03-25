@@ -203,6 +203,8 @@ Finance Portfolio Tracker/
 
 Plik zawiera cały portfel, historię transakcji, raporty AI i klucz API. Aplikacja jest w pełni **portable** — cały folder możesz przenieść na pendrive lub inny komputer i uruchomić bez instalacji.
 
+> **Uwaga dla użytkowników starszych wersji:** w wersjach **v1.2.2 i wcześniejszych** dane były zapisywane w `%APPDATA%\priv-finance-app\`. Od wersji **v1.2.3** lokalizacja zmieniła się na folder `Data\` obok `.exe`. Jeśli aktualizujesz z starszej wersji i chcesz zachować dane — skopiuj `portfolio.db` z `%APPDATA%\priv-finance-app\` do nowego folderu `Data\`.
+
 ---
 
 ## ⚙️ Konfiguracja AI
