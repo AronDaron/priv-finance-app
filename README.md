@@ -191,13 +191,17 @@ Na Linuxie wymagane Wine. Na Windows działa natywnie.
 
 > **Ważne:** plik bazy danych tworzony jest wyłącznie przez skompilowany `.exe`. W trybie deweloperskim (`npm run dev`) dane zapisywane są w `localStorage` przeglądarki.
 
-Po pierwszym uruchomieniu `.exe` aplikacja tworzy lokalny plik SQLite:
+Po pierwszym uruchomieniu `.exe` aplikacja tworzy folder `Data/` obok pliku wykonywalnego:
 
 ```
-C:\Users\<TwojaNazwa>\AppData\Roaming\priv-finance-app\portfolio.db
+Finance Portfolio Tracker/
+├── Finance Portfolio Tracker.exe
+├── resources/
+└── Data/
+    └── portfolio.db
 ```
 
-Plik zawiera cały portfel, historię transakcji, raporty AI i klucz API. Możesz go skopiować jako backup lub przenieść na inny komputer wklejając w to samo miejsce.
+Plik zawiera cały portfel, historię transakcji, raporty AI i klucz API. Aplikacja jest w pełni **portable** — cały folder możesz przenieść na pendrive lub inny komputer i uruchomić bez instalacji.
 
 ---
 
