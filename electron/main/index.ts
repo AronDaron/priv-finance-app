@@ -1,6 +1,11 @@
 // electron/main/index.ts
 import { app, BrowserWindow, ipcMain, Menu } from 'electron'
-import { join } from 'path'
+import { join, dirname } from 'path'
+
+// Tryb portable — dane obok .exe w folderze "Data/" zamiast %APPDATA%
+if (app.isPackaged) {
+  app.setPath('userData', join(dirname(app.getPath('exe')), 'Data'))
+}
 import {
   fetchQuote,
   fetchHistory,

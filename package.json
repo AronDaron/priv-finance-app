@@ -1,6 +1,7 @@
 {
   "name": "priv-finance-app",
   "version": "1.0.0",
+  "author": "AronDaron",
   "description": "Desktopowa aplikacja do śledzenia portfela inwestycyjnego z AI",
   "type": "module",
   "main": "out/main/index.js",
