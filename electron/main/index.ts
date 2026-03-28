@@ -326,7 +326,9 @@ function buildChatSystemContext(params: {
     }
     const fundLines: string[] = []
     for (const [ticker, f] of fundamentals.entries()) {
+      const q = quotes.get(ticker)
       const lines: string[] = [`${ticker}:`]
+      if (q) lines.push(`  Cena bieżąca: ${q.price.toFixed(2)} ${q.currency} (${q.changePercent >= 0 ? '+' : ''}${q.changePercent.toFixed(2)}% dziś)`)
       if (f.pe != null || f.forwardPE != null || f.pegRatio != null)
         lines.push(`  P/E: ${f.pe?.toFixed(2) ?? 'brak'} | Forward P/E: ${f.forwardPE?.toFixed(2) ?? 'brak'} | PEG: ${f.pegRatio?.toFixed(2) ?? 'brak'}`)
       if (f.eps != null)
@@ -716,11 +718,12 @@ function registerIpcHandlers(): void {
       } catch { /* pomiń */ }
     }))
 
-    // Fetch fundamentałów dla wykrytych tickerów spoza portfela (max 3)
+    // Fetch fundamentałów + aktualnej ceny dla wykrytych tickerów spoza portfela (max 3)
     await Promise.all([...extraTickers].slice(0, 3).map(async ticker => {
       try {
-        const f = await fetchFundamentals(ticker)
+        const [f, q] = await Promise.all([fetchFundamentals(ticker), fetchQuote(ticker)])
         fundamentalsMap.set(ticker, f)
+        quoteMap.set(ticker, { price: q.price, currency: q.currency, changePercent: q.changePercent })
       } catch { /* nieznany ticker — pomiń */ }
     }))
 
