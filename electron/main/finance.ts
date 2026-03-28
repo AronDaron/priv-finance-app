@@ -70,13 +70,135 @@ export async function searchTickers(query: string): Promise<SearchResult[]> {
   }))
 }
 
+const SECTOR_PL: Record<string, string> = {
+  'Basic Materials':        'Surowce podstawowe',
+  'Communication Services': 'Usługi komunikacyjne',
+  'Consumer Cyclical':      'Dobra cykliczne',
+  'Consumer Defensive':     'Dobra podstawowe',
+  'Energy':                 'Energetyka',
+  'Financial Services':     'Usługi finansowe',
+  'Healthcare':             'Ochrona zdrowia',
+  'Industrials':            'Przemysł',
+  'Real Estate':            'Nieruchomości',
+  'Technology':             'Technologia',
+  'Utilities':              'Usługi komunalne',
+}
+
+const INDUSTRY_PL: Record<string, string> = {
+  // Technologia
+  'Semiconductors':                          'Półprzewodniki',
+  'Semiconductor Equipment & Materials':     'Sprzęt półprzewodnikowy',
+  'Software - Infrastructure':               'Oprogramowanie infrastruktury',
+  'Software - Application':                  'Oprogramowanie aplikacyjne',
+  'Information Technology Services':        'Usługi IT',
+  'Computer Hardware':                       'Sprzęt komputerowy',
+  'Consumer Electronics':                    'Elektronika konsumencka',
+  'Electronic Components':                   'Komponenty elektroniczne',
+  'Scientific & Technical Instruments':      'Instrumenty naukowe',
+  'Communication Equipment':                 'Sprzęt komunikacyjny',
+  'Internet Content & Information':          'Internet i treści cyfrowe',
+  'Internet Retail':                         'E-commerce',
+  'Cloud Computing':                         'Chmura obliczeniowa',
+  // Usługi komunikacyjne
+  'Telecom Services':                        'Usługi telekomunikacyjne',
+  'Entertainment':                           'Rozrywka',
+  'Broadcasting':                            'Nadawanie',
+  'Advertising Agencies':                    'Agencje reklamowe',
+  // Usługi finansowe
+  'Banks - Diversified':                     'Banki zróżnicowane',
+  'Banks - Regional':                        'Banki regionalne',
+  'Asset Management':                        'Zarządzanie aktywami',
+  'Capital Markets':                         'Rynki kapitałowe',
+  'Insurance - Life':                        'Ubezpieczenia na życie',
+  'Insurance - Property & Casualty':         'Ubezpieczenia majątkowe',
+  'Financial Data & Stock Exchanges':        'Dane finansowe i giełdy',
+  'Credit Services':                         'Usługi kredytowe',
+  // Ochrona zdrowia
+  'Drug Manufacturers - General':            'Producenci leków',
+  'Drug Manufacturers - Specialty & Generic':'Leki specjalistyczne i generyczne',
+  'Biotechnology':                           'Biotechnologia',
+  'Medical Devices':                         'Urządzenia medyczne',
+  'Medical Instruments & Supplies':          'Sprzęt medyczny',
+  'Healthcare Plans':                        'Plany opieki zdrowotnej',
+  'Diagnostics & Research':                  'Diagnostyka i badania',
+  'Hospitals':                               'Szpitale',
+  // Przemysł
+  'Aerospace & Defense':                     'Lotnictwo i obronność',
+  'Airlines':                                'Linie lotnicze',
+  'Railroads':                               'Koleje',
+  'Trucking':                                'Transport drogowy',
+  'Specialty Industrial Machinery':          'Maszyny przemysłowe',
+  'Electrical Equipment & Parts':            'Sprzęt elektryczny',
+  'Engineering & Construction':              'Inżynieria i budownictwo',
+  'Farm & Heavy Construction Machinery':     'Maszyny budowlane i rolnicze',
+  // Dobra cykliczne
+  'Auto Manufacturers':                      'Producenci samochodów',
+  'Auto Parts':                              'Części samochodowe',
+  'Restaurants':                             'Restauracje',
+  'Apparel Retail':                          'Handel odzieżą',
+  'Apparel Manufacturing':                   'Produkcja odzieży',
+  'Lodging':                                 'Hotelarstwo',
+  'Leisure':                                 'Wypoczynek i rekreacja',
+  'Gambling':                                'Hazard',
+  'Home Improvement Retail':                 'Artykuły do domu',
+  // Dobra podstawowe
+  'Beverages - Non-Alcoholic':               'Napoje bezalkoholowe',
+  'Beverages - Alcoholic':                   'Napoje alkoholowe',
+  'Tobacco':                                 'Tytoń',
+  'Discount Stores':                         'Sklepy dyskontowe',
+  'Grocery Stores':                          'Sklepy spożywcze',
+  'Household & Personal Products':           'Produkty gospodarstwa domowego',
+  'Packaged Foods':                          'Żywność pakowana',
+  // Energetyka
+  'Oil & Gas Integrated':                    'Zintegrowany sektor naftowo-gazowy',
+  'Oil & Gas E&P':                           'Wydobycie ropy i gazu',
+  'Oil & Gas Refining & Marketing':          'Rafinacja i marketing ropy',
+  'Oil & Gas Equipment & Services':          'Sprzęt i usługi naftowe',
+  'Oil & Gas Midstream':                     'Przesył ropy i gazu',
+  'Coal':                                    'Węgiel',
+  'Uranium':                                 'Uran',
+  // Surowce podstawowe
+  'Gold':                                    'Złoto',
+  'Silver':                                  'Srebro',
+  'Copper':                                  'Miedź',
+  'Steel':                                   'Stal',
+  'Aluminum':                                'Aluminium',
+  'Chemicals':                               'Chemia',
+  'Agricultural Inputs':                     'Środki do produkcji rolnej',
+  'Lumber & Wood Production':                'Drewno i wyroby drzewne',
+  // Nieruchomości
+  'REIT - Diversified':                      'REIT zróżnicowany',
+  'REIT - Retail':                           'REIT handlowy',
+  'REIT - Office':                           'REIT biurowy',
+  'REIT - Industrial':                       'REIT przemysłowy',
+  'REIT - Residential':                      'REIT mieszkaniowy',
+  'REIT - Healthcare Facilities':            'REIT opieki zdrowotnej',
+  'Real Estate Services':                    'Usługi nieruchomości',
+  // Usługi komunalne
+  'Utilities - Regulated Electric':          'Energetyka regulowana',
+  'Utilities - Regulated Gas':               'Gaz regulowany',
+  'Utilities - Diversified':                 'Usługi komunalne zróżnicowane',
+  'Utilities - Renewable':                   'Energia odnawialna',
+}
+
+const RECOMMENDATION_PL: Record<string, string> = {
+  'strong_buy':  'Mocny zakup',
+  'buy':         'Zakup',
+  'hold':        'Trzymaj',
+  'sell':        'Sprzedaj',
+  'strong_sell': 'Mocna sprzedaż',
+  'none':        'Brak',
+}
+
 export async function fetchFundamentals(ticker: string): Promise<FundamentalData> {
   const yf = await getYF()
 
-  const [baseResult, stockResult, etfResult] = await Promise.all([
+  const [baseResult, stockResult, etfResult, earningsResult, insiderResult] = await Promise.all([
     yf.quoteSummary(ticker, { modules: ['summaryDetail', 'defaultKeyStatistics', 'assetProfile'] }),
     yf.quoteSummary(ticker, { modules: ['financialData', 'recommendationTrend', 'calendarEvents'] }).catch(() => ({})),
     yf.quoteSummary(ticker, { modules: ['topHoldings', 'fundProfile'] }).catch(() => ({})),
+    yf.quoteSummary(ticker, { modules: ['earningsHistory', 'earningsTrend', 'upgradeDowngradeHistory'] }).catch(() => ({})),
+    yf.quoteSummary(ticker, { modules: ['insiderTransactions'] }).catch(() => ({})),
   ])
 
   const sd = (baseResult as any).summaryDetail
@@ -87,11 +209,84 @@ export async function fetchFundamentals(ticker: string): Promise<FundamentalData
   const ce = (stockResult as any).calendarEvents ?? null
   const th = (etfResult as any).topHoldings ?? null
   const fp = (etfResult as any).fundProfile ?? null
+  const eh = (earningsResult as any).earningsHistory ?? null
+  const et = (earningsResult as any).earningsTrend ?? null
+  const udh = (earningsResult as any).upgradeDowngradeHistory ?? null
+  const it = (insiderResult as any).insiderTransactions ?? null
 
   const trend0 = rt?.trend?.[0] ?? null
 
   const rawDate = ce?.earnings?.earningsDate?.[0]
   const nextEarningsDate = rawDate ? new Date(rawDate).toISOString().split('T')[0] : null
+
+  const earningsHistory = eh?.history?.length
+    ? [...eh.history]
+        .sort((a: any, b: any) => {
+          const da = a.quarter instanceof Date ? a.quarter.getTime() : 0
+          const db = b.quarter instanceof Date ? b.quarter.getTime() : 0
+          return da - db
+        })
+        .slice(-4)
+        .map((h: any) => ({
+          date: h.quarter instanceof Date ? h.quarter.toISOString().split('T')[0] : null,
+          period: h.period ?? '',
+          epsEstimate: h.epsEstimate ?? null,
+          epsActual: h.epsActual ?? null,
+          surprisePercent: h.surprisePercent ?? null,
+        }))
+        .filter((h: any) => h.date !== null)
+    : null
+
+  const PERIOD_LABELS: Record<string, string> = {
+    '0q': 'Bieżący kwartał', '+1q': 'Następny kwartał',
+    '0y': 'Bieżący rok',     '+1y': 'Następny rok',
+  }
+  const earningsTrend = et?.trend?.length
+    ? et.trend
+        .filter((t: any) => t.period in PERIOD_LABELS)
+        .map((t: any) => ({
+          period: PERIOD_LABELS[t.period] ?? t.period,
+          endDate: t.endDate instanceof Date ? t.endDate.toISOString().split('T')[0] : null,
+          epsEstimate: t.earningsEstimate?.avg ?? null,
+          revenueEstimate: t.revenueEstimate?.avg ?? null,
+          growth: t.growth ?? null,
+        }))
+    : null
+
+  const upgradeDowngradeHistory = udh?.history?.length
+    ? [...udh.history]
+        .sort((a: any, b: any) => {
+          const da = a.epochGradeDate instanceof Date ? a.epochGradeDate.getTime() : 0
+          const db = b.epochGradeDate instanceof Date ? b.epochGradeDate.getTime() : 0
+          return db - da
+        })
+        .slice(0, 5)
+        .map((h: any) => ({
+          date: h.epochGradeDate instanceof Date ? h.epochGradeDate.toISOString().split('T')[0] : '',
+          firm: h.firm ?? '',
+          toGrade: h.toGrade ?? '',
+          fromGrade: h.fromGrade ?? null,
+          action: h.action ?? '',
+        }))
+    : null
+
+  const insiderTransactions = it?.transactions?.length
+    ? [...it.transactions]
+        .sort((a: any, b: any) => {
+          const da = a.startDate instanceof Date ? a.startDate.getTime() : 0
+          const db = b.startDate instanceof Date ? b.startDate.getTime() : 0
+          return db - da
+        })
+        .slice(0, 10)
+        .map((t: any) => ({
+          date: t.startDate instanceof Date ? t.startDate.toISOString().split('T')[0] : '',
+          name: t.filerName ?? '',
+          relation: t.filerRelation ?? '',
+          transactionText: t.transactionText ?? '',
+          shares: typeof t.shares === 'number' ? t.shares : null,
+          value: typeof t.value === 'number' ? t.value : null,
+        }))
+    : null
 
   return {
     pe: sd?.trailingPE ?? null,
@@ -102,15 +297,19 @@ export async function fetchFundamentals(ticker: string): Promise<FundamentalData
     week52High: sd?.fiftyTwoWeekHigh ?? null,
     week52Low: sd?.fiftyTwoWeekLow ?? null,
     beta: sd?.beta ?? null,
-    sector: ap?.sector ?? null,
-    industry: ap?.industry ?? null,
+    sector: ap?.sector ? (SECTOR_PL[ap.sector] ?? ap.sector) : null,
+    industry: ap?.industry ? (INDUSTRY_PL[ap.industry] ?? ap.industry) : null,
+    forwardPE: ks?.forwardPE ?? null,
+    pegRatio: ks?.pegRatio ?? null,
+    shortRatio: ks?.shortRatio ?? null,
+    shortPercentOfFloat: ks?.shortPercentOfFloat ?? null,
     totalRevenue: fd?.totalRevenue ?? null,
     revenueGrowth: fd?.revenueGrowth ?? null,
     grossMargins: fd?.grossMargins ?? null,
     profitMargins: fd?.profitMargins ?? null,
     totalDebt: fd?.totalDebt ?? null,
     totalCash: fd?.totalCash ?? null,
-    analystRecommendation: fd?.recommendationKey ?? null,
+    analystRecommendation: fd?.recommendationKey ? (RECOMMENDATION_PL[fd.recommendationKey] ?? fd.recommendationKey) : null,
     numberOfAnalysts: fd?.numberOfAnalystOpinions ?? null,
     targetMeanPrice: fd?.targetMeanPrice ?? null,
     earningsGrowth: fd?.earningsGrowth ?? null,
@@ -122,6 +321,10 @@ export async function fetchFundamentals(ticker: string): Promise<FundamentalData
       strongSell: trend0.strongSell ?? 0,
     } : null,
     nextEarningsDate,
+    earningsHistory,
+    earningsTrend: earningsTrend?.length ? earningsTrend : null,
+    upgradeDowngradeHistory,
+    insiderTransactions,
     topHoldings: th?.holdings?.length
       ? th.holdings.slice(0, 5).map((h: any) => ({ name: h.holdingName ?? '', percent: h.holdingPercent?.raw ?? null }))
       : null,

@@ -115,6 +115,8 @@ export async function analyzeStock(params: StockAnalysisParams): Promise<string>
     totalRevenue, revenueGrowth, grossMargins, profitMargins, totalDebt, totalCash,
     analystRecommendation, numberOfAnalysts, targetMeanPrice, earningsGrowth,
     recommendationTrend, nextEarningsDate, topHoldings, fundFamily,
+    forwardPE, pegRatio, shortRatio, shortPercentOfFloat,
+    earningsHistory, earningsTrend, upgradeDowngradeHistory, insiderTransactions,
   } = fundamentals
   const { rsi14, macd, sma20, sma50, sma200, bollingerBands, atr14, adx14 } = technicals
 
@@ -130,12 +132,14 @@ export async function analyzeStock(params: StockAnalysisParams): Promise<string>
 - 52-tygodniowe: max ${week52High ?? 'brak'} / min ${week52Low ?? 'brak'}
 ${topHoldings?.length ? `\nTOP SKŁADNIKI:\n${topHoldings.map(h => `- ${h.name}${h.percent != null ? ': ' + (h.percent * 100).toFixed(1) + '%' : ''}`).join('\n')}` : ''}`
     : `DANE FUNDAMENTALNE:
-- P/E ratio: ${pe ?? 'brak'} | EPS: ${eps ?? 'brak'}
+- P/E ratio (trailing): ${pe ?? 'brak'} | Forward P/E: ${forwardPE ?? 'brak'} | PEG: ${pegRatio ?? 'brak'}
+- EPS (trailing): ${eps ?? 'brak'}
 - Stopa dywidendy: ${dividendYield != null ? (dividendYield * 100).toFixed(2) + '%' : 'brak'}
 - Kapitalizacja: ${marketCap != null ? formatMarketCap(marketCap) : 'brak'}
 - Beta: ${beta ?? 'brak'}
 - Sektor: ${sector ?? 'brak'} / Branża: ${industry ?? 'brak'}
 - 52-tygodniowe: max ${week52High ?? 'brak'} / min ${week52Low ?? 'brak'}
+${shortRatio != null || shortPercentOfFloat != null ? `- Short interest: ${shortPercentOfFloat != null ? (shortPercentOfFloat * 100).toFixed(1) + '% float' : 'brak'} | Short ratio: ${shortRatio?.toFixed(1) ?? 'brak'} dni` : ''}
 ${totalRevenue != null ? `\nFINANSE SPÓŁKI:
 - Przychody: ${formatMarketCap(totalRevenue)} (wzrost: ${formatPercent(revenueGrowth)})
 - Marża brutto: ${formatPercent(grossMargins)} / Marża netto: ${formatPercent(profitMargins)}
@@ -144,7 +148,15 @@ ${earningsGrowth != null ? `- Wzrost zysku: ${formatPercent(earningsGrowth)}` : 
 ${numberOfAnalysts ? `\nKONSENSUS ANALITYKÓW (${numberOfAnalysts} analityków):
 - Rozkład: ${formatRecommendationTrend(recommendationTrend)}
 - Rekomendacja: ${analystRecommendation?.toUpperCase() ?? 'brak'}${targetMeanPrice ? ` | Cel cenowy: ${targetMeanPrice.toFixed(2)} ${currency}` : ''}` : ''}
-${nextEarningsDate ? `\nNASTĘPNE WYNIKI: ${nextEarningsDate}` : ''}`
+${nextEarningsDate ? `\nNASTĘPNE WYNIKI: ${nextEarningsDate}` : ''}
+${earningsHistory?.length ? `\nHISTORIA EPS (ostatnie kwartały):
+${earningsHistory.map(h => `- ${h.period} (${h.date}): estymata ${h.epsEstimate ?? 'brak'} | wynik ${h.epsActual ?? 'brak'}${h.surprisePercent != null ? ` | surprise ${h.surprisePercent >= 0 ? '+' : ''}${(h.surprisePercent * 100).toFixed(1)}%` : ''}`).join('\n')}` : ''}
+${earningsTrend?.length ? `\nPROGNOZY ANALITYKÓW:
+${earningsTrend.map(t => `- ${t.period}${t.endDate ? ' (do ' + t.endDate + ')' : ''}: EPS ~${t.epsEstimate ?? 'brak'}${t.revenueEstimate != null ? ` | Przychody ~${formatMarketCap(t.revenueEstimate)}` : ''}${t.growth != null ? ` | wzrost EPS ${t.growth >= 0 ? '+' : ''}${(t.growth * 100).toFixed(1)}%` : ''}`).join('\n')}` : ''}
+${upgradeDowngradeHistory?.length ? `\nOSTATNIE ZMIANY RATINGÓW:
+${upgradeDowngradeHistory.map(u => `- ${u.date} ${u.firm}: ${u.fromGrade ? u.fromGrade + ' → ' : ''}${u.toGrade} (${u.action === 'up' ? 'podwyżka' : u.action === 'down' ? 'obniżka' : u.action === 'init' ? 'inicjacja' : 'utrzymanie'})`).join('\n')}` : ''}
+${insiderTransactions?.length ? `\nTRANSAKCJE INSIDERÓW (ostatnie):
+${insiderTransactions.slice(0, 5).map(t => `- ${t.date} ${t.name} (${t.relation}): ${t.transactionText}${t.shares != null ? ` | ${t.shares.toLocaleString()} akcji` : ''}${t.value != null ? ` | wartość ${formatMarketCap(t.value)}` : ''}`).join('\n')}` : ''}`
 
   const isPhysicalMetal = gold_grams != null && gold_grams > 0
   const metalName = ticker === 'GC=F' ? 'złoto' : ticker === 'SI=F' ? 'srebro' : 'metal'
@@ -172,11 +184,12 @@ KONTEKST MAKROEKONOMICZNY:
 - S&P500 30d: ${marketContext.sp500Change1m >= 0 ? '+' : ''}${marketContext.sp500Change1m.toFixed(1)}%${marketContext.nikkeiChange1m != null ? ` | Nikkei 30d: ${marketContext.nikkeiChange1m >= 0 ? '+' : ''}${marketContext.nikkeiChange1m.toFixed(1)}%` : ''}${marketContext.ftseChange1m != null ? ` | FTSE 30d: ${marketContext.ftseChange1m >= 0 ? '+' : ''}${marketContext.ftseChange1m.toFixed(1)}%` : ''}
 - Ropa WTI: $${marketContext.oil.price.toFixed(1)} (${marketContext.oil.change1m >= 0 ? '+' : ''}${marketContext.oil.change1m.toFixed(1)}% 30d)${marketContext.brent ? ` | Ropa Brent: $${marketContext.brent.price.toFixed(1)} (${marketContext.brent.change1m >= 0 ? '+' : ''}${marketContext.brent.change1m.toFixed(1)}% 30d)` : ''} | Złoto: $${marketContext.gold.price.toFixed(0)} (${marketContext.gold.change1m >= 0 ? '+' : ''}${marketContext.gold.change1m.toFixed(1)}% 30d)${marketContext.copper ? ` | Miedź 30d: ${marketContext.copper.change1m >= 0 ? '+' : ''}${marketContext.copper.change1m.toFixed(1)}%` : ''}${marketContext.gas ? ` | Gaz 30d: ${marketContext.gas.change1m >= 0 ? '+' : ''}${marketContext.gas.change1m.toFixed(1)}%` : ''}${marketContext.regimeSummary ? `\n- Reżim rynkowy: ${marketContext.regimeSummary}` : ''}` : ''}
 
-Napisz analizę (max 250 słów) zawierającą:
-1. ${isPhysicalMetal ? `Ocenę jako inwestycję w fizyczny ${metalName} (koszty przechowywania, spread kupno/sprzedaż, rola w portfelu)` : `Krótką ocenę fundamentalną${isEtf ? ' (skład, ekspozycja)' : ' (finanse, wycena, konsensus analityków)'}`}
+Napisz wyczerpującą analizę zawierającą:
+1. ${isPhysicalMetal ? `Ocenę jako inwestycję w fizyczny ${metalName} (koszty przechowywania, spread kupno/sprzedaż, rola w portfelu)` : `Ocenę fundamentalną${isEtf ? ' (skład, ekspozycja)' : ' (finanse, wycena forward P/E, PEG, konsensus analityków, historia EPS i surprise %)'}`}
 2. Interpretację sygnałów technicznych${isPhysicalMetal ? ' (ceny spot złota/srebra)' : ''}
-3. Główne ryzyka
-4. Rekomendację: KUP / TRZYMAJ / SPRZEDAJ z jednozdaniowym uzasadnieniem`
+3. Główne ryzyka — uwzględnij short interest, transakcje insiderów (jeśli dostępne) i kontekst makro
+4. Prognozy analityków — EPS i przychody na kolejne okresy (jeśli dostępne), ostatnie zmiany ratingów
+5. Rekomendację: KUP / TRZYMAJ / SPRZEDAJ z uzasadnieniem`
 
   return callOpenRouter(WORKER_MODEL, systemPrompt, userPrompt, apiKey, 15000)
 }
@@ -262,7 +275,7 @@ ${assetLines}${bondsSummary ? `\nOBLIGACJE SKARBOWE (wycena deterministyczna, be
 ANALIZY PER SPÓŁKA (wygenerowane przez Worker AI):
 ${reportLines}
 
-Napisz analizę portfela (max 400 słów).
+Napisz wyczerpującą analizę portfela.
 
 KRYTYCZNE ZASADY — przestrzegaj bezwzględnie:
 - Analizy per spółka powyżej są wygenerowane bez kontekstu portfela — ich rekomendacje (KUP/SPRZEDAJ) mogą być sprzeczne z charakterem portfela. Twoim zadaniem jest je ZREINTERPRETOWAĆ przez pryzmat tagów portfela.
@@ -348,7 +361,7 @@ Indeksy globalne:
 ${indicesStr}
 ${newsStr}
 
-Napisz analizę (max 300 słów):
+Napisz wyczerpującą analizę:
 1. **Kontekst makroekonomiczny** — co drivuje obecną sytuację w regionie
 2. **Szanse inwestycyjne** — gdzie widzisz potencjał
 3. **Główne ryzyka** — geopolityczne, walutowe, surowcowe

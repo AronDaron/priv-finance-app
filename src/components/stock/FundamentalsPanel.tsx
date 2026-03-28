@@ -18,6 +18,40 @@ const DONUT_COLORS: Record<string, string> = {
   strongSell: '#ef4444',
 }
 
+const ACTION_COLORS: Record<string, string> = {
+  up:   '#10b981',
+  down: '#ef4444',
+  init: '#6366f1',
+  main: '#9ca3af',
+  reit: '#9ca3af',
+}
+
+const ACTION_LABELS: Record<string, string> = {
+  up:   'Podwyżka',
+  down: 'Obniżka',
+  init: 'Inicjacja',
+  main: 'Utrzymanie',
+  reit: 'Ponowne',
+}
+
+function SectionHeader({ title }: { title: string }) {
+  return (
+    <div className="flex items-center gap-2 mb-2">
+      <p className="text-xs text-gray-300 font-semibold uppercase tracking-wider">{title}</p>
+      <div className="flex-1 h-px bg-gray-700/50" />
+    </div>
+  )
+}
+
+function DataRow({ label, value, valueClass, valueColor }: { label: string; value: string; valueClass?: string; valueColor?: string }) {
+  return (
+    <div className="flex justify-between py-2 border-b border-gray-800/60 last:border-0 text-sm">
+      <span className="text-gray-400">{label}</span>
+      <span className={`font-medium ${valueClass ?? 'text-white'}`} style={valueColor ? { color: valueColor } : undefined}>{value}</span>
+    </div>
+  )
+}
+
 function RecommendationDonut({ trend }: { trend: NonNullable<FundamentalData['recommendationTrend']> }) {
   const data = [
     { key: 'strongBuy',  label: 'Strong Buy',  value: trend.strongBuy },
@@ -47,7 +81,7 @@ function RecommendationDonut({ trend }: { trend: NonNullable<FundamentalData['re
           ))}
         </Pie>
         <Tooltip
-          formatter={(val: number, name: string) => [val, name]}
+          formatter={(val, name) => [val as number, name as string] as any}
           contentStyle={{
             background: '#111827',
             border: '1px solid rgba(99,102,241,0.3)',
@@ -76,23 +110,27 @@ function RecommendationDonut({ trend }: { trend: NonNullable<FundamentalData['re
 export default function FundamentalsPanel({ fundamentals }: Props) {
   const {
     pe, eps, dividendYield, marketCap, week52High, week52Low, beta, sector, industry,
+    forwardPE, pegRatio, shortRatio, shortPercentOfFloat,
     totalRevenue, revenueGrowth, grossMargins, profitMargins, totalDebt, totalCash,
     analystRecommendation, numberOfAnalysts, targetMeanPrice, earningsGrowth,
     recommendationTrend, nextEarningsDate, topHoldings, fundFamily,
+    earningsHistory, earningsTrend, upgradeDowngradeHistory, insiderTransactions,
   } = fundamentals
 
   const isEtf = topHoldings != null || fundFamily != null
 
   const baseRows: { label: string; value: string }[] = [
-    { label: 'P/E Ratio',         value: pe?.toFixed(2) ?? 'N/A' },
-    { label: 'EPS',               value: eps?.toFixed(2) ?? 'N/A' },
-    { label: 'Stopa dywidendy',   value: dividendYield != null ? `${(dividendYield * 100).toFixed(2)}%` : '—' },
-    { label: 'Market Cap',        value: formatMarketCap(marketCap) },
-    { label: '52-tyg. max',       value: week52High != null ? formatCurrency(week52High) : 'N/A' },
-    { label: '52-tyg. min',       value: week52Low != null ? formatCurrency(week52Low) : 'N/A' },
-    { label: 'Beta',              value: beta?.toFixed(2) ?? 'N/A' },
-    { label: 'Sektor',            value: sector ?? '—' },
-    { label: 'Branża',            value: industry ?? '—' },
+    { label: 'P/E (trailing)',   value: pe?.toFixed(2) ?? 'N/A' },
+    { label: 'Forward P/E',      value: forwardPE?.toFixed(2) ?? 'N/A' },
+    { label: 'PEG Ratio',        value: pegRatio?.toFixed(2) ?? 'N/A' },
+    { label: 'EPS (trailing)',   value: eps?.toFixed(2) ?? 'N/A' },
+    { label: 'Stopa dywidendy',  value: dividendYield != null ? `${(dividendYield * 100).toFixed(2)}%` : '—' },
+    { label: 'Market Cap',       value: formatMarketCap(marketCap) },
+    { label: '52-tyg. max',      value: week52High != null ? formatCurrency(week52High) : 'N/A' },
+    { label: '52-tyg. min',      value: week52Low != null ? formatCurrency(week52Low) : 'N/A' },
+    { label: 'Beta',             value: beta?.toFixed(2) ?? 'N/A' },
+    { label: 'Sektor',           value: sector ?? '—' },
+    { label: 'Branża',           value: industry ?? '—' },
   ]
 
   const financialRows: { label: string; value: string }[] = totalRevenue != null ? [
@@ -105,8 +143,21 @@ export default function FundamentalsPanel({ fundamentals }: Props) {
     { label: 'Gotówka',           value: totalCash != null ? formatMarketCap(totalCash) : 'N/A' },
   ] : []
 
-  const analystRows: { label: string; value: string }[] = numberOfAnalysts ? [
-    { label: 'Rekomendacja',      value: analystRecommendation?.toUpperCase() ?? 'N/A' },
+  const shortRows: { label: string; value: string; hint: string }[] = (shortRatio != null || shortPercentOfFloat != null) ? [
+    { label: '% akcji sprzedanych krótko', value: shortPercentOfFloat != null ? `${(shortPercentOfFloat * 100).toFixed(1)}%` : 'N/A', hint: 'Procent dostępnych akcji objętych krótką sprzedażą' },
+    { label: 'Dni do pokrycia',            value: shortRatio != null ? `${shortRatio.toFixed(1)} dni` : 'N/A', hint: 'Ile dni zajęłoby zamknięcie wszystkich krótkich pozycji przy obecnym wolumenie' },
+  ] : []
+
+  const RECOMMENDATION_COLOR: Record<string, string> = {
+    'Mocny zakup':    '#10b981',
+    'Zakup':          '#34d399',
+    'Trzymaj':        '#fbbf24',
+    'Sprzedaj':       '#f97316',
+    'Mocna sprzedaż': '#ef4444',
+  }
+
+  const analystRows: { label: string; value: string; valueColor?: string }[] = numberOfAnalysts ? [
+    { label: 'Rekomendacja',      value: analystRecommendation ?? 'N/A', valueColor: analystRecommendation ? RECOMMENDATION_COLOR[analystRecommendation] : undefined },
     { label: 'Cel cenowy',        value: targetMeanPrice != null ? formatCurrency(targetMeanPrice) : 'N/A' },
     { label: 'Liczba analityków', value: String(numberOfAnalysts) },
     ...(nextEarningsDate ? [{ label: 'Następne wyniki', value: nextEarningsDate }] : []),
@@ -115,17 +166,14 @@ export default function FundamentalsPanel({ fundamentals }: Props) {
   return (
     <div className="glass-card rounded-xl overflow-hidden">
       <div style={{ height: 3, background: 'linear-gradient(90deg, #6366f1, #818cf8)', boxShadow: '0 0 8px rgba(99,102,241,0.4)' }} />
-      <div className="p-5 space-y-4">
+      <div className="p-5 space-y-5">
         <h3 className="text-lg font-semibold text-white">Dane fundamentalne</h3>
 
         {/* ETF: top holdings */}
         {isEtf && topHoldings && topHoldings.length > 0 && (
           <div>
-            <div className="flex items-center gap-2 mb-2">
-              <p className="text-xs text-gray-300 font-semibold uppercase tracking-wider">Top składniki ({fundFamily ?? 'ETF'})</p>
-              <div className="flex-1 h-px bg-gray-700/50" />
-            </div>
-            <div className="space-y-1">
+            <SectionHeader title={`Top składniki (${fundFamily ?? 'ETF'})`} />
+            <div className="space-y-0">
               {topHoldings.map((h, i) => (
                 <div key={i} className="flex justify-between py-2 border-b border-gray-800/60 last:border-0 text-sm">
                   <span className="text-gray-300 truncate pr-2">{h.name}</span>
@@ -140,16 +188,10 @@ export default function FundamentalsPanel({ fundamentals }: Props) {
         <div className={`grid gap-4 ${financialRows.length > 0 ? 'grid-cols-2' : 'grid-cols-1'}`}>
           {/* Wycena */}
           <div>
-            <div className="flex items-center gap-2 mb-2">
-              <p className="text-xs text-gray-300 font-semibold uppercase tracking-wider">Wycena</p>
-              <div className="flex-1 h-px bg-gray-700/50" />
-            </div>
+            <SectionHeader title="Wycena" />
             <div className="space-y-0">
               {baseRows.map(({ label, value }) => (
-                <div key={label} className="flex justify-between py-2 border-b border-gray-800/60 last:border-0 text-sm">
-                  <span className="text-gray-400">{label}</span>
-                  <span className="text-white font-medium">{value}</span>
-                </div>
+                <DataRow key={label} label={label} value={value} />
               ))}
             </div>
           </div>
@@ -157,40 +199,177 @@ export default function FundamentalsPanel({ fundamentals }: Props) {
           {/* Finanse */}
           {financialRows.length > 0 && (
             <div>
-              <div className="flex items-center gap-2 mb-2">
-                <p className="text-xs text-gray-300 font-semibold uppercase tracking-wider">Finanse</p>
-                <div className="flex-1 h-px bg-gray-700/50" />
-              </div>
+              <SectionHeader title="Finanse" />
               <div className="space-y-0">
                 {financialRows.map(({ label, value }) => (
-                  <div key={label} className="flex justify-between py-2 border-b border-gray-800/60 last:border-0 text-sm">
-                    <span className="text-gray-400">{label}</span>
-                    <span className="text-white font-medium">{value}</span>
-                  </div>
+                  <DataRow key={label} label={label} value={value} />
                 ))}
               </div>
             </div>
           )}
         </div>
 
-        {/* Konsensus analityków — pełna szerokość */}
+        {/* Short interest */}
+        {shortRows.length > 0 && (
+          <div>
+            <SectionHeader title="Krótka sprzedaż (Short Interest)" />
+            <p className="text-xs text-gray-500 mb-3">
+              Inwestorzy pożyczają akcje i sprzedają je, licząc na spadek ceny — im wyższy wskaźnik, tym większy zakład przeciwko spółce.
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              {shortRows.map(({ label, value, hint }) => (
+                <div key={label} className="bg-gray-800/40 rounded-lg p-3 text-center">
+                  <p className="text-xs text-gray-400 mb-1">{label}</p>
+                  <p className="text-base font-bold text-white">{value}</p>
+                  <p className="text-xs text-gray-500 mt-1">{hint}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Konsensus analityków */}
         {analystRows.length > 0 && (
           <div>
-            <div className="flex items-center gap-2 mb-2">
-              <p className="text-xs text-gray-300 font-semibold uppercase tracking-wider">Konsensus analityków</p>
-              <div className="flex-1 h-px bg-gray-700/50" />
-            </div>
+            <SectionHeader title="Konsensus analityków" />
             <div className="space-y-0">
-              {analystRows.map(({ label, value }) => (
-                <div key={label} className="flex justify-between py-2 border-b border-gray-800/60 last:border-0 text-sm">
-                  <span className="text-gray-400">{label}</span>
-                  <span className="text-white font-medium">{value}</span>
-                </div>
+              {analystRows.map(({ label, value, valueColor }) => (
+                <DataRow key={label} label={label} value={value} valueColor={valueColor} />
               ))}
             </div>
             {recommendationTrend && (
               <RecommendationDonut trend={recommendationTrend} />
             )}
+          </div>
+        )}
+
+        {/* Historia EPS */}
+        {earningsHistory && earningsHistory.length > 0 && (
+          <div>
+            <SectionHeader title="Historia wyników EPS" />
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-gray-400 border-b border-gray-700/60">
+                    <th className="text-left py-1.5 pr-2 font-medium">Kwartał</th>
+                    <th className="text-right py-1.5 pr-2 font-medium">Estymata</th>
+                    <th className="text-right py-1.5 pr-2 font-medium">Wynik</th>
+                    <th className="text-right py-1.5 font-medium">Surprise</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {earningsHistory.map((h, i) => {
+                    const surpColor = h.surprisePercent == null ? 'text-gray-400'
+                      : h.surprisePercent >= 0 ? 'text-emerald-400' : 'text-red-400'
+                    const surpStr = h.surprisePercent != null
+                      ? `${h.surprisePercent >= 0 ? '+' : ''}${(h.surprisePercent * 100).toFixed(1)}%`
+                      : '—'
+                    return (
+                      <tr key={i} className="border-b border-gray-800/40 last:border-0">
+                        <td className="py-2 pr-2 text-gray-300">{h.period}</td>
+                        <td className="py-2 pr-2 text-right text-gray-300">{h.epsEstimate ?? '—'}</td>
+                        <td className="py-2 pr-2 text-right text-white font-medium">{h.epsActual ?? '—'}</td>
+                        <td className={`py-2 text-right font-medium ${surpColor}`}>{surpStr}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Prognozy analityków (earnings trend) */}
+        {earningsTrend && earningsTrend.length > 0 && (
+          <div>
+            <SectionHeader title="Prognozy analityków" />
+            <div className="space-y-0">
+              {earningsTrend.map((t, i) => (
+                <div key={i} className="py-2 border-b border-gray-800/60 last:border-0 text-xs">
+                  <div className="flex justify-between mb-0.5">
+                    <span className="text-gray-300 font-medium">{t.period}</span>
+                    {t.endDate && <span className="text-gray-500">do {t.endDate}</span>}
+                  </div>
+                  <div className="flex gap-4 text-gray-400">
+                    {t.epsEstimate != null && (
+                      <span>EPS: <span className="text-white font-medium">{t.epsEstimate.toFixed(2)}</span></span>
+                    )}
+                    {t.revenueEstimate != null && (
+                      <span>Przychody: <span className="text-white font-medium">{formatMarketCap(t.revenueEstimate)}</span></span>
+                    )}
+                    {t.growth != null && (
+                      <span>
+                        Wzrost EPS:{' '}
+                        <span className={`font-medium ${t.growth >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {t.growth >= 0 ? '+' : ''}{(t.growth * 100).toFixed(1)}%
+                        </span>
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Zmiany ratingów */}
+        {upgradeDowngradeHistory && upgradeDowngradeHistory.length > 0 && (
+          <div>
+            <SectionHeader title="Ostatnie zmiany ratingów" />
+            <div className="space-y-0">
+              {upgradeDowngradeHistory.map((u, i) => (
+                <div key={i} className="flex items-center gap-2 py-2 border-b border-gray-800/60 last:border-0 text-xs">
+                  <span
+                    className="px-1.5 py-0.5 rounded text-xs font-bold shrink-0"
+                    style={{
+                      background: (ACTION_COLORS[u.action] ?? '#9ca3af') + '22',
+                      color: ACTION_COLORS[u.action] ?? '#9ca3af',
+                    }}
+                  >
+                    {ACTION_LABELS[u.action] ?? u.action}
+                  </span>
+                  <span className="text-gray-300 font-medium shrink-0">{u.firm}</span>
+                  <span className="text-gray-400 flex-1 text-right">
+                    {u.fromGrade ? `${u.fromGrade} → ` : ''}<span className="text-white">{u.toGrade}</span>
+                  </span>
+                  <span className="text-gray-500 shrink-0">{u.date}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Transakcje insiderów */}
+        {insiderTransactions && insiderTransactions.length > 0 && (
+          <div>
+            <SectionHeader title="Transakcje insiderów" />
+            <div className="space-y-0">
+              {insiderTransactions.map((t, i) => {
+                const isSale = /sale|sold|sell/i.test(t.transactionText)
+                const isBuy  = /purchase|bought|buy/i.test(t.transactionText)
+                const typeColor = isSale ? 'text-red-400' : isBuy ? 'text-emerald-400' : 'text-gray-400'
+                return (
+                  <div key={i} className="py-2 border-b border-gray-800/60 last:border-0 text-xs">
+                    <div className="flex justify-between mb-0.5">
+                      <span className="text-gray-300 font-medium truncate pr-2">{t.name}</span>
+                      <span className="text-gray-500 shrink-0">{t.date}</span>
+                    </div>
+                    <div className="flex justify-between text-gray-400">
+                      <span className="truncate pr-2">
+                        <span className="text-gray-500">{t.relation}</span>
+                        {t.transactionText && (
+                          <span className={` ml-2 ${typeColor}`}>{t.transactionText}</span>
+                        )}
+                      </span>
+                      <span className="shrink-0 text-right">
+                        {t.shares != null && <span className="text-white font-medium">{t.shares.toLocaleString()} akcji</span>}
+                        {t.value != null && <span className="text-gray-400 ml-1">({formatMarketCap(t.value)})</span>}
+                      </span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
           </div>
         )}
       </div>

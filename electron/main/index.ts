@@ -18,7 +18,7 @@ import {
   fetchGlobalMarketData,
 } from './finance'
 import { computeGlobalScores, detectMarketRegime, buildRegimeSummary } from './globalScore'
-import type { HistoryPeriod, GlobalMarketData, MarketRegime } from '../../src/lib/types'
+import type { HistoryPeriod, GlobalMarketData, MarketRegime, FundamentalData } from '../../src/lib/types'
 import { gramsToTroyOz } from '../../src/lib/types'
 import {
   initDatabase,
@@ -175,8 +175,9 @@ function buildChatSystemContext(params: {
   eurPln: number
   today: string
   bondValues?: Map<number, { totalValue: number; bondYearNum: number; currentYearRate: number; maturityDate: string; isMatured: boolean }>
+  fundamentals?: Map<string, FundamentalData>
 }): string {
-  const { assets, quotes, portfolios, transactions, cashAccounts, cashTransactions, priceHistories, globalMarket, regime, news, aiReports, usdPln, eurPln, today, bondValues } = params
+  const { assets, quotes, portfolios, transactions, cashAccounts, cashTransactions, priceHistories, globalMarket, regime, news, aiReports, usdPln, eurPln, today, bondValues, fundamentals } = params
   const toPln = (amount: number, currency: string) =>
     currency === 'PLN' ? amount : currency === 'USD' ? amount * usdPln : currency === 'EUR' ? amount * eurPln : amount
 
@@ -312,6 +313,53 @@ function buildChatSystemContext(params: {
     reportLines.push(`\n--- Analiza ${r.ticker} ${label} (${r.created_at.slice(0, 10)}) ---\n${truncated}`)
   }
   if (reportLines.length > 0) sections.push('', '=== RAPORTY AI (ostatnie analizy) ===', ...reportLines)
+
+  // --- Fundamentals per ticker ---
+  if (fundamentals && fundamentals.size > 0) {
+    const fmtPct = (v: number | null) => v != null ? `${(v * 100).toFixed(1)}%` : 'brak'
+    const fmtMc = (v: number | null) => {
+      if (v == null) return 'brak'
+      if (v >= 1e12) return `${(v / 1e12).toFixed(2)}T`
+      if (v >= 1e9)  return `${(v / 1e9).toFixed(2)}B`
+      if (v >= 1e6)  return `${(v / 1e6).toFixed(2)}M`
+      return v.toFixed(0)
+    }
+    const fundLines: string[] = []
+    for (const [ticker, f] of fundamentals.entries()) {
+      const lines: string[] = [`${ticker}:`]
+      if (f.pe != null || f.forwardPE != null || f.pegRatio != null)
+        lines.push(`  P/E: ${f.pe?.toFixed(2) ?? 'brak'} | Forward P/E: ${f.forwardPE?.toFixed(2) ?? 'brak'} | PEG: ${f.pegRatio?.toFixed(2) ?? 'brak'}`)
+      if (f.eps != null)
+        lines.push(`  EPS: ${f.eps.toFixed(2)} | Dywidenda: ${f.dividendYield != null ? fmtPct(f.dividendYield) : 'brak'}`)
+      if (f.totalRevenue != null)
+        lines.push(`  Przychody: ${fmtMc(f.totalRevenue)} (wzrost: ${fmtPct(f.revenueGrowth)}) | Marża netto: ${fmtPct(f.profitMargins)}`)
+      if (f.totalDebt != null || f.totalCash != null)
+        lines.push(`  Dług: ${fmtMc(f.totalDebt)} | Gotówka: ${fmtMc(f.totalCash)}`)
+      if (f.shortPercentOfFloat != null || f.shortRatio != null)
+        lines.push(`  Short: ${fmtPct(f.shortPercentOfFloat)} float | ratio: ${f.shortRatio?.toFixed(1) ?? 'brak'} dni`)
+      if (f.numberOfAnalysts)
+        lines.push(`  Analitycy: ${f.analystRecommendation?.toUpperCase() ?? 'brak'} | cel: ${f.targetMeanPrice?.toFixed(2) ?? 'brak'} | n=${f.numberOfAnalysts}`)
+      if (f.earningsHistory?.length) {
+        const last = f.earningsHistory[f.earningsHistory.length - 1]
+        const surp = last.surprisePercent != null ? ` surprise ${last.surprisePercent >= 0 ? '+' : ''}${(last.surprisePercent * 100).toFixed(1)}%` : ''
+        lines.push(`  Ostatni EPS: ${last.period} est.${last.epsEstimate ?? '?'} wynik ${last.epsActual ?? '?'}${surp}`)
+      }
+      if (f.earningsTrend?.length) {
+        const t = f.earningsTrend[0]
+        lines.push(`  Prognoza (${t.period}): EPS ~${t.epsEstimate ?? 'brak'}${t.growth != null ? ` wzrost ${t.growth >= 0 ? '+' : ''}${(t.growth * 100).toFixed(1)}%` : ''}`)
+      }
+      if (f.upgradeDowngradeHistory?.length) {
+        const u = f.upgradeDowngradeHistory[0]
+        lines.push(`  Ostatni rating: ${u.date} ${u.firm} ${u.fromGrade ? u.fromGrade + '→' : ''}${u.toGrade}`)
+      }
+      if (f.insiderTransactions?.length) {
+        const t = f.insiderTransactions[0]
+        lines.push(`  Ostatni insider: ${t.date} ${t.name} (${t.relation}): ${t.transactionText}`)
+      }
+      fundLines.push(lines.join('\n'))
+    }
+    sections.push('', '=== DANE FUNDAMENTALNE PER SPÓŁKA ===', ...fundLines)
+  }
 
   sections.push('', '---', 'Odpowiadaj konkretnie, powołując się na powyższe dane. Nie wymyślaj liczb których nie masz w kontekście.')
   return sections.join('\n')
@@ -620,14 +668,24 @@ function registerIpcHandlers(): void {
       })
     const selectedTickers = [...new Set([...mentionedTickers, ...assetValues.slice(0, 5).map(a => a.ticker)])].slice(0, 5)
 
-    // Historia cen (2y monthly) dla wybranych tickerów
+    // Historia cen (2y monthly) + dane fundamentalne dla wybranych tickerów
     const priceHistories = new Map<string, ReturnType<typeof aggregateToMonthly>>()
-    await Promise.all(selectedTickers.map(async ticker => {
-      try {
-        const candles = await fetchHistory(ticker, '2y')
-        priceHistories.set(ticker, aggregateToMonthly(candles))
-      } catch { /* pomiń */ }
-    }))
+    const fundamentalsMap = new Map<string, FundamentalData>()
+    const stockTickers = selectedTickers.filter(t => !assets.find(a => a.ticker === t && a.asset_type === 'bond'))
+    await Promise.all([
+      ...stockTickers.map(async ticker => {
+        try {
+          const candles = await fetchHistory(ticker, '2y')
+          priceHistories.set(ticker, aggregateToMonthly(candles))
+        } catch { /* pomiń */ }
+      }),
+      ...stockTickers.map(async ticker => {
+        try {
+          const f = await fetchFundamentals(ticker)
+          fundamentalsMap.set(ticker, f)
+        } catch { /* pomiń */ }
+      }),
+    ])
 
     // Dane makro
     let globalMarket: Awaited<ReturnType<typeof fetchGlobalMarketData>> | null = null
@@ -663,6 +721,7 @@ function registerIpcHandlers(): void {
       eurPln,
       today: new Date().toISOString().split('T')[0],
       bondValues: bondValuesMap,
+      fundamentals: fundamentalsMap.size > 0 ? fundamentalsMap : undefined,
     })
 
     // Konserwacja: usuń stare newsy

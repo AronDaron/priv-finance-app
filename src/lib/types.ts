@@ -192,8 +192,8 @@ export interface SearchResult {
 }
 
 export interface FundamentalData {
-  pe: number | null              // P/E ratio
-  eps: number | null             // Earnings Per Share
+  pe: number | null              // P/E ratio (trailing)
+  eps: number | null             // Earnings Per Share (trailing)
   dividendYield: number | null   // ułamek dziesiętny, np. 0.015 = 1.5%
   dividendRate: number | null    // roczna dywidenda na akcję w walucie quote
   marketCap: number | null
@@ -202,6 +202,12 @@ export interface FundamentalData {
   beta: number | null
   sector: string | null
   industry: string | null
+  // defaultKeyStatistics — wycena forward
+  forwardPE: number | null
+  pegRatio: number | null
+  // defaultKeyStatistics — short interest
+  shortRatio: number | null           // dni do pokrycia
+  shortPercentOfFloat: number | null  // % free float sprzedanych krótko
   // financialData (akcje)
   totalRevenue: number | null
   revenueGrowth: number | null
@@ -217,6 +223,39 @@ export interface FundamentalData {
   recommendationTrend: { strongBuy: number; buy: number; hold: number; sell: number; strongSell: number } | null
   // calendarEvents
   nextEarningsDate: string | null        // 'YYYY-MM-DD'
+  // earningsHistory — historia wyników EPS (ostatnie 4 kwartały)
+  earningsHistory: Array<{
+    date: string              // 'YYYY-MM-DD' — koniec kwartału
+    period: string            // np. '3Q2024'
+    epsEstimate: number | null
+    epsActual: number | null
+    surprisePercent: number | null  // ułamek: 0.015 = +1.5%
+  }> | null
+  // earningsTrend — prognozy analityków
+  earningsTrend: Array<{
+    period: string            // '0q' | '+1q' | '0y' | '+1y'
+    endDate: string | null    // 'YYYY-MM-DD'
+    epsEstimate: number | null
+    revenueEstimate: number | null
+    growth: number | null     // ułamek wzrostu EPS r/r
+  }> | null
+  // upgradeDowngradeHistory — zmiany ratingów (ostatnie 5)
+  upgradeDowngradeHistory: Array<{
+    date: string              // 'YYYY-MM-DD'
+    firm: string
+    toGrade: string
+    fromGrade: string | null
+    action: string            // 'up' | 'down' | 'init' | 'main' | 'reit'
+  }> | null
+  // insiderTransactions — transakcje insiderów (ostatnie 10)
+  insiderTransactions: Array<{
+    date: string              // 'YYYY-MM-DD'
+    name: string
+    relation: string
+    transactionText: string
+    shares: number | null
+    value: number | null
+  }> | null
   // ETF (topHoldings + fundProfile)
   topHoldings: Array<{ name: string; percent: number | null }> | null
   fundFamily: string | null
