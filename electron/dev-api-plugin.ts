@@ -401,19 +401,51 @@ export function financeDevApiPlugin(): Plugin {
               }
 
               // Fundamentals for non-portfolio tickers mentioned in question
+              const fmtPct = (v: number | null) => v != null ? `${(v * 100).toFixed(1)}%` : 'brak'
+              const fmtMc = (v: number | null) => {
+                if (v == null) return 'brak'
+                if (v >= 1e12) return `${(v / 1e12).toFixed(2)}T`
+                if (v >= 1e9)  return `${(v / 1e9).toFixed(2)}B`
+                if (v >= 1e6)  return `${(v / 1e6).toFixed(2)}M`
+                return v.toFixed(0)
+              }
               const extraFundLines: string[] = []
               for (const [ticker, { quote: q, fundamentals: f }] of extraDataMap) {
-                extraFundLines.push(`\n${ticker} (${q.name}):`)
-                extraFundLines.push(`  Cena: ${q.price.toFixed(2)} ${q.currency} | Zmiana dziś: ${q.changePercent >= 0 ? '+' : ''}${q.changePercent.toFixed(2)}%`)
-                if (f.pe) extraFundLines.push(`  P/E: ${f.pe.toFixed(2)}`)
-                if (f.eps) extraFundLines.push(`  EPS (TTM): ${f.eps.toFixed(2)}`)
-                if (f.revenueGrowth) extraFundLines.push(`  Przychody YoY: ${(f.revenueGrowth * 100).toFixed(1)}%`)
-                if (f.profitMargins) extraFundLines.push(`  Marża netto: ${(f.profitMargins * 100).toFixed(1)}%`)
-                if (f.targetMeanPrice) extraFundLines.push(`  Cel analityków: ${f.targetMeanPrice.toFixed(2)} ${q.currency} | Rekomendacja: ${f.analystRecommendation ?? 'N/A'}`)
-                if (f.beta) extraFundLines.push(`  Beta: ${f.beta.toFixed(2)}`)
-                if (f.marketCap) extraFundLines.push(`  Kapitalizacja: ${(f.marketCap / 1e9).toFixed(1)}B ${q.currency}`)
-                if (f.week52High && f.week52Low) extraFundLines.push(`  52-tygodniowy zakres: ${f.week52Low.toFixed(2)} – ${f.week52High.toFixed(2)}`)
-                if (f.sector) extraFundLines.push(`  Sektor: ${f.sector}${f.industry ? ` / ${f.industry}` : ''}`)
+                const lines: string[] = [`\n${ticker} (${q.name}):`]
+                lines.push(`  Cena: ${q.price.toFixed(2)} ${q.currency} | Zmiana dziś: ${q.changePercent >= 0 ? '+' : ''}${q.changePercent.toFixed(2)}%`)
+                if (f.pe != null || f.forwardPE != null || f.pegRatio != null)
+                  lines.push(`  P/E: ${f.pe?.toFixed(2) ?? 'brak'} | Forward P/E: ${f.forwardPE?.toFixed(2) ?? 'brak'} | PEG: ${f.pegRatio?.toFixed(2) ?? 'brak'}`)
+                if (f.eps != null)
+                  lines.push(`  EPS: ${f.eps.toFixed(2)} | Dywidenda: ${f.dividendYield != null ? fmtPct(f.dividendYield) : 'brak'}`)
+                if (f.totalRevenue != null)
+                  lines.push(`  Przychody: ${fmtMc(f.totalRevenue)} (wzrost: ${fmtPct(f.revenueGrowth)}) | Marża netto: ${fmtPct(f.profitMargins)}`)
+                if (f.totalDebt != null || f.totalCash != null)
+                  lines.push(`  Dług: ${fmtMc(f.totalDebt)} | Gotówka: ${fmtMc(f.totalCash)}`)
+                if (f.shortPercentOfFloat != null || f.shortRatio != null)
+                  lines.push(`  Short: ${fmtPct(f.shortPercentOfFloat)} float | ratio: ${f.shortRatio?.toFixed(1) ?? 'brak'} dni`)
+                if (f.marketCap) lines.push(`  Kapitalizacja: ${fmtMc(f.marketCap)} ${q.currency} | Beta: ${f.beta?.toFixed(2) ?? 'brak'}`)
+                if (f.week52High && f.week52Low) lines.push(`  52T zakres: ${f.week52Low.toFixed(2)} – ${f.week52High.toFixed(2)}`)
+                if (f.sector) lines.push(`  Sektor: ${f.sector}${f.industry ? ` / ${f.industry}` : ''}`)
+                if (f.numberOfAnalysts)
+                  lines.push(`  Analitycy: ${f.analystRecommendation?.toUpperCase() ?? 'brak'} | cel: ${f.targetMeanPrice?.toFixed(2) ?? 'brak'} | n=${f.numberOfAnalysts}`)
+                if (f.earningsHistory?.length) {
+                  const last = f.earningsHistory[f.earningsHistory.length - 1]
+                  const surp = last.surprisePercent != null ? ` surprise ${last.surprisePercent >= 0 ? '+' : ''}${(last.surprisePercent * 100).toFixed(1)}%` : ''
+                  lines.push(`  Ostatni EPS: ${last.period} est.${last.epsEstimate ?? '?'} wynik ${last.epsActual ?? '?'}${surp}`)
+                }
+                if (f.earningsTrend?.length) {
+                  const t = f.earningsTrend[0]
+                  lines.push(`  Prognoza (${t.period}): EPS ~${t.epsEstimate ?? 'brak'}${t.growth != null ? ` wzrost ${t.growth >= 0 ? '+' : ''}${(t.growth * 100).toFixed(1)}%` : ''}`)
+                }
+                if (f.upgradeDowngradeHistory?.length) {
+                  const u = f.upgradeDowngradeHistory[0]
+                  lines.push(`  Ostatni rating: ${u.date} ${u.firm} ${u.fromGrade ? u.fromGrade + '→' : ''}${u.toGrade}`)
+                }
+                if (f.insiderTransactions?.length) {
+                  const t = f.insiderTransactions[0]
+                  lines.push(`  Ostatni insider: ${t.date} ${t.name} (${t.relation}): ${t.transactionText}`)
+                }
+                extraFundLines.push(lines.join('\n'))
               }
 
               const macroLines: string[] = []
