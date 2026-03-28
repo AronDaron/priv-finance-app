@@ -109,12 +109,13 @@ export default function StockDetailView({ ticker: propTicker, embedded = false }
             </div>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {technicals && <TechnicalsPanel technicals={technicals} currentPrice={quote.price} />}
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_2fr] gap-4 items-start">
+            <div className="space-y-4">
+              {technicals && <TechnicalsPanel technicals={technicals} currentPrice={quote.price} />}
+              <DividendsPanel dividends={dividends} />
+            </div>
             {fundamentals && <FundamentalsPanel fundamentals={fundamentals} />}
           </div>
-
-          <DividendsPanel dividends={dividends} />
         </div>
       )}
 
