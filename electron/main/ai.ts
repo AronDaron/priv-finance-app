@@ -122,7 +122,7 @@ export async function analyzeStock(params: StockAnalysisParams): Promise<string>
 
   const isEtf = topHoldings != null || fundFamily != null
 
-  const systemPrompt = `Jesteś doświadczonym analitykiem finansowym piszącym zwięzłe raporty inwestycyjne po polsku. Zawsze pisz pełną analizę z 4 sekcjami używając markdown: **bold** dla wartości, listy dla ryzyk. Nigdy nie skracaj analizy.`
+  const systemPrompt = `Jesteś doświadczonym analitykiem finansowym piszącym zwięzłe raporty inwestycyjne po polsku. Zawsze pisz pełną analizę z 4 sekcjami używając markdown: **bold** dla wartości, listy dla ryzyk. Nigdy nie skracaj analizy. Na końcu KAŻDEJ analizy dołącz obowiązkowo w osobnym akapicie notę: "---\\n⚠️ *Powyższa analiza została wygenerowana przez model AI i ma charakter wyłącznie informacyjny. Nie stanowi porady inwestycyjnej ani rekomendacji w rozumieniu przepisów prawa. Decyzje inwestycyjne podejmuj na własną odpowiedzialność — w razie wątpliwości skonsultuj się z licencjonowanym doradcą finansowym. Wyniki historyczne nie są gwarancją przyszłych wyników.*"`
 
   const fundamentalSection = isEtf
     ? `TYP AKTYWA: ETF
@@ -219,7 +219,7 @@ export interface PortfolioAnalysisParams {
 export async function analyzePortfolio(params: PortfolioAnalysisParams): Promise<string> {
   const { apiKey, assets, totalValuePLN, totalPnlPercent, portfolios, bondsSummary, cashSummary } = params
 
-  const systemPrompt = `Jesteś zarządzającym portfelem inwestycyjnym. Piszesz po polsku. Twoje analizy są konkretne i actionable. Zawsze pisz pełną analizę z 4 sekcjami używając markdown: **bold** dla kluczowych wartości i wniosków, listy punktowane dla rekomendacji i ryzyk. Nigdy nie skracaj analizy.`
+  const systemPrompt = `Jesteś zarządzającym portfelem inwestycyjnym. Piszesz po polsku. Twoje analizy są konkretne i actionable. Zawsze pisz pełną analizę z 4 sekcjami używając markdown: **bold** dla kluczowych wartości i wniosków, listy punktowane dla rekomendacji i ryzyk. Nigdy nie skracaj analizy. Na końcu KAŻDEJ analizy dołącz obowiązkowo w osobnym akapicie notę: "---\\n⚠️ *Powyższa analiza została wygenerowana przez model AI i ma charakter wyłącznie informacyjny. Nie stanowi porady inwestycyjnej ani rekomendacji w rozumieniu przepisów prawa. Decyzje inwestycyjne podejmuj na własną odpowiedzialność — w razie wątpliwości skonsultuj się z licencjonowanym doradcą finansowym. Wyniki historyczne nie są gwarancją przyszłych wyników.*"`
 
   const assetLines = assets.map(a => {
     const wartosc = (a.quantity * a.currentPrice).toFixed(2)
@@ -304,7 +304,7 @@ export async function analyzeRegion(params: RegionAnalysisParams): Promise<strin
   const { apiKey, region, marketData, newsHeadlines } = params
   const m = marketData
 
-  const systemPrompt = `Jesteś analitykiem geopolitycznym i rynkowym. Piszesz zwięzłe analizy po polsku. Używasz markdown: **bold** dla kluczowych wniosków, listy dla punktów. Zawsze kończysz wyraźną oceną potencjału inwestycyjnego.`
+  const systemPrompt = `Jesteś analitykiem geopolitycznym i rynkowym. Piszesz zwięzłe analizy po polsku. Używasz markdown: **bold** dla kluczowych wniosków, listy dla punktów. Zawsze kończysz wyraźną oceną potencjału inwestycyjnego. Na końcu KAŻDEJ analizy dołącz obowiązkowo w osobnym akapicie notę: "---\\n⚠️ *Powyższa analiza została wygenerowana przez model AI i ma charakter wyłącznie informacyjny. Nie stanowi porady inwestycyjnej ani rekomendacji w rozumieniu przepisów prawa. Decyzje inwestycyjne podejmuj na własną odpowiedzialność — w razie wątpliwości skonsultuj się z licencjonowanym doradcą finansowym. Wyniki historyczne nie są gwarancją przyszłych wyników.*"`
 
   const commoditiesStr = [
     `Ropa WTI (CL=F): $${m.commodities.oil.price.toFixed(1)} (${m.commodities.oil.changePercent >= 0 ? '+' : ''}${m.commodities.oil.changePercent.toFixed(2)}% dziś, ${m.commodities.oil.change1m >= 0 ? '+' : ''}${m.commodities.oil.change1m.toFixed(1)}% 30d)`,

@@ -361,7 +361,7 @@ function buildChatSystemContext(params: {
     sections.push('', '=== DANE FUNDAMENTALNE PER SPÓŁKA ===', ...fundLines)
   }
 
-  sections.push('', '---', 'Odpowiadaj konkretnie, powołując się na powyższe dane. Nie wymyślaj liczb których nie masz w kontekście.')
+  sections.push('', '---', 'Odpowiadaj konkretnie, powołując się na powyższe dane. Nie wymyślaj liczb których nie masz w kontekście. Na końcu KAŻDEJ odpowiedzi dołącz obowiązkowo w osobnym akapicie: "---\\n⚠️ *Informacje generowane przez AI mają charakter wyłącznie informacyjny i nie stanowią porady inwestycyjnej ani rekomendacji w rozumieniu przepisów prawa. Decyzje inwestycyjne podejmuj na własną odpowiedzialność — w razie wątpliwości skonsultuj się z licencjonowanym doradcą finansowym.*"')
   return sections.join('\n')
 }
 
@@ -686,6 +686,43 @@ function registerIpcHandlers(): void {
         } catch { /* pomiń */ }
       }),
     ])
+
+    // Wykryj dodatkowe tickery spoza portfela wspomniane w pytaniu
+    const portfolioTickerSet = new Set(assets.map(a => a.ticker))
+    const extraTickers = new Set<string>()
+
+    // 1. Regex: wzorce tickerów pisanych wielkimi literami (np. NVDA, PKN.WA, TSLA)
+    const upperMatches = [...question.matchAll(/\b([A-Z]{2,6}(?:\.[A-Z]{1,4})?)\b/g)].map(m => m[1])
+    for (const t of upperMatches) {
+      if (!portfolioTickerSet.has(t) && !fundamentalsMap.has(t)) extraTickers.add(t)
+    }
+
+    // 2. Wyodrębnij pisane wielką literą słowa jako potencjalne nazwy spółek (np. "Apple", "Microsoft", "Orlen")
+    //    i wyszukaj każde z osobna w Yahoo Finance
+    const IGNORED_WORDS = new Set(['Czy', 'Co', 'Jak', 'Jaka', 'Jakie', 'Jaką', 'Ile', 'Po', 'Na', 'Do', 'Od', 'Ze', 'We', 'To', 'Ten', 'Ta', 'Te', 'Nie', 'Się', 'Jest', 'Są', 'Był', 'Była', 'By', 'Mi', 'Go', 'Jej', 'Jego', 'Ich', 'My', 'Ty', 'Pan', 'Pani', 'Pro', 'Ltd', 'Inc', 'Corp'])
+    const capitalizedWords = [...question.matchAll(/\b([A-ZŁŚŻŹĆĄĘÓ][a-złśżźćąęóńA-ZŁŚŻŹĆĄĘÓ]{2,})\b/g)]
+      .map(m => m[1])
+      .filter(w => !IGNORED_WORDS.has(w))
+    const searchCandidates = [...new Set(capitalizedWords)].slice(0, 3)
+    await Promise.all(searchCandidates.map(async word => {
+      try {
+        const searchRes = await searchTickers(word)
+        for (const r of searchRes.slice(0, 2)) {
+          if (r.ticker && !portfolioTickerSet.has(r.ticker) && !fundamentalsMap.has(r.ticker) && !extraTickers.has(r.ticker)) {
+            extraTickers.add(r.ticker)
+            break
+          }
+        }
+      } catch { /* pomiń */ }
+    }))
+
+    // Fetch fundamentałów dla wykrytych tickerów spoza portfela (max 3)
+    await Promise.all([...extraTickers].slice(0, 3).map(async ticker => {
+      try {
+        const f = await fetchFundamentals(ticker)
+        fundamentalsMap.set(ticker, f)
+      } catch { /* nieznany ticker — pomiń */ }
+    }))
 
     // Dane makro
     let globalMarket: Awaited<ReturnType<typeof fetchGlobalMarketData>> | null = null

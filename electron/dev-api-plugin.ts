@@ -147,6 +147,7 @@ export function financeDevApiPlugin(): Plugin {
                 us10y: marketData.bonds.US10Y.price,
                 sp500Change1m: marketData.indices.SP500.change1m,
                 oil: { price: marketData.commodities.oil.price, change1m: marketData.commodities.oil.change1m },
+                brent: marketData.commodities.brent ? { price: marketData.commodities.brent.price, change1m: marketData.commodities.brent.change1m } : null,
                 gold: { price: marketData.commodities.gold.price, change1m: marketData.commodities.gold.change1m },
                 copper: { change1m: marketData.commodities.copper.change1m },
                 gas: { change1m: marketData.commodities.gas.change1m },
@@ -309,13 +310,33 @@ export function financeDevApiPlugin(): Plugin {
               // Extract tickers mentioned in the last user question
               const lastQuestion = [...messages].reverse().find(m => m.role === 'user')?.content ?? ''
               const IGNORE_WORDS = new Set(['USD', 'PLN', 'EUR', 'GBP', 'CHF', 'JPY', 'ETF', 'AI', 'OK', 'IT', 'PE', 'EPS', 'CEO', 'IPO', 'USA', 'EU', 'UK', 'GDP', 'FED', 'ECB', 'IMF', 'RSI'])
-              const mentionedTickers = [...new Set((lastQuestion.match(/\b[A-Z]{2,5}(?:\.WA)?\b/g) ?? []).filter(t => !IGNORE_WORDS.has(t)))]
               const portfolioTickerSet = new Set([...assetsRaw.map(a => a.ticker), ...bondAssetsRaw.map(b => b.ticker)])
-              const nonPortfolioTickers = mentionedTickers.filter(t => !portfolioTickerSet.has(t))
 
-              // Fetch quote + fundamentals for non-portfolio tickers mentioned in question
+              // 1. Regex: tickery pisane WIELKIMI LITERAMI (np. AAPL, TSLA, PKN.WA)
+              const upperTickers = [...new Set((lastQuestion.match(/\b[A-Z]{2,6}(?:\.[A-Z]{1,4})?\b/g) ?? []).filter(t => !IGNORE_WORDS.has(t)))]
+              const nonPortfolioTickers = upperTickers.filter(t => !portfolioTickerSet.has(t))
+
+              // 2. Nazwy firm pisane wielką literą (np. "Apple", "Microsoft", "Orlen") — szukaj w Yahoo Finance
+              const IGNORED_POLISH = new Set(['Czy', 'Co', 'Jak', 'Jaka', 'Jakie', 'Jaką', 'Ile', 'Po', 'Na', 'Do', 'Od', 'Ze', 'We', 'To', 'Ten', 'Ta', 'Te', 'Nie', 'Się', 'Jest', 'Są', 'Był', 'Była', 'By', 'Mi', 'Go', 'Jej', 'Jego', 'Ich', 'My', 'Ty', 'Pan', 'Pani', 'Pro', 'Ltd', 'Inc', 'Corp'])
+              const capitalizedWords = [...lastQuestion.matchAll(/\b([A-ZŁŚŻŹĆĄĘÓ][a-złśżźćąęóńA-ZŁŚŻŹĆĄĘÓ]{2,})\b/g)]
+                .map(m => m[1])
+                .filter(w => !IGNORED_POLISH.has(w))
+              const searchCandidates = [...new Set(capitalizedWords)].slice(0, 3)
+              await Promise.all(searchCandidates.map(async word => {
+                try {
+                  const searchRes = await finance.searchTickers(word)
+                  for (const r of searchRes) {
+                    if (r.ticker && r.type === 'EQUITY' && !portfolioTickerSet.has(r.ticker) && !nonPortfolioTickers.includes(r.ticker)) {
+                      nonPortfolioTickers.push(r.ticker)
+                      break
+                    }
+                  }
+                } catch { /* pomiń */ }
+              }))
+
+              // Fetch quote + fundamentals for non-portfolio tickers (max 3)
               const extraDataMap = new Map<string, { quote: Awaited<ReturnType<typeof finance.fetchQuote>>; fundamentals: Awaited<ReturnType<typeof finance.fetchFundamentals>> }>()
-              await Promise.all(nonPortfolioTickers.map(async t => {
+              await Promise.all(nonPortfolioTickers.slice(0, 3).map(async t => {
                 try {
                   const [q, f] = await Promise.all([finance.fetchQuote(t), finance.fetchFundamentals(t)])
                   extraDataMap.set(t, { quote: q, fundamentals: f })
@@ -323,7 +344,7 @@ export function financeDevApiPlugin(): Plugin {
               }))
 
               // All tickers for price history: mentioned + top portfolio, max 7
-              const allHistoryTickers = [...new Set([...mentionedTickers, ...top5])].slice(0, 7)
+              const allHistoryTickers = [...new Set([...nonPortfolioTickers, ...top5])].slice(0, 7)
 
               // Monthly OHLCV
               const priceHistories = new Map<string, Array<{ month: string; open: number; close: number; changePercent: number }>>()
@@ -449,7 +470,7 @@ export function financeDevApiPlugin(): Plugin {
                 ...(extraFundLines.length > 0 ? ['', '=== FUNDAMENTY SPÓŁEK (z pytania) ===', ...extraFundLines] : []),
                 ...(macroLines.length > 0 ? ['', '=== MAKROEKONOMIA ===', ...macroLines] : []),
                 ...(reportLines.length > 0 ? ['', '=== RAPORTY AI (ostatnie analizy spółek) ===', ...reportLines] : []),
-                '', 'Odpowiadaj konkretnie, powołując się na powyższe dane. Nie wymyślaj liczb których nie masz.',
+                '', 'Odpowiadaj konkretnie, powołując się na powyższe dane. Nie wymyślaj liczb których nie masz. Na końcu KAŻDEJ odpowiedzi dołącz obowiązkowo w osobnym akapicie: "---\\n⚠️ *Informacje generowane przez AI mają charakter wyłącznie informacyjny i nie stanowią porady inwestycyjnej ani rekomendacji w rozumieniu przepisów prawa. Decyzje inwestycyjne podejmuj na własną odpowiedzialność — w razie wątpliwości skonsultuj się z licencjonowanym doradcą finansowym.*"',
               ].join('\n')
 
               data = await ai.chatWithPortfolio(messages, systemContext, ak ?? '')
