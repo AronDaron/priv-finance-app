@@ -5,10 +5,6 @@
 **Darmowa aplikacja desktopowa do śledzenia portfela inwestycyjnego z analizą AI**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Electron](https://img.shields.io/badge/Electron-41-47848F?logo=electron)](https://www.electronjs.org/)
-[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)](https://react.dev/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript)](https://www.typescriptlang.org/)
-[![Zero Cost](https://img.shields.io/badge/koszt_utrzymania-$0-brightgreen)](https://github.com/gadicc/node-yahoo-finance2)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-wspomóż_projekt-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/arondaron)
 [![Download](https://img.shields.io/badge/Pobierz_.zip-latest-0078D4?logo=windows&logoColor=white)](https://github.com/AronDaron/priv-finance-app/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/AronDaron/priv-finance-app/total?label=pobrania&color=brightgreen)](https://github.com/AronDaron/priv-finance-app/releases)
