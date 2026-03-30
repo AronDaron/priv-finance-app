@@ -245,14 +245,13 @@ src/                ← Renderer: aplikacja React (sandbox, brak Node.js)
 
 ## 📄 Licencja
 
-Ten projekt jest udostępniony na licencji **MIT**.
+Ten projekt jest udostępniony na licencji **PolyForm Noncommercial License 1.0.0**.
 
-Licencja MIT to jedna z najbardziej permisywnych licencji open-source. Oznacza to, że:
+Oznacza to, że:
 
-- ✅ **Możesz** używać kodu w projektach prywatnych i komercyjnych
-- ✅ **Możesz** modyfikować kod według własnych potrzeb
-- ✅ **Możesz** dystrybuować oryginał oraz własne modyfikacje
-- ✅ **Możesz** dołączać ten kod do projektów na innych licencjach
-- ℹ️ **Musisz** zachować oryginalną informację o prawach autorskich i treść licencji w dystrybuowanych kopiach
+- ✅ **Możesz** używać, modyfikować i dystrybuować kod
+- ✅ **Możesz** budować na jego podstawie własne projekty
+- ❌ **Nie możesz** używać kodu w celach komercyjnych bez zgody autora
+- ℹ️ **Musisz** zachować treść licencji i Required Notice w dystrybuowanych kopiach
 
 Pełna treść licencji: [LICENSE](LICENSE)
