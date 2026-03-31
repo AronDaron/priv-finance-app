@@ -4,7 +4,7 @@
 
 **Darmowa aplikacja desktopowa do śledzenia portfela inwestycyjnego z analizą AI**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License: PolyForm NC](https://img.shields.io/badge/License-PolyForm_NC_1.0-blue.svg)](LICENSE)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-wspomóż_projekt-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/arondaron)
 [![Download](https://img.shields.io/badge/Pobierz_.zip-latest-0078D4?logo=windows&logoColor=white)](https://github.com/AronDaron/priv-finance-app/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/AronDaron/priv-finance-app/total?label=pobrania&color=brightgreen)](https://github.com/AronDaron/priv-finance-app/releases)
