@@ -27,6 +27,7 @@
 | **Widok spółki** | ![Widok spółki](docs/screenshots/stock.png) |
 | **Analiza AI** | ![Analiza AI](docs/screenshots/ai.png) |
 | **Ustawienia** | ![Ustawienia](docs/screenshots/settings.png) |
+| **Scoring** | ![Scoring](docs/screenshots/scoring.png) |
 
 ---
 
