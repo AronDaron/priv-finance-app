@@ -585,6 +585,24 @@ export function financeDevApiPlugin(): Plugin {
               data = { rate: bondData.year1Rate, margin: bondData.margin }
               break
             }
+            case '/screener/fetch': {
+              const body = await readBody(req)
+              const { exchange, lookbackDays = 30 } = body
+              if (!exchange) { res.statusCode = 400; res.end(JSON.stringify({ error: 'Brak exchange' })); return }
+              const { fetchAndScoreExchange, EXCHANGE_CONFIG } = await import('./main/stockScreener')
+              const cfg = EXCHANGE_CONFIG[exchange]
+              if (!cfg) { res.statusCode = 400; res.end(JSON.stringify({ error: `Unknown exchange: ${exchange}` })); return }
+              const stocks = await fetchAndScoreExchange(exchange, { lookbackDays })
+              data = {
+                exchange,
+                exchangeLabel: cfg.label,
+                stocks,
+                lastFetchedAt: new Date().toISOString(),
+                isLoading: false,
+                error: null,
+              }
+              break
+            }
             default:
               res.statusCode = 404
               res.end(JSON.stringify({ error: `Nieznany endpoint: ${endpoint}` }))

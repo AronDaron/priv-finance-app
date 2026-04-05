@@ -243,6 +243,23 @@ function createTables(): void {
       source    TEXT NOT NULL DEFAULT 'gus_sdp',
       UNIQUE(data_type, year, date)
     );
+
+    CREATE TABLE IF NOT EXISTS screener_cache (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      exchange    TEXT NOT NULL,
+      ticker      TEXT NOT NULL,
+      name        TEXT NOT NULL,
+      market_cap  REAL,
+      data_json   TEXT NOT NULL,
+      fetched_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(exchange, ticker)
+    );
+
+    CREATE TABLE IF NOT EXISTS screener_metadata (
+      exchange         TEXT PRIMARY KEY,
+      last_full_fetch  TEXT NOT NULL,
+      lookback_days    INTEGER NOT NULL DEFAULT 30
+    );
   `)
 }
 
@@ -788,4 +805,61 @@ function seedBondReferenceData(): void {
     }
   })
   seed()
+}
+
+// ─── screener_cache ───────────────────────────────────────────────────────────
+
+export interface DBScreenerEntry {
+  exchange: string
+  ticker: string
+  name: string
+  market_cap: number | null
+  data_json: string
+  fetched_at: string
+}
+
+export function getScreenerCache(exchange: string): DBScreenerEntry[] {
+  return db
+    .prepare('SELECT * FROM screener_cache WHERE exchange = ? ORDER BY market_cap DESC')
+    .all(exchange) as DBScreenerEntry[]
+}
+
+export function upsertScreenerEntry(exchange: string, ticker: string, name: string, marketCap: number | null, dataJson: string): void {
+  db.prepare(`
+    INSERT INTO screener_cache (exchange, ticker, name, market_cap, data_json, fetched_at)
+    VALUES (?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(exchange, ticker) DO UPDATE SET
+      name = excluded.name,
+      market_cap = excluded.market_cap,
+      data_json = excluded.data_json,
+      fetched_at = excluded.fetched_at
+  `).run(exchange, ticker, name, marketCap, dataJson)
+}
+
+export function clearScreenerCache(exchange: string): void {
+  db.prepare('DELETE FROM screener_cache WHERE exchange = ?').run(exchange)
+}
+
+// ─── screener_metadata ────────────────────────────────────────────────────────
+
+export interface DBScreenerMetadata {
+  exchange: string
+  last_full_fetch: string
+  lookback_days: number
+}
+
+export function getScreenerMetadata(exchange: string): DBScreenerMetadata | null {
+  return db
+    .prepare('SELECT * FROM screener_metadata WHERE exchange = ?')
+    .get(exchange) as DBScreenerMetadata | null
+}
+
+export function upsertScreenerMetadata(exchange: string, lookbackDays: number): void {
+  db.prepare(`
+    INSERT INTO screener_metadata (exchange, last_full_fetch, lookback_days)
+    VALUES (?, datetime('now'), ?)
+    ON CONFLICT(exchange) DO UPDATE SET
+      last_full_fetch = excluded.last_full_fetch,
+      lookback_days = excluded.lookback_days
+  `).run(exchange, lookbackDays)
 }

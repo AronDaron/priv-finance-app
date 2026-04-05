@@ -63,6 +63,11 @@ import {
   getCpiForMonth,
   upsertMonthlyCpi,
   getStooqMarkedMonthlyCpi,
+  getScreenerCache,
+  upsertScreenerEntry,
+  clearScreenerCache,
+  getScreenerMetadata,
+  upsertScreenerMetadata,
   type DBNewsItem,
   type DBPortfolioAsset,
   type DBPortfolio,
@@ -73,6 +78,8 @@ import {
 } from './database'
 import { analyzeStock, analyzePortfolio, analyzeRegion, chatWithPortfolio, WORKER_MODEL, MANAGER_MODEL, WORLD_MODEL, type ChatMessage, type GlobalMacroContext } from './ai'
 import { calculateBondValue, fetchNbpRates, fetchBondYear1Rate, fetchGusAnnualCpi, fetchGusMonthCpi, fetchStooqMonthCpi } from './bonds'
+import { fetchAndScoreExchange, EXCHANGE_CONFIG } from './stockScreener'
+import type { StockScoringResult } from '../../src/lib/types'
 import { fetchNewsForRegion } from './news'
 import type { NewsRegion } from './news'
 
@@ -994,6 +1001,77 @@ function registerIpcHandlers(): void {
     if (year1Rate !== null) cacheBondRate(t, year1Rate)
     if (margin !== null) cacheBondMargin(t, margin)
     return cachedRate ?? year1Rate
+  })
+
+  // ─── Screener (Stock Scoring) ─────────────────────────────────────────────
+
+  ipcMain.handle('screener:fetch', async (_event, { exchange, lookbackDays = 30, forceRefresh = false }: {
+    exchange: string
+    lookbackDays?: number
+    forceRefresh?: boolean
+  }) => {
+    const cfg = EXCHANGE_CONFIG[exchange]
+    if (!cfg) return { exchange, exchangeLabel: exchange, stocks: [], lastFetchedAt: null, isLoading: false, error: `Unknown exchange: ${exchange}` }
+
+    const meta = getScreenerMetadata(exchange)
+    const now = Date.now()
+
+    // Sprawdź TTL cache (4h w ciągu dnia, 24h poza godzinami)
+    const hour = new Date().getUTCHours()
+    const isMarketHours = hour >= 9 && hour < 22
+    const ttlMs = isMarketHours ? 4 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000
+    const cacheStale = !meta
+      || meta.lookback_days !== lookbackDays
+      || (now - new Date(meta.last_full_fetch).getTime()) > ttlMs
+
+    // Zwróć cache jeśli świeży
+    if (!forceRefresh && !cacheStale) {
+      const cached = getScreenerCache(exchange)
+      if (cached.length > 0) {
+        const stocks = cached.map(row => JSON.parse(row.data_json) as StockScoringResult)
+        return {
+          exchange,
+          exchangeLabel: cfg.label,
+          stocks,
+          lastFetchedAt: meta?.last_full_fetch ?? null,
+          isLoading: false,
+          error: null,
+        }
+      }
+    }
+
+    // Fetch fresh
+    try {
+      const stocks = await fetchAndScoreExchange(exchange, { lookbackDays, forceRefresh })
+
+      // Zapisz do cache
+      clearScreenerCache(exchange)
+      for (const s of stocks) {
+        upsertScreenerEntry(exchange, s.ticker, s.name, s.marketCap, JSON.stringify(s))
+      }
+      upsertScreenerMetadata(exchange, lookbackDays)
+
+      return {
+        exchange,
+        exchangeLabel: cfg.label,
+        stocks,
+        lastFetchedAt: new Date().toISOString(),
+        isLoading: false,
+        error: null,
+      }
+    } catch (e: any) {
+      // Przy błędzie zwróć stary cache jeśli istnieje
+      const cached = getScreenerCache(exchange)
+      const stocks = cached.map(row => JSON.parse(row.data_json) as StockScoringResult)
+      return {
+        exchange,
+        exchangeLabel: cfg.label,
+        stocks,
+        lastFetchedAt: meta?.last_full_fetch ?? null,
+        isLoading: false,
+        error: e?.message ?? 'Fetch failed',
+      }
+    }
   })
 }
 

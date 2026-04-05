@@ -431,3 +431,68 @@ export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
 }
+
+// ── Stock Scoring System ──────────────────────────────────────────────────────
+
+export interface StockSubScore {
+  value: number | null   // surowa wartość (do wyświetlenia)
+  score: number | null   // znormalizowany score 0-100
+  rank?: number | null   // percentyl w kohortcie giełdy (dla metryk peer)
+}
+
+export interface StockScoringResult {
+  ticker: string
+  name: string
+  exchange: string
+  marketCap: number | null
+  currency: string
+
+  // Wyniki kategorii
+  profitabilityScore: number | null
+  safetyScore: number | null
+  valuationScore: number | null
+  totalScore: number | null
+
+  // Wagi użyte (po korekcie regime)
+  weights: { profitability: number; safety: number; valuation: number }
+
+  // Pokrycie danych (0-100%)
+  dataCoverage: number
+
+  // Sub-score dla Extended View
+  sub: {
+    // Profitability
+    revenueGrowth: StockSubScore
+    revenueGrowthVsPeers: StockSubScore
+    earningsGrowth: StockSubScore
+    forwardEpsGrowth: StockSubScore
+    grossMargin: StockSubScore
+    netMargin: StockSubScore
+    // Safety
+    debtCashRatio: StockSubScore
+    beta: StockSubScore
+    shortInterest: StockSubScore
+    analystConsensus: StockSubScore
+    priceMomentum: StockSubScore
+    // Valuation
+    trailingPE: StockSubScore
+    forwardPE: StockSubScore
+    pegRatio: StockSubScore
+    priceVs52wHigh: StockSubScore
+    dividendYield: StockSubScore
+  }
+
+  fetchedAt: string
+  lookbackDays: number
+}
+
+export interface ScreenerExchangeResult {
+  exchange: string
+  exchangeLabel: string
+  stocks: StockScoringResult[]
+  lastFetchedAt: string | null
+  isLoading: boolean
+  error: string | null
+}
+
+export type ScreenerViewMode = 'simple' | 'extended'

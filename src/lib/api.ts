@@ -33,6 +33,7 @@ import type {
   RegionId,
   ChatMessage,
   BondValueResult,
+  ScreenerExchangeResult,
 } from './types'
 import { FX_TICKERS } from './types'
 
@@ -127,6 +128,9 @@ declare global {
         syncNbpRate(): Promise<{ success: boolean }>
         updateCpi(year: number, value: number): Promise<{ success: boolean }>
         fetchYear1Rate(ticker: string): Promise<number | null>
+      }
+      screener: {
+        fetch(args: { exchange: string; lookbackDays?: number; forceRefresh?: boolean }): Promise<ScreenerExchangeResult>
       }
     }
   }
@@ -551,7 +555,7 @@ export async function getTechnicals(ticker: string, period: HistoryPeriod): Prom
 
 // ─── AI API ───────────────────────────────────────────────────────────────────
 
-async function devApiPost<T>(endpoint: string, body: Record<string, string>): Promise<T> {
+async function devApiPost<T>(endpoint: string, body: Record<string, unknown>): Promise<T> {
   const res = await fetch(`/api${endpoint}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -773,4 +777,17 @@ export async function fetchBondYear1Rate(ticker: string): Promise<number | null>
 
 export function getCachedBondMargins(): Record<string, number> {
   return lsGet<Record<string, number>>(LS_BOND_MARGINS, {})
+}
+
+// ─── Scoring (Stock Screener) ─────────────────────────────────────────────────
+
+export async function fetchScoringExchange(
+  exchange: string,
+  lookbackDays = 30,
+  forceRefresh = false
+): Promise<ScreenerExchangeResult> {
+  if (isElectron()) {
+    return window.electronAPI!.screener.fetch({ exchange, lookbackDays, forceRefresh })
+  }
+  return devApiPost<ScreenerExchangeResult>('/screener/fetch', { exchange, lookbackDays, forceRefresh })
 }

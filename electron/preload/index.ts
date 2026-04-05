@@ -194,4 +194,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     fetchYear1Rate: (ticker: string) =>
       ipcRenderer.invoke('bonds:fetchYear1Rate', ticker),
   },
+
+  // ── scoring (stock screener) ─────────────────────────────────────────────
+  screener: {
+    fetch: (args: { exchange: string; lookbackDays?: number; forceRefresh?: boolean }) =>
+      ipcRenderer.invoke('screener:fetch', args),
+  },
 })
