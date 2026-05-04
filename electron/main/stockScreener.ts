@@ -209,8 +209,6 @@ async function withConcurrencyLimit<T>(
   return results
 }
 
-// ─── Raw data type ────────────────────────────────────────────────────────────
-
 interface RawStockData {
   ticker: string
   name: string
@@ -336,8 +334,15 @@ function computeDataCoverage(raw: RawStockData): number {
 
 // ─── Scoring per spółka ───────────────────────────────────────────────────────
 
-function scoreRecommendation(key: string | null): number | null {
-  if (!key) return null
+function scoreDebtCash(totalDebt: number | null, totalCash: number | null): number | null {
+  if (totalDebt == null || totalCash == null) return null
+  if (totalCash <= 0) return totalDebt > 0 ? 0 : 50
+  const ratio = totalDebt / totalCash
+  return clamp(linearInterp(ratio, [[0, 100], [1, 60], [3, 30], [5, 10], [10, 0]]))
+}
+
+function scoreAnalystConsensus(key: string | null): number | null {
+  if (key == null) return null
   const map: Record<string, number> = {
     strong_buy: 100,
     buy: 75,
@@ -349,19 +354,6 @@ function scoreRecommendation(key: string | null): number | null {
   return map[key.toLowerCase()] ?? 50
 }
 
-function scoreDebtCash(totalDebt: number | null, totalCash: number | null): number | null {
-  if (totalDebt == null || totalCash == null) return null
-  if (totalCash <= 0) return totalDebt > 0 ? 0 : 50
-  const ratio = totalDebt / totalCash
-  return clamp(linearInterp(ratio, [[0, 100], [1, 60], [3, 30], [5, 10], [10, 0]]))
-}
-
-function scoreMomentum(ret: number | null, lookbackDays: number): number | null {
-  if (ret == null) return null
-  const anchor = Math.min(lookbackDays / 3, 50)
-  return clamp(linearInterp(ret, [[-anchor, 0], [0, 50], [anchor, 100]]))
-}
-
 // ─── Główna funkcja scoringu kohorty ─────────────────────────────────────────
 
 export function scoreStockCohort(
@@ -371,11 +363,10 @@ export function scoreStockCohort(
 ): StockScoringResult[] {
   const weights = computeRegimeAdjustedWeights(regime)
 
-  // Zbierz wartości do percentyli (peer comparison)
+  // Zbierz wartości do percentyli (peer comparison) — OSOBNE ZBIORY DLA KAŻDEGO METRYKI
   const allRevGrowth    = rawList.map(r => r.revenueGrowth).filter((v): v is number => v != null)
   const allTrailingPE   = rawList.map(r => r.trailingPE).filter((v): v is number => v != null && v > 0)
-  const allMomentum     = rawList.map(r => r.momentumReturn).filter((v): v is number => v != null)
-
+  const allForwardPE    = rawList.map(r => r.forwardPE).filter((v): v is number => v != null && v > 0) // OSOBNY ZBIÓR DO FORWARD PE
   return rawList.map(raw => {
     // ── Profitability ──────────────────────────────────────────────────────────
     const revenueGrowthScore = raw.revenueGrowth != null
@@ -395,20 +386,20 @@ export function scoreStockCohort(
       : null
 
     const grossMarginScore = raw.grossMargins != null
-      ? clamp(linearInterp(raw.grossMargins * 100, [[0, 20], [20, 50], [60, 100]]))
+      ? clamp(linearInterp(raw.grossMargins * 100, [[0, 0], [20, 50], [60, 100]]))
       : null
 
     const netMarginScore = raw.profitMargins != null
-      ? clamp(linearInterp(raw.profitMargins * 100, [[-5, 0], [0, 40], [25, 100]]))
+      ? clamp(linearInterp(raw.profitMargins * 100, [[-5, 0], [0, 30], [25, 100]]))
       : null
 
     const profitabilityScore = weightedAvg([
-      { score: revenueGrowthScore,         weight: 0.20 },
-      { score: revenueGrowthVsPeersScore,  weight: 0.15 },
-      { score: earningsGrowthScore,        weight: 0.20 },
+      { score: revenueGrowthScore,         weight: 0.15 },
+      { score: revenueGrowthVsPeersScore,  weight: 0.10 },
+      { score: earningsGrowthScore,        weight: 0.25 },
       { score: forwardEpsGrowthScore,      weight: 0.15 },
       { score: grossMarginScore,           weight: 0.15 },
-      { score: netMarginScore,             weight: 0.15 },
+      { score: netMarginScore,             weight: 0.20 },
     ])
 
     // ── Safety ────────────────────────────────────────────────────────────────
@@ -422,44 +413,59 @@ export function scoreStockCohort(
       ? clamp(linearInterp(raw.shortPercentOfFloat * 100, [[0, 100], [5, 70], [20, 10], [30, 0]]))
       : null
 
-    const analystScore = scoreRecommendation(raw.recommendationKey)
+    const analystScore = scoreAnalystConsensus(raw.recommendationKey)
 
-    const momentumScore = scoreMomentum(raw.momentumReturn, lookbackDays)
+    // momentumScore — używany w safetyScore (weight 0.15), nie usuwamy go z weightedAvg
+    const momentumScore = raw.momentumReturn != null && lookbackDays > 0
+      ? clamp(linearInterp(raw.momentumReturn, [
+          [-Math.min(lookbackDays / 3, 50), 20],
+          [0, 50],
+          [Math.min(lookbackDays / 3, 50), 80],
+        ]))
+      : 50
 
     const safetyScore = weightedAvg([
-      { score: debtCashScore,      weight: 0.25 },
-      { score: betaScore,          weight: 0.20 },
-      { score: shortInterestScore, weight: 0.15 },
-      { score: analystScore,       weight: 0.20 },
-      { score: momentumScore,      weight: 0.20 },
+      { score: debtCashScore,       weight: 0.25 },
+      { score: betaScore,           weight: 0.30 },
+      { score: shortInterestScore,  weight: 0.10 },
+      { score: analystScore,        weight: 0.20 },
+      { score: momentumScore,       weight: 0.15 },
     ])
 
     // ── Valuation ─────────────────────────────────────────────────────────────
+    // Valuation — ujednolicenie na percentyle dla spójności
     const trailingPEScore = raw.trailingPE != null && raw.trailingPE > 0 && allTrailingPE.length > 1
       ? percentileRankInverted(raw.trailingPE, allTrailingPE)
       : null
 
-    const forwardPEScore = raw.forwardPE != null && raw.forwardPE > 0 && allTrailingPE.length > 1
-      ? clamp(linearInterp(raw.forwardPE, [[5, 100], [15, 80], [25, 50], [40, 20], [80, 0]]))
+    // Forward PE — użycie OSOBNEGO zbioru allForwardPE dla spójności peer comparison
+    const forwardPEScore = raw.forwardPE != null && raw.forwardPE > 0 && allForwardPE.length > 1
+      ? percentileRankInverted(raw.forwardPE, allForwardPE)
       : null
 
-    const pegScore = raw.pegRatio != null
+    const pegScore = raw.pegRatio != null && raw.pegRatio > 0
       ? clamp(linearInterp(raw.pegRatio, [[0.5, 100], [1, 70], [2, 30], [3, 0]]))
       : null
 
+    // Price vs 52-week High — neutralizacja dla liderów rynku (nie penalizujemy >1.5x)
     const priceVs52wHighScore = raw.regularMarketPrice != null && raw.fiftyTwoWeekHigh != null && raw.fiftyTwoWeekHigh > 0
-      ? clamp(linearInterp(raw.regularMarketPrice / raw.fiftyTwoWeekHigh, [[0.5, 100], [0.8, 60], [1.0, 30], [1.2, 10]]))
+      ? clamp(linearInterp(raw.regularMarketPrice / raw.fiftyTwoWeekHigh, [
+          [0.3, 100],   // głęboko pod high — najlepsza wartość
+          [0.7, 70],    // umiarkowany poziom
+          [1.0, 50],    // na poziomie high — neutral
+          [1.5, 45],    // powyżej 1.5x — minimalna penalizacja (nie zero!)
+        ]))
       : null
 
-    const divYieldScore = raw.dividendYield != null
-      ? clamp(linearInterp(raw.dividendYield * 100, [[0, 30], [2, 60], [5, 90], [8, 80], [15, 40]]))
+    const divYieldScore = raw.dividendYield != null && raw.dividendYield > 0
+      ? clamp(linearInterp(raw.dividendYield * 100, [[0, 20], [2, 40], [5, 60], [8, 70], [12, 50], [20, 30]]))
       : null
 
     const valuationScore = weightedAvg([
-      { score: trailingPEScore,      weight: 0.25 },
-      { score: forwardPEScore,       weight: 0.20 },
-      { score: pegScore,             weight: 0.20 },
-      { score: priceVs52wHighScore,  weight: 0.20 },
+      { score: trailingPEScore,      weight: 0.30 },
+      { score: forwardPEScore,       weight: 0.25 },
+      { score: pegScore,             weight: 0.15 },
+      { score: priceVs52wHighScore,  weight: 0.15 },
       { score: divYieldScore,        weight: 0.15 },
     ])
 
@@ -470,7 +476,10 @@ export function scoreStockCohort(
       { score: valuationScore,     weight: weights.valuation },
     ])
 
+    // Data coverage penalty — spółka z niskim pokryciem danych dostaje niższy totalScore
     const dataCoverage = computeDataCoverage(raw)
+    const dataCoveragePenalty = 1 - (1 - dataCoverage / 100) * 0.3  // max 30% redukcji
+    const adjustedTotalScore = totalScore != null ? totalScore * dataCoveragePenalty : null
 
     return {
       ticker: raw.ticker,
@@ -481,7 +490,7 @@ export function scoreStockCohort(
       profitabilityScore: profitabilityScore != null ? Math.round(profitabilityScore * 10) / 10 : null,
       safetyScore: safetyScore != null ? Math.round(safetyScore * 10) / 10 : null,
       valuationScore: valuationScore != null ? Math.round(valuationScore * 10) / 10 : null,
-      totalScore: totalScore != null ? Math.round(totalScore * 10) / 10 : null,
+      totalScore: adjustedTotalScore != null ? Math.round(adjustedTotalScore * 10) / 10 : null,
       weights,
       dataCoverage,
       sub: {
@@ -495,7 +504,7 @@ export function scoreStockCohort(
         beta:                 sub(raw.beta, betaScore),
         shortInterest:        sub(raw.shortPercentOfFloat != null ? raw.shortPercentOfFloat * 100 : null, shortInterestScore),
         analystConsensus:     sub(null, analystScore),
-        priceMomentum:        sub(raw.momentumReturn, momentumScore),
+        priceMomentum:        sub(raw.momentumReturn, momentumScore ?? 50),
         trailingPE:           sub(raw.trailingPE, trailingPEScore),
         forwardPE:            sub(raw.forwardPE, forwardPEScore),
         pegRatio:             sub(raw.pegRatio, pegScore),
