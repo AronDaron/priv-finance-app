@@ -62,7 +62,7 @@ import {
   cacheBondMargin,
   getCpiForMonth,
   upsertMonthlyCpi,
-  getStooqMarkedMonthlyCpi,
+  getImpreciseMonthlyCpi,
   getScreenerCache,
   upsertScreenerEntry,
   clearScreenerCache,
@@ -77,7 +77,7 @@ import {
   type DBAIReport,
 } from './database'
 import { analyzeStock, analyzePortfolio, analyzeRegion, chatWithPortfolio, WORKER_MODEL, MANAGER_MODEL, WORLD_MODEL, type ChatMessage, type GlobalMacroContext } from './ai'
-import { calculateBondValue, fetchNbpRates, fetchBondYear1Rate, fetchGusAnnualCpi, fetchGusMonthCpi, fetchStooqMonthCpi } from './bonds'
+import { calculateBondValue, fetchNbpRates, fetchBondYear1Rate, fetchGusAnnualCpi, fetchGusMonthCpi, fetchStooqMonthCpi, fetchTradingEconomicsCpi } from './bonds'
 import { fetchAndScoreExchange, EXCHANGE_CONFIG } from './stockScreener'
 import type { StockScoringResult } from '../../src/lib/types'
 import { fetchNewsForRegion } from './news'
@@ -962,9 +962,15 @@ function registerIpcHandlers(): void {
             if (cpi !== null) {
               upsertMonthlyCpi(yr, mo, cpi, 'gus_sdp')
             } else {
-              // GUS SDP jeszcze nie ma danych — tymczasowy fallback do stooq
+              // GUS SDP jeszcze nie ma danych — fallback 1: stooq
               const stooqCpi = await fetchStooqMonthCpi(yr, mo)
-              if (stooqCpi !== null) upsertMonthlyCpi(yr, mo, stooqCpi, 'stooq')
+              if (stooqCpi !== null) {
+                upsertMonthlyCpi(yr, mo, stooqCpi, 'stooq')
+              } else {
+                // stooq też nie odpowiada — fallback 2: TradingEconomics
+                const teCpi = await fetchTradingEconomicsCpi(yr, mo)
+                if (teCpi !== null) upsertMonthlyCpi(yr, mo, teCpi, 'tradingeconomics')
+              }
             }
             attempts++
           } else {
@@ -1091,11 +1097,17 @@ app.whenReady().then(() => {
     for (const { year, value } of cpiData) upsertCpi(year, value)
   }).catch(() => {})
 
-  // Odśwież tymczasowe dane CPI ze stooq gdy GUS SDP już je opublikował
+  // Odśwież tymczasowe dane CPI z mniej precyzyjnych źródeł (stooq, tradingeconomics)
+  // gdy GUS SDP już je opublikował. Próbuj też nadpisać tradingeconomics → stooq.
   ;(async () => {
-    for (const { year, month } of getStooqMarkedMonthlyCpi()) {
+    for (const { year, month } of getImpreciseMonthlyCpi()) {
       const cpi = await fetchGusMonthCpi(year, month)
-      if (cpi !== null) upsertMonthlyCpi(year, month, cpi, 'gus_sdp')
+      if (cpi !== null) {
+        upsertMonthlyCpi(year, month, cpi, 'gus_sdp')
+        continue
+      }
+      const stooqCpi = await fetchStooqMonthCpi(year, month)
+      if (stooqCpi !== null) upsertMonthlyCpi(year, month, stooqCpi, 'stooq')
     }
   })().catch(() => {})
 

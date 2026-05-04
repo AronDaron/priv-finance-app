@@ -482,6 +482,117 @@ export async function fetchStooqMonthCpi(year: number, month: number): Promise<n
   }
 }
 
+// ─── Fallback CPI z TradingEconomics (gdy GUS SDP i stooq nie odpowiadają) ──
+// Trzecie źródło wprowadzone gdy stooq zaczął wymagać apikey i GUS SDP
+// przestał wystawiać dane bieżącego roku w API.
+//
+// Hierarchia parserów (pierwszy wygrywa per miesiąc — żeby zrewidowane wartości
+// w narracji nie zostały nadpisane starszymi z tabeli Calendar):
+//   1. Narracja artykułów: "rose to X% in Month YYYY from Y% in the previous month"
+//      — to jedyne miejsce na stronie aktualizowane po REWIZJACH GUS.
+//   2. Tabela Related ("Inflation Rate YoY | Last | Previous | Unit | Reference")
+//      — daje 2 najnowsze miesiące, też z aktualnymi (zrewidowanymi) wartościami.
+//   3. Tabela Calendar (Final/Prel) — uwaga: kolumna "Previous" trzyma wartość
+//      Z MOMENTU PUBLIKACJI, nie po późniejszych rewizjach. Używana jako last resort.
+
+export async function fetchTradingEconomicsCpi(year: number, month: number): Promise<number | null> {
+  try {
+    const response = await fetch('https://tradingeconomics.com/poland/inflation-cpi', {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+    })
+    if (!response.ok) return null
+    const html = await response.text()
+
+    const monShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    const monLong = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+    const map = new Map<string, number>()
+    // first-wins: parser-priorytet rozstrzyga przy konflikcie wartości dla tego samego miesiąca
+    const setMonth = (y: number, m: number, v: number) => {
+      if (y > 1990 && m >= 1 && m <= 12 && !isNaN(v)) {
+        const key = `${y}-${String(m).padStart(2, '0')}`
+        if (!map.has(key)) map.set(key, v)
+      }
+    }
+    const stripTags = (s: string) => s.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim()
+    const prevMonth = (y: number, m: number): [number, number] => m === 1 ? [y - 1, 12] : [y, m - 1]
+
+    // (1) Narracja — najnowsze artykuły są wcześniej w HTML, więc first-wins daje aktualne wartości
+    const narrRe = /(?:rose|fell|increased|decreased|declined|stood|remained|edged)[\s\S]{0,40}?(\d+(?:\.\d+)?)%[\s\S]{0,40}?in (January|February|March|April|May|June|July|August|September|October|November|December) (\d{4})[\s\S]{0,80}?from[\s\S]{0,80}?(\d+(?:\.\d+)?)%[\s\S]{0,80}?previous month/gi
+    let narr: RegExpExecArray | null
+    while ((narr = narrRe.exec(html)) !== null) {
+      const cur = parseFloat(narr[1])
+      const monIdx = monLong.indexOf(narr[2]) + 1
+      const yr = parseInt(narr[3], 10)
+      const prev = parseFloat(narr[4])
+      if (monIdx > 0) {
+        setMonth(yr, monIdx, cur)
+        const [py, pm] = prevMonth(yr, monIdx)
+        setMonth(py, pm, prev)
+      }
+    }
+
+    // (2)+(3) Tabele HTML — Related (priorytet 2) i Calendar (priorytet 3)
+    // Parsujemy jednym przejściem rzędów, ale wynik wpada do mapy tylko gdy klucz wolny.
+    const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/g
+    let row: RegExpExecArray | null
+    const calendarBuffer: Array<[number, number, number]> = []  // odroczona tabela Calendar
+    while ((row = rowRe.exec(html)) !== null) {
+      const cells: string[] = []
+      const cellRe = /<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/g
+      let cell: RegExpExecArray | null
+      while ((cell = cellRe.exec(row[1])) !== null) cells.push(stripTags(cell[1]))
+      if (cells.length === 0) continue
+
+      // Tabela Related (5 kolumn): "Inflation Rate YoY" | Last | Previous | Unit | Reference ("Mon YYYY")
+      if (cells.length === 5 && cells[0] === 'Inflation Rate YoY') {
+        const refMatch = cells[4].match(/^([A-Z][a-z]{2})\s+(\d{4})$/)
+        if (refMatch) {
+          const refIdx = monShort.indexOf(refMatch[1])
+          if (refIdx >= 0) {
+            const refMon = refIdx + 1
+            const refYear = parseInt(refMatch[2], 10)
+            const last = parseFloat(cells[1].replace('%', '').replace(',', '.'))
+            const previous = parseFloat(cells[2].replace('%', '').replace(',', '.'))
+            if (!isNaN(last)) setMonth(refYear, refMon, last)
+            if (!isNaN(previous)) {
+              const [py, pm] = prevMonth(refYear, refMon)
+              setMonth(py, pm, previous)
+            }
+          }
+        }
+      }
+
+      // Tabela Calendar (8 kolumn) — odroczona, wpada dopiero po wszystkim
+      if (cells.length >= 6) {
+        const dateMatch = cells[0].match(/^(\d{4})-(\d{2})-(\d{2})$/)
+        if (dateMatch && /Inflation Rate YoY (Final|Prel)/.test(cells[2] || '')) {
+          const releaseMonth = parseInt(dateMatch[2], 10)
+          const releaseYear = parseInt(dateMatch[1], 10)
+          const refIdx = monShort.indexOf(cells[3])
+          if (refIdx >= 0) {
+            const refMon = refIdx + 1
+            const refYear = refMon <= releaseMonth ? releaseYear : releaseYear - 1
+            const actual = parseFloat((cells[4] ?? '').replace('%', '').replace(',', '.'))
+            const previous = parseFloat((cells[5] ?? '').replace('%', '').replace(',', '.'))
+            if (!isNaN(actual)) calendarBuffer.push([refYear, refMon, actual])
+            if (!isNaN(previous)) {
+              const [py, pm] = prevMonth(refYear, refMon)
+              calendarBuffer.push([py, pm, previous])
+            }
+          }
+        }
+      }
+    }
+    // Wpychamy Calendar dopiero teraz — wypełni miesiące, których narracja+Related nie pokryły
+    for (const [y, m, v] of calendarBuffer) setMonth(y, m, v)
+
+    const v = map.get(`${year}-${String(month).padStart(2, '0')}`)
+    return v === undefined ? null : Math.round(v * 100) / 100
+  } catch {
+    return null
+  }
+}
+
 // ─── Synchronizacja stopy NBP ─────────────────────────────────────────────────
 // Zwraca pobrane dane — zapisanie do DB należy do wywołującego (index.ts)
 

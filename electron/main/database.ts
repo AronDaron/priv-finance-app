@@ -731,22 +731,29 @@ export function deleteRecentMonthlyCpi(fromYear: number): void {
   db.prepare(`DELETE FROM bond_reference_data WHERE data_type = 'CPI_MONTHLY' AND year >= ?`).run(fromYear)
 }
 
-export function upsertMonthlyCpi(year: number, month: number, value: number, source: 'gus_sdp' | 'stooq' = 'gus_sdp'): void {
+export type MonthlyCpiSource = 'gus_sdp' | 'stooq' | 'tradingeconomics'
+
+export function upsertMonthlyCpi(year: number, month: number, value: number, source: MonthlyCpiSource = 'gus_sdp'): void {
   const dateKey = `${year}-${String(month).padStart(2, '0')}`
-  // gus_sdp zawsze nadpisuje; stooq nadpisuje tylko jeśli dotychczasowa wartość też jest ze stooq
+  // Hierarchia precyzji: gus_sdp > stooq > tradingeconomics
+  // gus_sdp zawsze nadpisuje; stooq nadpisuje stooq/tradingeconomics; tradingeconomics tylko siebie
   db.prepare(`
     INSERT INTO bond_reference_data (data_type, year, date, value, source)
     VALUES ('CPI_MONTHLY', ?, ?, ?, ?)
     ON CONFLICT(data_type, year, date) DO UPDATE SET
       value = excluded.value,
       source = excluded.source
-    WHERE excluded.source = 'gus_sdp' OR bond_reference_data.source = 'stooq'
+    WHERE excluded.source = 'gus_sdp'
+       OR (excluded.source = 'stooq' AND bond_reference_data.source IN ('stooq', 'tradingeconomics'))
+       OR (excluded.source = 'tradingeconomics' AND bond_reference_data.source = 'tradingeconomics')
   `).run(year, dateKey, value, source)
 }
 
-export function getStooqMarkedMonthlyCpi(): Array<{ year: number; month: number }> {
+// Zwraca wpisy CPI miesięcznego z mniej precyzyjnych źródeł (stooq + tradingeconomics)
+// — kandydatów do nadpisania przy starcie aplikacji jeśli GUS SDP w międzyczasie opublikował dane.
+export function getImpreciseMonthlyCpi(): Array<{ year: number; month: number }> {
   const rows = db.prepare(
-    `SELECT year, date FROM bond_reference_data WHERE data_type = 'CPI_MONTHLY' AND source = 'stooq'`
+    `SELECT year, date FROM bond_reference_data WHERE data_type = 'CPI_MONTHLY' AND source IN ('stooq', 'tradingeconomics')`
   ).all() as Array<{ year: number; date: string }>
   return rows.map(r => ({ year: r.year, month: parseInt(r.date.split('-')[1], 10) }))
 }

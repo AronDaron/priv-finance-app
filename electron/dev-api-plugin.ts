@@ -11,7 +11,7 @@ const _annualCpi: Record<number, number> = {
   2015: -0.9, 2016: -0.6, 2017: 2.0, 2018: 1.6, 2019: 2.3,
   2020: 3.4, 2021: 5.1, 2022: 14.4, 2023: 11.4, 2024: 3.6, 2025: 4.9,
 }
-const _monthlyCpi: Record<string, { value: number; source: 'gus_sdp' | 'stooq' }> = {}
+const _monthlyCpi: Record<string, { value: number; source: 'gus_sdp' | 'stooq' | 'tradingeconomics' }> = {}
 
 function getDevCpiData() {
   return { annual: _annualCpi, monthly: _monthlyCpi }
@@ -38,15 +38,23 @@ export function financeDevApiPlugin(): Plugin {
   return {
     name: 'finance-dev-api',
     configureServer(server) {
-      // Zaktualizuj roczne CPI + odśwież stooq-marked miesięczne CPI w tle przy starcie
-      import('./main/bonds').then(async ({ fetchGusAnnualCpi, fetchGusMonthCpi }) => {
+      // Zaktualizuj roczne CPI + odśwież nieprecyzyjne miesięczne CPI w tle przy starcie
+      import('./main/bonds').then(async ({ fetchGusAnnualCpi, fetchGusMonthCpi, fetchStooqMonthCpi }) => {
         fetchGusAnnualCpi().then(data => { for (const { year, value } of data) _annualCpi[year] = value }).catch(() => {})
-        // Odśwież tymczasowe dane ze stooq gdy GUS SDP już je opublikował
+        // Odśwież dane z mniej precyzyjnych źródeł (stooq, tradingeconomics) gdy GUS SDP już je opublikował
         for (const [key, entry] of Object.entries(_monthlyCpi)) {
-          if (entry.source !== 'stooq') continue
+          if (entry.source === 'gus_sdp') continue
           const [yearStr, monthStr] = key.split('-')
-          const cpi = await fetchGusMonthCpi(parseInt(yearStr), parseInt(monthStr))
-          if (cpi !== null) _monthlyCpi[key] = { value: cpi, source: 'gus_sdp' }
+          const yr = parseInt(yearStr), mo = parseInt(monthStr)
+          const cpi = await fetchGusMonthCpi(yr, mo)
+          if (cpi !== null) {
+            _monthlyCpi[key] = { value: cpi, source: 'gus_sdp' }
+            continue
+          }
+          if (entry.source === 'tradingeconomics') {
+            const stooqCpi = await fetchStooqMonthCpi(yr, mo)
+            if (stooqCpi !== null) _monthlyCpi[key] = { value: stooqCpi, source: 'stooq' }
+          }
         }
       }).catch(() => {})
 
@@ -556,9 +564,14 @@ export function financeDevApiPlugin(): Plugin {
                       if (cpi !== null) {
                         _monthlyCpi[`${pending[1]}-${pending[2]}`] = { value: cpi, source: 'gus_sdp' }
                       } else {
-                        const { fetchStooqMonthCpi } = await import('./main/bonds')
+                        const { fetchStooqMonthCpi, fetchTradingEconomicsCpi } = await import('./main/bonds')
                         const stooqCpi = await fetchStooqMonthCpi(yr, mo)
-                        if (stooqCpi !== null) _monthlyCpi[`${pending[1]}-${pending[2]}`] = { value: stooqCpi, source: 'stooq' }
+                        if (stooqCpi !== null) {
+                          _monthlyCpi[`${pending[1]}-${pending[2]}`] = { value: stooqCpi, source: 'stooq' }
+                        } else {
+                          const teCpi = await fetchTradingEconomicsCpi(yr, mo)
+                          if (teCpi !== null) _monthlyCpi[`${pending[1]}-${pending[2]}`] = { value: teCpi, source: 'tradingeconomics' }
+                        }
                       }
                       attempts++
                     } else {
