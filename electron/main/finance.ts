@@ -61,13 +61,21 @@ export async function fetchHistory(ticker: string, period: HistoryPeriod): Promi
 
 export async function searchTickers(query: string): Promise<SearchResult[]> {
   const yf = await getYF()
-  const result = await yf.search(query)
-  return (result.quotes ?? []).slice(0, 10).map(q => ({
-    ticker: (q.symbol ?? '') as string,
-    name: (q as any).shortname ?? (q as any).longname ?? q.symbol ?? '',
-    exchange: (q as any).exchange ?? '',
-    type: (q.quoteType ?? 'EQUITY') as string,
-  }))
+  // validateResult: false — Yahoo zmieniło wielkość liter w polach search (typeDisp="Equity",
+  // quoteType="EQUITY"), przez co ścisła walidacja schematu yahoo-finance2 rzucała
+  // "Failed Yahoo Schema validation" i wyszukiwarka zwracała 0 wyników. Pomijamy walidację —
+  // mapowanie poniżej i tak używa fallbacków (optional chaining) na surowych danych.
+  // validateResult: false zwraca typ `unknown` (biblioteka nie gwarantuje kształtu bez walidacji)
+  const result = (await yf.search(query, {}, { validateResult: false })) as { quotes?: any[] }
+  return (result.quotes ?? [])
+    .filter(q => q.symbol)
+    .slice(0, 10)
+    .map((q: any) => ({
+      ticker: (q.symbol ?? '') as string,
+      name: (q as any).shortname ?? (q as any).longname ?? q.symbol ?? '',
+      exchange: (q as any).exchange ?? '',
+      type: (q.quoteType ?? 'EQUITY') as string,
+    }))
 }
 
 const SECTOR_PL: Record<string, string> = {
