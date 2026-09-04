@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { MarkdownRenderer } from './MarkdownRenderer'
 import { chatPortfolio, type ChatMessage } from '../../lib/api'
+import { useAIRun } from '../../lib/useAIRun'
+import AIProgressIndicator from './AIProgressIndicator'
 
 const GREETING = 'Witaj! Mam wgląd w Twój portfel, historię transakcji, aktualne dane rynkowe i wyniki makroekonomiczne. O co chcesz zapytać?'
 
@@ -14,10 +16,10 @@ const SUGGESTIONS = [
 export default function ChatView() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
-  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const { running: loading, progress, elapsedMs, run, cancel } = useAIRun()
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -30,18 +32,15 @@ export default function ChatView() {
     const newMessages: ChatMessage[] = [...messages, { role: 'user', content: trimmed }]
     setMessages(newMessages)
     setInput('')
-    setLoading(true)
     setError(null)
 
     try {
-      const response = await chatPortfolio(newMessages)
+      const response = await run(requestId => chatPortfolio(newMessages, requestId))
       setMessages(prev => [...prev, { role: 'assistant', content: response }])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Błąd podczas komunikacji z AI.')
-    } finally {
-      setLoading(false)
     }
-  }, [messages, loading])
+  }, [messages, loading, run])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -156,13 +155,13 @@ export default function ChatView() {
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
             </div>
-            <div className="glass-card rounded-xl rounded-tl-sm px-4 py-3">
-              <div className="flex gap-1.5 items-center">
-                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: '300ms' }} />
-                <span className="text-xs text-gray-500 ml-1">Analizuję dane portfela...</span>
-              </div>
+            <div className="glass-card rounded-xl rounded-tl-sm px-4 py-3 min-w-[280px]">
+              <AIProgressIndicator
+                progress={progress}
+                elapsedMs={elapsedMs}
+                onCancel={cancel}
+                idleLabel="Zbieram dane portfela…"
+              />
             </div>
           </div>
         )}

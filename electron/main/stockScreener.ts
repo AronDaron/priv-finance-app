@@ -81,11 +81,14 @@ export const EXCHANGE_CONFIG: Record<string, ExchangeConfig> = {
     ],
   },
   WSE: {
+    // Uwaga na tickery Yahoo dla GPW: to oficjalne skróty giełdowe, nie nazwy potoczne
+    // (Pekao = PEO, nie PEKAO; KGHM = KGH). Dawny Santander Bank Polska (SPL) po przejęciu
+    // przez Erste Group notowany jest jako EBP.WA (ERSTEPL).
     label: 'GPW',
     tickers: [
-      'PKN.WA', 'PKO.WA', 'PZU.WA', 'PEKAO.WA', 'LPP.WA',
-      'KGHM.WA', 'CDR.WA', 'ALE.WA', 'DNP.WA', 'KTY.WA',
-      'SPL.WA', 'CPS.WA', 'MBK.WA', 'PGE.WA', 'PHN.WA',
+      'PKN.WA', 'PKO.WA', 'PZU.WA', 'PEO.WA', 'LPP.WA',
+      'KGH.WA', 'CDR.WA', 'ALE.WA', 'DNP.WA', 'KTY.WA',
+      'EBP.WA', 'CPS.WA', 'MBK.WA', 'PGE.WA', 'PHN.WA',
       'JSW.WA', 'TPE.WA', 'OPL.WA', 'BDX.WA', 'VRG.WA',
     ],
   },
@@ -188,7 +191,7 @@ function weightedAvg(pairs: { score: number | null; weight: number }[]): number 
 
 // ─── Concurrency limiter ──────────────────────────────────────────────────────
 
-async function withConcurrencyLimit<T>(
+export async function withConcurrencyLimit<T>(
   tasks: (() => Promise<T>)[],
   limit: number
 ): Promise<PromiseSettledResult<T>[]> {

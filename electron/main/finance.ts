@@ -1,7 +1,7 @@
 import type {
   OHLCCandle, StockQuote, SearchResult,
   FundamentalData, TechnicalIndicators, DividendEntry, HistoryPeriod,
-  GlobalMarketData, MarketTickerData,
+  GlobalMarketData, MarketTickerData, StockProfile,
 } from '../../src/lib/types'
 import * as ti from 'technicalindicators'
 
@@ -693,3 +693,219 @@ export async function fetchGlobalMarketData(): Promise<GlobalMarketData> {
   _globalMarketCache = { data: result, expiresAt: Date.now() + GLOBAL_MARKET_TTL }
   return result
 }
+
+// ─── Profil spółki (moduł Doradca) ────────────────────────────────────────────
+// Celowo lekki: JEDEN quoteSummary zamiast pięciu wywołań fetchFundamentals.
+// Zwraca komplet realnych danych (dywidendy, wzrost, wycena, bilans) — model sam
+// decyduje, które z nich są istotne dla zapytania użytkownika.
+// Historia wypłat pochodzi z fetchDividends — nie duplikujemy tej logiki.
+
+/** Agreguje wypłaty do sum rocznych i liczy wskaźniki ciągłości. */
+export function summarizeDividendHistory(
+  payments: Array<{ date: string; amount: number }>,
+  currentYear: number
+): {
+  annualTotals: Array<{ year: number; total: number }>
+  yearsPaid: number
+  streakYears: number
+  cagr5y: number | null
+  lastCutYear: number | null
+  paymentsPerYear: number
+} {
+  const byYear = new Map<number, { total: number; count: number }>()
+  for (const p of payments) {
+    const year = parseInt(p.date.slice(0, 4), 10)
+    if (!Number.isFinite(year) || !Number.isFinite(p.amount)) continue
+    const prev = byYear.get(year) ?? { total: 0, count: 0 }
+    byYear.set(year, { total: prev.total + p.amount, count: prev.count + 1 })
+  }
+
+  const annualTotals = [...byYear.entries()]
+    .map(([year, v]) => ({ year, total: Math.round(v.total * 1e6) / 1e6 }))
+    .sort((a, b) => a.year - b.year)
+
+  // Bieżący rok jest niepełny — pomijamy go we wszystkich porównaniach r/r
+  const complete = annualTotals.filter(a => a.year < currentYear)
+
+  const yearsPaid = complete.filter(a => a.total > 0).length
+
+  // Ciągłość: ile kolejnych lat wstecz od ostatniego pełnego roku miało wypłatę
+  let streakYears = 0
+  if (complete.length > 0) {
+    let expected = complete[complete.length - 1].year
+    for (let i = complete.length - 1; i >= 0; i--) {
+      if (complete[i].year !== expected || complete[i].total <= 0) break
+      streakYears++
+      expected--
+    }
+  }
+
+  // Ostatnie cięcie dywidendy — spadek sumy rocznej r/r
+  let lastCutYear: number | null = null
+  for (let i = 1; i < complete.length; i++) {
+    if (complete[i].total < complete[i - 1].total - 1e-9) lastCutYear = complete[i].year
+  }
+
+  // CAGR z 5 lat (lub z najdłuższego dostępnego okresu, min. 2 pełne lata)
+  let cagr5y: number | null = null
+  if (complete.length >= 2) {
+    const last = complete[complete.length - 1]
+    const spanIdx = Math.max(0, complete.length - 6)
+    const first = complete[spanIdx]
+    const years = last.year - first.year
+    if (years > 0 && first.total > 0 && last.total > 0) {
+      cagr5y = Math.pow(last.total / first.total, 1 / years) - 1
+    }
+  }
+
+  const lastCompleteYear = complete.length > 0 ? complete[complete.length - 1].year : null
+  const paymentsPerYear = lastCompleteYear != null ? (byYear.get(lastCompleteYear)?.count ?? 0) : 0
+
+  return { annualTotals, yearsPaid, streakYears, cagr5y, lastCutYear, paymentsPerYear }
+}
+
+export async function fetchStockProfile(
+  ticker: string,
+  exchangeKey: string
+): Promise<StockProfile> {
+  const yf = await getYF()
+
+  // Yahoo bywa kapryśne przy dużej liczbie modułów w jednym zapytaniu — dzielimy na trzy,
+  // każde z osobnym catch, żeby brak jednej sekcji nie wywalał całego profilu.
+  const [base, extra, payments] = await Promise.all([
+    yf.quoteSummary(ticker, {
+      modules: ['price', 'summaryDetail', 'assetProfile', 'financialData', 'defaultKeyStatistics'],
+    }).catch(() => ({} as any)),
+    yf.quoteSummary(ticker, {
+      modules: ['recommendationTrend', 'earningsHistory', 'earningsTrend', 'calendarEvents'],
+    }).catch(() => ({} as any)),
+    // Historia wypłat bywa niedostępna (yf.historical jest deprecated) — wtedy degradujemy
+    // się do danych z summaryDetail zamiast wywalać cały widok.
+    fetchDividends(ticker).catch(() => [] as DividendEntry[]),
+  ])
+
+  const p: any = (base as any).price ?? {}
+  const sd: any = (base as any).summaryDetail ?? {}
+  const ap: any = (base as any).assetProfile ?? {}
+  const fd: any = (base as any).financialData ?? {}
+  const ks: any = (base as any).defaultKeyStatistics ?? {}
+  const rt: any = (extra as any).recommendationTrend ?? {}
+  const eh: any = (extra as any).earningsHistory ?? {}
+  const et: any = (extra as any).earningsTrend ?? {}
+  const ce: any = (extra as any).calendarEvents ?? {}
+
+  const n = (v: any): number | null => (v != null && isFinite(Number(v)) ? Number(v) : null)
+
+  const price = n(p.regularMarketPrice)
+  const currentYear = new Date().getFullYear()
+  const mapped = payments.map(d => ({ date: d.date, amount: d.amount }))
+  const stats = summarizeDividendHistory(mapped, currentYear)
+
+  // Yahoo bywa dziurawe (np. tickery LSE zwracają null mimo realnych wypłat) —
+  // wtedy liczymy stopę z ostatniego pełnego roku wypłat i bieżącej ceny.
+  let dividendYield = n(sd.dividendYield)
+  let dividendRate = n(sd.dividendRate)
+  let yieldIsEstimated = false
+
+  const lastComplete = stats.annualTotals.filter(a => a.year < currentYear).at(-1)
+  if (dividendRate == null && lastComplete && lastComplete.total > 0) {
+    dividendRate = lastComplete.total
+    yieldIsEstimated = true
+  }
+  if (dividendYield == null && dividendRate != null && price != null && price > 0) {
+    dividendYield = dividendRate / price
+    yieldIsEstimated = true
+  }
+
+  const trend0 = rt?.trend?.[0] ?? null
+
+  const rawEarningsDate = ce?.earnings?.earningsDate?.[0]
+  const nextEarningsDate = rawEarningsDate ? new Date(rawEarningsDate).toISOString().split('T')[0] : null
+
+  const earningsHistory = eh?.history?.length
+    ? eh.history.slice(-4).map((h: any) => ({
+        period: h.period ?? '',
+        epsEstimate: n(h.epsEstimate),
+        epsActual: n(h.epsActual),
+        surprisePercent: n(h.surprisePercent),
+      }))
+    : null
+
+  const PERIOD_LABELS: Record<string, string> = {
+    '0q': 'Bieżący kwartał', '+1q': 'Następny kwartał',
+    '0y': 'Bieżący rok', '+1y': 'Następny rok',
+  }
+  const earningsTrend = et?.trend?.length
+    ? et.trend
+        .filter((t: any) => t.period in PERIOD_LABELS)
+        .map((t: any) => ({
+          period: PERIOD_LABELS[t.period] ?? t.period,
+          epsEstimate: n(t.earningsEstimate?.avg),
+          revenueEstimate: n(t.revenueEstimate?.avg),
+          growth: n(t.growth),
+        }))
+    : null
+
+  return {
+    ticker,
+    name: p.shortName ?? p.longName ?? ticker,
+    exchange: exchangeKey,
+    currency: p.currency ?? 'USD',
+    price,
+    marketCap: n(p.marketCap),
+    sector: ap.sector ? (SECTOR_PL[ap.sector] ?? ap.sector) : null,
+    industry: ap.industry ? (INDUSTRY_PL[ap.industry] ?? ap.industry) : null,
+    dividendYield,
+    dividendRate,
+    payoutRatio: n(sd.payoutRatio),
+    payments: mapped,
+    ...stats,
+    yieldIsEstimated,
+    trailingPE: n(sd.trailingPE),
+    forwardPE: n(ks.forwardPE),
+    pegRatio: n(ks.pegRatio),
+    priceToBook: n(ks.priceToBook),
+    bookValue: n(ks.bookValue),
+    enterpriseToEbitda: n(ks.enterpriseToEbitda),
+    week52High: n(sd.fiftyTwoWeekHigh),
+    week52Low: n(sd.fiftyTwoWeekLow),
+    revenueGrowth: n(fd.revenueGrowth),
+    earningsGrowth: n(fd.earningsGrowth),
+    grossMargins: n(fd.grossMargins),
+    operatingMargins: n(fd.operatingMargins),
+    profitMargins: n(fd.profitMargins),
+    totalRevenue: n(fd.totalRevenue),
+    ebitda: n(fd.ebitda),
+    returnOnEquity: n(fd.returnOnEquity),
+    returnOnAssets: n(fd.returnOnAssets),
+    totalDebt: n(fd.totalDebt),
+    totalCash: n(fd.totalCash),
+    debtToEquity: n(fd.debtToEquity),
+    currentRatio: n(fd.currentRatio),
+    freeCashflow: n(fd.freeCashflow),
+    operatingCashflow: n(fd.operatingCashflow),
+    beta: n(sd.beta),
+    shortPercentOfFloat: n(ks.shortPercentOfFloat),
+    heldPercentInstitutions: n(ks.heldPercentInstitutions),
+    fiftyDayAverage: n(sd.fiftyDayAverage),
+    twoHundredDayAverage: n(sd.twoHundredDayAverage),
+    averageVolume: n(sd.averageVolume),
+    analystRecommendation: fd.recommendationKey ? (RECOMMENDATION_PL[fd.recommendationKey] ?? fd.recommendationKey) : null,
+    numberOfAnalysts: n(fd.numberOfAnalystOpinions),
+    targetMeanPrice: n(fd.targetMeanPrice),
+    recommendationTrend: trend0 ? {
+      strongBuy: trend0.strongBuy ?? 0,
+      buy: trend0.buy ?? 0,
+      hold: trend0.hold ?? 0,
+      sell: trend0.sell ?? 0,
+      strongSell: trend0.strongSell ?? 0,
+    } : null,
+    nextEarningsDate,
+    earningsHistory,
+    earningsTrend: earningsTrend?.length ? earningsTrend : null,
+    fetchedAt: new Date().toISOString(),
+  }
+}
+
+/** Alias zachowany dla zgodności — profil jest wspólny dla wszystkich aspektów analizy. */
+export const fetchDividendProfile = fetchStockProfile

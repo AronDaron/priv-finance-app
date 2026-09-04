@@ -17,6 +17,25 @@ function getDevCpiData() {
   return { annual: _annualCpi, monthly: _monthlyCpi }
 }
 
+// Cache profili dywidendowych dla dev mode — odpowiednik tabeli dividend_cache
+// w Electronie. Żyje tyle, co proces Vite.
+const _dividendCache: Record<string, { profiles: unknown[]; fetchedAt: string }> = {}
+const DIVIDEND_CACHE_TTL_MS = 24 * 60 * 60 * 1000
+
+/**
+ * Konfiguracja AI dla trybu dev. Nie ma tu SQLite, więc frontend przesyła surowe
+ * ustawienia z localStorage, a złożeniem zajmuje się ten sam buildAIConfig co w Electronie.
+ */
+async function cfgFromBody(body: Record<string, string>) {
+  const { buildAIConfig, assertAIConfig } = await import('./main/aiProvider')
+  const raw = body.aiSettings ? JSON.parse(body.aiSettings) as Record<string, string> : {}
+  // Zgodność wstecz: starsze wywołania przesyłały sam klucz OpenRoutera
+  if (!raw.openrouter_api_key && body.apiKey) raw.openrouter_api_key = body.apiKey
+  const cfg = buildAIConfig(raw)
+  assertAIConfig(cfg)
+  return cfg
+}
+
 function readBody(req: IncomingMessage): Promise<Record<string, string>> {
   return new Promise((resolve, reject) => {
     let data = ''
@@ -136,8 +155,9 @@ export function financeDevApiPlugin(): Plugin {
             }
             case '/ai/analyze-stock': {
               const body = await readBody(req)
-              const { ticker: t, apiKey, gold_grams: goldGramsStr, news_headlines: newsHeadlinesJson } = body
+              const { ticker: t, gold_grams: goldGramsStr, news_headlines: newsHeadlinesJson } = body
               if (!t) { res.statusCode = 400; res.end(JSON.stringify({ error: 'Brak ticker' })); return }
+              const aiCfg = await cfgFromBody(body)
               const goldGrams = goldGramsStr ? parseFloat(goldGramsStr) : null
               const newsHeadlines: string[] = newsHeadlinesJson ? JSON.parse(newsHeadlinesJson) : []
               const ai = await import('./main/ai')
@@ -164,21 +184,34 @@ export function financeDevApiPlugin(): Plugin {
                 regimeSummary: buildRegimeSummary(regime),
               } : null
               const report_text = await ai.analyzeStock({
-                ticker: t, apiKey, name: quote.name,
+                ticker: t, cfg: aiCfg, name: quote.name,
                 currentPrice: quote.price, currency: quote.currency,
                 fundamentals, technicals,
                 gold_grams: goldGrams,
                 marketContext,
                 newsHeadlines,
               })
-              data = { report_text, model: ai.WORKER_MODEL, ticker: t }
+              data = { report_text, model: aiCfg.models.worker, ticker: t }
               break
             }
             case '/ai/analyze-portfolio': {
               const body = await readBody(req)
-              const { assets: assetsJson, bondAssets: bondAssetsJson, cashAccounts: cashJson, apiKey } = body
+              const { assets: assetsJson, bondAssets: bondAssetsJson, cashAccounts: cashJson, reports: existingReportsJson } = body
               if (!assetsJson) { res.statusCode = 400; res.end(JSON.stringify({ error: 'Brak assets' })); return }
+              const aiCfg = await cfgFromBody(body)
               const ai = await import('./main/ai')
+              // Gotowe raporty Worker z localStorage — bez tego dev regenerowałby wszystko
+              // od zera przy każdej analizie, co przy modelu lokalnym trwa godzinami.
+              const existingReports: Array<{ ticker: string; report_text: string; created_at: string }> =
+                JSON.parse(existingReportsJson ?? '[]')
+              const latestReportByTicker = new Map<string, { text: string; createdAt: string }>()
+              for (const r of existingReports) {
+                if (r.ticker === '__PORTFOLIO__') continue
+                const prev = latestReportByTicker.get(r.ticker)
+                if (!prev || r.created_at > prev.createdAt) {
+                  latestReportByTicker.set(r.ticker, { text: r.report_text, createdAt: r.created_at })
+                }
+              }
               const assetsList: Array<{ ticker: string; name: string; quantity: number; purchase_price: number; currency: string; gold_grams?: number | null }> =
                 JSON.parse(assetsJson)
               const bondAssetsList: Array<{ id: number; ticker: string; name: string; quantity: number; bond_type?: string | null }> =
@@ -200,14 +233,15 @@ export function financeDevApiPlugin(): Plugin {
 
               const enrichedAssets = await Promise.all(assetsList.map(async (assetFromList) => {
                 const t = assetFromList.ticker
+                const cached = latestReportByTicker.get(t)
                 const [fundamentals, history, quote] = await Promise.all([
                   finance.fetchFundamentals(t),
                   finance.fetchHistory(t, '1y'),
                   finance.fetchQuote(t),
                 ])
                 const technicals = finance.calculateTechnicals(history)
-                const workerReport = await ai.analyzeStock({
-                  ticker: t, apiKey, name: quote.name,
+                const workerReport = cached?.text ?? await ai.analyzeStock({
+                  ticker: t, cfg: aiCfg, name: quote.name,
                   currentPrice: quote.price, currency: quote.currency,
                   fundamentals, technicals,
                   gold_grams: assetFromList.gold_grams ?? null,
@@ -250,12 +284,120 @@ export function financeDevApiPlugin(): Plugin {
 
               const totalValuePLN = stocksValuePLN + bondTotalPLN + cashTotalPLN
               const report_text = await ai.analyzePortfolio({
-                apiKey, assets: enrichedAssets, totalValuePLN,
+                cfg: aiCfg, assets: enrichedAssets, totalValuePLN,
                 totalPnlPercent: totalCostPLN > 0 ? ((stocksValuePLN - totalCostPLN) / totalCostPLN) * 100 : 0,
                 bondsSummary,
                 cashSummary,
               })
-              data = { report_text, model: ai.MANAGER_MODEL }
+              data = { report_text, model: aiCfg.models.manager }
+              break
+            }
+            case '/advisor/candidates': {
+              const body = await readBody(req)
+              const { exchange, forceRefresh } = body
+              if (!exchange) { res.statusCode = 400; res.end(JSON.stringify({ error: 'Brak exchange' })); return }
+              const { EXCHANGE_CONFIG, withConcurrencyLimit } = await import('./main/stockScreener')
+              const { advisorTickers } = await import('./main/stockAdvisor')
+              const exCfg = EXCHANGE_CONFIG[exchange]
+              if (!exCfg) { res.statusCode = 400; res.end(JSON.stringify({ error: `Nieznana giełda: ${exchange}` })); return }
+
+              const cached = _dividendCache[exchange]
+              const fresh = cached && (Date.now() - new Date(cached.fetchedAt).getTime()) < DIVIDEND_CACHE_TTL_MS
+              if (fresh && String(forceRefresh) !== 'true') {
+                data = {
+                  exchange, exchangeLabel: exCfg.label,
+                  profiles: cached.profiles, lastFetchedAt: cached.fetchedAt, error: null,
+                }
+                break
+              }
+
+              const tasks = advisorTickers(exCfg.tickers, exchange).map(t => () => finance.fetchStockProfile(t, exchange))
+              const settled = await withConcurrencyLimit(tasks, 5)
+              const profiles = settled
+                .filter(r => r.status === 'fulfilled')
+                .map(r => (r as PromiseFulfilledResult<unknown>).value)
+              _dividendCache[exchange] = { profiles, fetchedAt: new Date().toISOString() }
+              data = {
+                exchange, exchangeLabel: exCfg.label,
+                profiles, lastFetchedAt: _dividendCache[exchange].fetchedAt,
+                error: profiles.length === 0 ? 'Nie udało się pobrać danych z Yahoo Finance.' : null,
+              }
+              break
+            }
+            case '/advisor/analyze': {
+              const body = await readBody(req)
+              const { exchange, query, tickers: tickersJson, filters: filtersJson, portfolioTickers: pfJson } = body
+              if (!exchange) { res.statusCode = 400; res.end(JSON.stringify({ error: 'Brak exchange' })); return }
+              if (!query || !query.trim()) {
+                res.statusCode = 400
+                res.end(JSON.stringify({ error: 'Opisz, czego szukasz — np. „spółka dywidendowa z sektora energetycznego".' }))
+                return
+              }
+              const advisorCfg = await cfgFromBody(body)
+              const { EXCHANGE_CONFIG } = await import('./main/stockScreener')
+              const { selectCandidates, buildAdvisorPrompt } = await import('./main/stockAdvisor')
+              const { callChatCompletion, ensureDisclaimer } = await import('./main/aiProvider')
+
+              const cached = _dividendCache[exchange]
+              if (!cached || cached.profiles.length === 0) {
+                res.statusCode = 400
+                res.end(JSON.stringify({ error: 'Brak danych o spółkach. Najpierw pobierz dane.' }))
+                return
+              }
+
+              let profiles = cached.profiles as any[]
+              const tickers: string[] = tickersJson ? JSON.parse(tickersJson) : []
+              const filters = filtersJson ? JSON.parse(filtersJson) : {}
+              // Ręczne zaznaczenie w tabeli ma pierwszeństwo przed automatycznym doborem
+              if (tickers.length > 0) {
+                const wanted = new Set(tickers.map(t => t.toUpperCase()))
+                profiles = profiles.filter(p => wanted.has(String(p.ticker).toUpperCase()))
+              } else {
+                profiles = selectCandidates(profiles, filters)
+              }
+              if (profiles.length === 0) {
+                res.statusCode = 400
+                res.end(JSON.stringify({ error: 'Brak spółek do analizy dla tych ustawień.' }))
+                return
+              }
+              const portfolioTickers: string[] = pfJson ? JSON.parse(pfJson) : []
+
+              // Kursy walut notowań → PLN, żeby model mógł przeliczyć budżet podany w złotówkach
+              const fxRates: Record<string, number> = { PLN: 1 }
+              const FX_ADVISOR: Record<string, string> = {
+                USD: 'USDPLN=X', EUR: 'EURPLN=X', GBP: 'GBPPLN=X',
+                CHF: 'CHFPLN=X', JPY: 'JPYPLN=X', GBp: 'GBPPLN=X',
+              }
+              const needed = [...new Set(profiles.map((p: any) => p.currency as string))].filter(c => c !== 'PLN')
+              await Promise.all(needed.map(async cur => {
+                const t = FX_ADVISOR[cur]
+                if (!t) return
+                try {
+                  const q = await finance.fetchQuote(t)
+                  // LSE kwotuje w pensach (GBp) — 1 GBp = 1/100 GBP
+                  fxRates[cur] = cur === 'GBp' ? q.price / 100 : q.price
+                } catch { /* brak kursu */ }
+              }))
+
+              const { system, user } = buildAdvisorPrompt({
+                userQuery: query,
+                profiles,
+                exchangeLabel: EXCHANGE_CONFIG[exchange]?.label ?? exchange,
+                portfolioTickers,
+                dataDate: cached.fetchedAt.slice(0, 10),
+                fxRates,
+              })
+              const text = await callChatCompletion(
+                [{ role: 'system', content: system }, { role: 'user', content: user }],
+                'advisor', advisorCfg, {}
+              )
+              data = { report_text: ensureDisclaimer(text, 'analysis'), model: advisorCfg.models.advisor }
+              break
+            }
+            case '/ai/list-models': {
+              const body = await readBody(req)
+              const { listRemoteModels } = await import('./main/aiProvider')
+              data = await listRemoteModels(body.baseUrl ?? '', body.apiKey ?? '')
               break
             }
             case '/news': {
@@ -275,8 +417,9 @@ export function financeDevApiPlugin(): Plugin {
             }
             case '/ai/chat': {
               const body = await readBody(req)
-              const { messages: msgsJson, assets: assetsJson, bondAssets: bondAssetsJson, cashAccounts: cashJson, reports: reportsJson, apiKey: ak } = body
+              const { messages: msgsJson, assets: assetsJson, bondAssets: bondAssetsJson, cashAccounts: cashJson, reports: reportsJson } = body
               if (!msgsJson) { res.statusCode = 400; res.end(JSON.stringify({ error: 'Brak messages' })); return }
+              const chatCfg = await cfgFromBody(body)
               const ai = await import('./main/ai')
               const messages: Array<{ role: 'user' | 'assistant'; content: string }> = JSON.parse(msgsJson)
               const assetsRaw: Array<{ ticker: string; name: string; quantity: number; purchase_price: number; currency: string }> =
@@ -513,24 +656,25 @@ export function financeDevApiPlugin(): Plugin {
                 '', 'Odpowiadaj konkretnie, powołując się na powyższe dane. Nie wymyślaj liczb których nie masz. Na końcu KAŻDEJ odpowiedzi dołącz obowiązkowo w osobnym akapicie: "---\\n⚠️ *Informacje generowane przez AI mają charakter wyłącznie informacyjny i nie stanowią porady inwestycyjnej ani rekomendacji w rozumieniu przepisów prawa. Decyzje inwestycyjne podejmuj na własną odpowiedzialność — w razie wątpliwości skonsultuj się z licencjonowanym doradcą finansowym.*"',
               ].join('\n')
 
-              data = await ai.chatWithPortfolio(messages, systemContext, ak ?? '')
+              data = await ai.chatWithPortfolio(messages, systemContext, chatCfg)
               break
             }
             case '/ai/analyze-region': {
               const body = await readBody(req)
-              const { regionId, newsHeadlines: headlinesJson, apiKey: ak } = body
+              const { regionId, newsHeadlines: headlinesJson } = body
               if (!regionId) { res.statusCode = 400; res.end(JSON.stringify({ error: 'Brak regionId' })); return }
+              const regionCfg = await cfgFromBody(body)
               const { fetchGlobalMarketData: fgm } = await import('./main/finance')
               const { computeGlobalScores: cgs, detectMarketRegime: dmr } = await import('./main/globalScore')
-              const { analyzeRegion: ar, WORLD_MODEL: wm } = await import('./main/ai')
+              const { analyzeRegion: ar } = await import('./main/ai')
               const md = await fgm()
               const regime = dmr(md)
               const regions = cgs(md, regime)
               const region = regions.find(r => r.id === regionId)
               if (!region) { res.statusCode = 400; res.end(JSON.stringify({ error: `Nieznany region: ${regionId}` })); return }
               const headlines: string[] = headlinesJson ? JSON.parse(headlinesJson) : []
-              const text = await ar({ apiKey: ak ?? '', region, marketData: md, newsHeadlines: headlines })
-              data = { text, model: wm }
+              const text = await ar({ cfg: regionCfg, region, marketData: md, newsHeadlines: headlines })
+              data = { text, model: regionCfg.models.world }
               break
             }
             case '/bonds/batch-values': {

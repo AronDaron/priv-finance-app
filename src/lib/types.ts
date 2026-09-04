@@ -496,3 +496,164 @@ export interface ScreenerExchangeResult {
 }
 
 export type ScreenerViewMode = 'simple' | 'extended'
+
+// ── Konfiguracja AI (OpenRouter / serwer lokalny) ─────────────────────────────
+
+export type AIProvider = 'openrouter' | 'local'
+export type AIRole = 'worker' | 'manager' | 'world' | 'chat' | 'advisor'
+
+/** Model zwrócony przez GET {baseUrl}/models serwera lokalnego. */
+export interface RemoteModel {
+  id: string
+  displayName: string
+  quant: string | null       // np. 'Q4_K_M'
+  loaded: boolean            // niezaładowany = długie pierwsze zapytanie
+  task: string | null        // modele 'text-to-image' są odfiltrowane
+}
+
+export interface RemoteModelsResult {
+  ok: boolean
+  models: RemoteModel[]
+  error?: string
+}
+
+/** Postęp generowania — wysyłany przez main process kanałem 'ai:progress'. */
+export interface AIProgress {
+  requestId?: string
+  role: string
+  stage?: string             // np. 'Analiza spółki 3/10 — PKN.WA'
+  contentTokens: number
+  reasoningTokens: number
+  tokensPerSec: number | null
+  elapsedMs: number
+  phase: 'waiting' | 'reasoning' | 'writing'
+}
+
+/** Aktywna konfiguracja AI widoczna dla renderera (bez klucza API). */
+export interface ActiveAIConfig {
+  provider: AIProvider
+  models: Record<AIRole, string>
+  baseUrl: string
+}
+
+/** Klucze ustawień AI w tabeli settings (Electron) / localStorage (dev). */
+export const AI_SETTING_KEYS = [
+  'ai_provider',
+  'openrouter_api_key',
+  'local_ai_url',
+  'local_ai_key',
+  'local_ai_model',
+  'local_ai_model_manager',
+  'local_ai_idle_timeout_s',
+  'local_ai_max_tokens_worker',
+  'local_ai_max_tokens_chat',
+] as const
+
+export const DEFAULT_LOCAL_IDLE_TIMEOUT_S = 120
+
+// ── Doradca dywidendowy ───────────────────────────────────────────────────────
+
+/** Pojedyncza wypłata dywidendy — realna, z Yahoo Finance. */
+export interface DividendPayment {
+  date: string    // 'YYYY-MM-DD'
+  amount: number  // na akcję, w walucie notowania
+}
+
+/**
+ * Pełny profil spółki dla Doradcy — WYŁĄCZNIE realne dane rynkowe.
+ * Wewnętrzny scoring aplikacji (Profitability/Safety/Valuation) celowo tu nie występuje:
+ * model ma dostawać fakty, a nie nasze oceny.
+ */
+export interface StockProfile {
+  ticker: string
+  name: string
+  exchange: string
+  currency: string
+  price: number | null
+  marketCap: number | null
+  sector: string | null
+  industry: string | null
+  // Dywidendy
+  dividendYield: number | null
+  dividendRate: number | null
+  payoutRatio: number | null
+  payments: DividendPayment[]
+  annualTotals: Array<{ year: number; total: number }>
+  yearsPaid: number
+  streakYears: number
+  cagr5y: number | null
+  lastCutYear: number | null
+  paymentsPerYear: number
+  yieldIsEstimated: boolean
+  // Wycena
+  trailingPE: number | null
+  forwardPE: number | null
+  pegRatio: number | null
+  priceToBook: number | null
+  bookValue: number | null
+  enterpriseToEbitda: number | null
+  week52High: number | null
+  week52Low: number | null
+  // Wzrost i rentowność
+  revenueGrowth: number | null
+  earningsGrowth: number | null
+  grossMargins: number | null
+  operatingMargins: number | null
+  profitMargins: number | null
+  totalRevenue: number | null
+  ebitda: number | null
+  returnOnEquity: number | null
+  returnOnAssets: number | null
+  // Bilans i ryzyko
+  totalDebt: number | null
+  totalCash: number | null
+  debtToEquity: number | null
+  currentRatio: number | null
+  freeCashflow: number | null
+  operatingCashflow: number | null
+  beta: number | null
+  shortPercentOfFloat: number | null
+  heldPercentInstitutions: number | null
+  // Notowania i płynność
+  fiftyDayAverage: number | null
+  twoHundredDayAverage: number | null
+  averageVolume: number | null
+  // Konsensus analityków
+  analystRecommendation: string | null
+  numberOfAnalysts: number | null
+  targetMeanPrice: number | null
+  recommendationTrend: { strongBuy: number; buy: number; hold: number; sell: number; strongSell: number } | null
+  // Wyniki kwartalne
+  nextEarningsDate: string | null
+  earningsHistory: Array<{ period: string; epsEstimate: number | null; epsActual: number | null; surprisePercent: number | null }> | null
+  earningsTrend: Array<{ period: string; epsEstimate: number | null; revenueEstimate: number | null; growth: number | null }> | null
+  fetchedAt: string
+}
+
+/** Alias zachowany dla czytelności w miejscach dotyczących wyłącznie dywidend. */
+export type DividendProfile = StockProfile
+
+/**
+ * Opcjonalne zawężenie listy PRZED wysłaniem do modelu — wyłącznie po to, żeby nie
+ * przekraczać sensownego rozmiaru promptu. Sercem doradcy jest zapytanie użytkownika,
+ * a nie te filtry: wybór spółek należy do modelu.
+ */
+export interface AdvisorFilters {
+  /** Maksymalna liczba spółek przekazanych modelowi */
+  limit?: number
+  /** Zawęź do spółek wypłacających dywidendę */
+  dividendOnly?: boolean
+}
+
+export const DEFAULT_ADVISOR_FILTERS: Required<AdvisorFilters> = {
+  limit: 40,
+  dividendOnly: false,
+}
+
+export interface AdvisorCandidatesResult {
+  exchange: string
+  exchangeLabel: string
+  profiles: StockProfile[]
+  lastFetchedAt: string | null
+  error: string | null
+}

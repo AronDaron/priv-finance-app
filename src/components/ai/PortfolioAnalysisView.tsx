@@ -1,19 +1,30 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import type { PortfolioAsset, AIReport } from '../../lib/types'
-import { getAssets, getReports, getLatestReportByTicker, getSetting, analyzePortfolio } from '../../lib/api'
+import { getAssets, getReports, getLatestReportByTicker, getAllSettings, analyzePortfolio } from '../../lib/api'
 import { MarkdownRenderer } from './MarkdownRenderer'
+import { useAIRun } from '../../lib/useAIRun'
+import AIProgressIndicator from './AIProgressIndicator'
 
 export default function PortfolioAnalysisView() {
   const [assets, setAssets] = useState<PortfolioAsset[]>([])
   const [portfolioReport, setPortfolioReport] = useState<AIReport | null>(null)
   const [analyzedCount, setAnalyzedCount] = useState(0)
-  const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [hasApiKey, setHasApiKey] = useState<boolean | null>(null)
+  const [configWarning, setConfigWarning] = useState<string | null>(null)
+  const { running: isAnalyzing, progress, elapsedMs, run, cancel } = useAIRun()
 
   useEffect(() => {
-    getSetting('openrouter_api_key').then(key => setHasApiKey(!!key))
+    // Ostrzeżenie zależne od providera — przy serwerze lokalnym klucz OpenRoutera jest nieistotny
+    getAllSettings().then(s => {
+      if (s.ai_provider === 'local') {
+        if (!s.local_ai_url) setConfigWarning('Nie ustawiono adresu serwera lokalnego.')
+        else if (!s.local_ai_model) setConfigWarning('Nie wybrano modelu serwera lokalnego.')
+        else setConfigWarning(null)
+      } else {
+        setConfigWarning(s.openrouter_api_key ? null : 'Brak klucza API OpenRouter.')
+      }
+    })
 
     getAssets().then(async (all) => {
       const nonBondAssets = all.filter(a => a.asset_type !== 'bond')
@@ -38,15 +49,12 @@ export default function PortfolioAnalysisView() {
   }, [])
 
   const handleAnalyze = async () => {
-    setIsAnalyzing(true)
     setError(null)
     try {
-      const report = await analyzePortfolio()
+      const report = await run(requestId => analyzePortfolio(requestId))
       setPortfolioReport(report)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Błąd analizy portfela')
-    } finally {
-      setIsAnalyzing(false)
     }
   }
 
@@ -124,15 +132,15 @@ export default function PortfolioAnalysisView() {
         </div>
       )}
 
-      {/* Brak klucza API */}
-      {hasApiKey === false && (
+      {/* Niekompletna konfiguracja AI */}
+      {configWarning && (
         <div className="bg-yellow-900/30 border border-yellow-600 rounded-lg p-4 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 text-yellow-300 text-sm">
             <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                 d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
-            Brak klucza API OpenRouter. Skonfiguruj go w Ustawieniach.
+            {configWarning} Skonfiguruj silnik AI w Ustawieniach.
           </div>
           <Link to="/settings" className="flex-shrink-0 text-sm text-yellow-300 underline hover:text-yellow-100">
             Przejdź do Ustawień →
@@ -164,9 +172,12 @@ export default function PortfolioAnalysisView() {
             </div>
           )}
           {isAnalyzing ? (
-            <div className="text-gray-500 text-sm italic">
-              Generowanie analizy portfela (Manager AI)... Może to potrwać do 30 sekund.
-            </div>
+            <AIProgressIndicator
+              progress={progress}
+              elapsedMs={elapsedMs}
+              onCancel={cancel}
+              idleLabel="Zbieram dane portfela…"
+            />
           ) : portfolioReport ? (
             <MarkdownRenderer content={portfolioReport.report_text} />
           ) : (

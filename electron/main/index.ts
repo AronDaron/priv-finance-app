@@ -16,6 +16,7 @@ import {
   fetchAssetMeta,
   fetchPortfolioHistory,
   fetchGlobalMarketData,
+  fetchStockProfile,
 } from './finance'
 import { computeGlobalScores, detectMarketRegime, buildRegimeSummary } from './globalScore'
 import type { HistoryPeriod, GlobalMarketData, MarketRegime, FundamentalData } from '../../src/lib/types'
@@ -68,6 +69,9 @@ import {
   clearScreenerCache,
   getScreenerMetadata,
   upsertScreenerMetadata,
+  getDividendCache,
+  upsertDividendEntry,
+  getDividendCacheAge,
   type DBNewsItem,
   type DBPortfolioAsset,
   type DBPortfolio,
@@ -77,13 +81,50 @@ import {
   type DBAIReport,
 } from './database'
 import { analyzeStock, analyzePortfolio, analyzeRegion, chatWithPortfolio, WORKER_MODEL, MANAGER_MODEL, WORLD_MODEL, type ChatMessage, type GlobalMacroContext } from './ai'
+import { buildAIConfig, assertAIConfig, listRemoteModels, ensureDisclaimer, type AIConfig, type StreamProgress } from './aiProvider'
 import { calculateBondValue, fetchNbpRates, fetchBondYear1Rate, fetchGusAnnualCpi, fetchGusMonthCpi, fetchStooqMonthCpi, fetchTradingEconomicsCpi } from './bonds'
-import { fetchAndScoreExchange, EXCHANGE_CONFIG } from './stockScreener'
+import { fetchAndScoreExchange, EXCHANGE_CONFIG, withConcurrencyLimit } from './stockScreener'
+import { selectCandidates, buildAdvisorPrompt, advisorTickers } from './stockAdvisor'
+import { callChatCompletion } from './aiProvider'
+import type { StockProfile, AdvisorFilters } from '../../src/lib/types'
 import type { StockScoringResult } from '../../src/lib/types'
 import { fetchNewsForRegion } from './news'
 import type { NewsRegion } from './news'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Aktywna konfiguracja AI z tabeli settings (OpenRouter albo serwer lokalny). */
+function getAIConfig(): AIConfig {
+  const cfg = buildAIConfig(getAllSettings())
+  assertAIConfig(cfg)
+  return cfg
+}
+
+// Anulowanie trwających żądań AI. Generowanie na modelu lokalnym potrafi trwać
+// kilkanaście minut — użytkownik musi mieć jak je przerwać.
+const activeRequests = new Map<string, AbortController>()
+
+/** Zwraca opcje wywołania AI: raportowanie postępu do renderera + sygnał anulowania. */
+function makeCallOptions(
+  event: Electron.IpcMainInvokeEvent,
+  requestId: string | undefined,
+  role: string,
+  stage?: () => string | undefined
+) {
+  const controller = new AbortController()
+  if (requestId) activeRequests.set(requestId, controller)
+  return {
+    controller,
+    release: () => { if (requestId) activeRequests.delete(requestId) },
+    opts: {
+      signal: controller.signal,
+      onProgress: (p: StreamProgress) => {
+        if (event.sender.isDestroyed()) return
+        event.sender.send('ai:progress', { requestId, role, stage: stage?.(), ...p })
+      },
+    },
+  }
+}
 
 function buildMacroContext(m: GlobalMarketData, regime: MarketRegime): GlobalMacroContext {
   return {
@@ -565,9 +606,8 @@ function registerIpcHandlers(): void {
   })
 
   // ── AI (OpenRouter) ───────────────────────────────────────────────────────
-  ipcMain.handle('ai:analyzeStock', async (_, ticker: string) => {
-    const apiKey = getSetting('openrouter_api_key')
-    if (!apiKey) throw new Error('Brak klucza API OpenRouter. Skonfiguruj go w Ustawieniach.')
+  ipcMain.handle('ai:analyzeStock', async (event, ticker: string, requestId?: string) => {
+    const cfg = getAIConfig()
 
     const assetInDb = getAllAssets().find(a => a.ticker === ticker)
 
@@ -582,20 +622,43 @@ function registerIpcHandlers(): void {
     const newsItems = searchNews(ticker, 8)
     const newsHeadlines = newsItems.map(n => `[${n.pub_date?.slice(0, 10) ?? '?'}] ${n.source ?? ''}: ${n.title}`)
 
-    const reportText = await analyzeStock({
-      ticker,
-      apiKey,
-      name: quote.name,
-      currentPrice: quote.price,
-      currency: quote.currency,
-      fundamentals,
-      technicals,
-      gold_grams: assetInDb?.gold_grams ?? null,
-      marketContext: marketData && regime ? buildMacroContext(marketData, regime) : null,
-      newsHeadlines,
-    })
+    const { opts, release } = makeCallOptions(event, requestId, 'worker', () => ticker)
+    let reportText: string
+    try {
+      reportText = await analyzeStock({
+        ticker,
+        cfg,
+        opts,
+        name: quote.name,
+        currentPrice: quote.price,
+        currency: quote.currency,
+        fundamentals,
+        technicals,
+        gold_grams: assetInDb?.gold_grams ?? null,
+        marketContext: marketData && regime ? buildMacroContext(marketData, regime) : null,
+        newsHeadlines,
+      })
+    } finally {
+      release()
+    }
 
-    return addReport({ ticker, model: WORKER_MODEL, report_text: reportText })
+    return addReport({ ticker, model: cfg.models.worker, report_text: reportText })
+  })
+
+  ipcMain.handle('ai:cancel', (_event, requestId: string) => {
+    activeRequests.get(requestId)?.abort()
+    activeRequests.delete(requestId)
+    return { success: true }
+  })
+
+  ipcMain.handle('ai:listModels', async (_event, baseUrl: string, apiKey: string) =>
+    listRemoteModels(baseUrl, apiKey)
+  )
+
+  ipcMain.handle('ai:getConfig', () => {
+    const cfg = buildAIConfig(getAllSettings())
+    // Klucz API nie opuszcza main process — renderer potrzebuje tylko nazw modeli.
+    return { provider: cfg.provider, models: cfg.models, baseUrl: cfg.baseUrl }
   })
 
   // ── news (RSS) + auto-archiwizacja ────────────────────────────────────────
@@ -614,9 +677,8 @@ function registerIpcHandlers(): void {
   })
 
   // ── AI Chat (RAG Agent) ────────────────────────────────────────────────────
-  ipcMain.handle('ai:chat', async (_event, messages: ChatMessage[]) => {
-    const apiKey = getSetting('openrouter_api_key')
-    if (!apiKey) throw new Error('Brak klucza API OpenRouter. Skonfiguruj go w Ustawieniach.')
+  ipcMain.handle('ai:chat', async (event, messages: ChatMessage[], requestId?: string) => {
+    const cfg = getAIConfig()
 
     const assets = getAllAssets()
     if (assets.length === 0) throw new Error('Portfel jest pusty. Dodaj aktywa, aby korzystać z AI Agent.')
@@ -774,7 +836,12 @@ function registerIpcHandlers(): void {
     // Konserwacja: usuń stare newsy
     pruneOldNews(90)
 
-    return chatWithPortfolio(messages, systemContext, apiKey)
+    const { opts, release } = makeCallOptions(event, requestId, 'chat')
+    try {
+      return await chatWithPortfolio(messages, systemContext, cfg, opts)
+    } finally {
+      release()
+    }
   })
 
   // ── global market ─────────────────────────────────────────────────────────
@@ -785,21 +852,24 @@ function registerIpcHandlers(): void {
     return { regions, marketData, computedAt: marketData.fetchedAt, regime }
   })
 
-  ipcMain.handle('ai:analyzeRegion', async (_event, regionId: string, newsHeadlines: string[]) => {
-    const apiKey = getSetting('openrouter_api_key')
-    if (!apiKey) throw new Error('Brak klucza API OpenRouter. Skonfiguruj go w Ustawieniach.')
+  ipcMain.handle('ai:analyzeRegion', async (event, regionId: string, newsHeadlines: string[], requestId?: string) => {
+    const cfg = getAIConfig()
     const marketData = await fetchGlobalMarketData()
     const regime = detectMarketRegime(marketData)
     const regions = computeGlobalScores(marketData, regime)
     const region = regions.find(r => r.id === regionId)
     if (!region) throw new Error(`Nieznany region: ${regionId}`)
-    const text = await analyzeRegion({ apiKey, region, marketData, newsHeadlines })
-    return { text, model: WORLD_MODEL }
+    const { opts, release } = makeCallOptions(event, requestId, 'world', () => region.name)
+    try {
+      const text = await analyzeRegion({ cfg, opts, region, marketData, newsHeadlines })
+      return { text, model: cfg.models.world }
+    } finally {
+      release()
+    }
   })
 
-  ipcMain.handle('ai:analyzePortfolio', async () => {
-    const apiKey = getSetting('openrouter_api_key')
-    if (!apiKey) throw new Error('Brak klucza API OpenRouter.')
+  ipcMain.handle('ai:analyzePortfolio', async (event, requestId?: string) => {
+    const cfg = getAIConfig()
 
     const allAssets = getAllAssets()
     if (allAssets.length === 0) throw new Error('Portfel jest pusty.')
@@ -853,9 +923,17 @@ function registerIpcHandlers(): void {
       gold_grams: number | null
     }> = []
 
-    for (const asset of assets) {
+    // Etap Worker: raporty per spółka. Przy modelu lokalnym każdy trwa minuty, więc
+    // raportujemy postęp „spółka N/M" i pozwalamy przerwać między spółkami.
+    let stageLabel: string | undefined
+    const { opts, controller, release } = makeCallOptions(event, requestId, 'manager', () => stageLabel)
+
+    try {
+    for (const [idx, asset] of assets.entries()) {
+      if (controller.signal.aborted) throw new Error('Anulowano.')
       let report = getLatestReportByTicker(asset.ticker)
       if (!report) {
+        stageLabel = `Analiza spółki ${idx + 1}/${assets.length} — ${asset.ticker}`
         const [fundamentals, history, quote] = await Promise.all([
           fetchFundamentals(asset.ticker),
           fetchHistory(asset.ticker, '1y'),
@@ -864,7 +942,8 @@ function registerIpcHandlers(): void {
         const technicals = calculateTechnicals(history)
         const reportText = await analyzeStock({
           ticker: asset.ticker,
-          apiKey,
+          cfg,
+          opts,
           name: quote.name,
           currentPrice: quote.price,
           currency: quote.currency,
@@ -872,7 +951,7 @@ function registerIpcHandlers(): void {
           technicals,
           gold_grams: asset.gold_grams ?? null,
         })
-        report = addReport({ ticker: asset.ticker, model: WORKER_MODEL, report_text: reportText })
+        report = addReport({ ticker: asset.ticker, model: cfg.models.worker, report_text: reportText })
       }
       const quote = await fetchQuote(asset.ticker)
       // Dla metali fizycznych: spot USD/oz → cena USD/monetę → PLN/monetę
@@ -922,8 +1001,10 @@ function registerIpcHandlers(): void {
     })
 
     const portfoliosList = getPortfolios()
+    stageLabel = 'Analiza całego portfela'
     const reportText = await analyzePortfolio({
-      apiKey,
+      cfg,
+      opts,
       assets: enrichedAssets,
       totalValuePLN,
       totalPnlPercent: totalCostPLN > 0 ? ((totalValuePLN - totalCostPLN) / totalCostPLN) * 100 : 0,
@@ -936,7 +1017,10 @@ function registerIpcHandlers(): void {
       cashSummary,
     })
 
-    return addReport({ ticker: '__PORTFOLIO__', model: MANAGER_MODEL, report_text: reportText })
+    return addReport({ ticker: '__PORTFOLIO__', model: cfg.models.manager, report_text: reportText })
+    } finally {
+      release()
+    }
   })
 
   // ── obligacje skarbowe ─────────────────────────────────────────────────────
@@ -1007,6 +1091,143 @@ function registerIpcHandlers(): void {
     if (year1Rate !== null) cacheBondRate(t, year1Rate)
     if (margin !== null) cacheBondMargin(t, margin)
     return cachedRate ?? year1Rate
+  })
+
+  // ─── Doradca dywidendowy ──────────────────────────────────────────────────
+  // Osobna ścieżka danych od Scoringu: model dostaje realne wypłaty dywidend,
+  // a nie nasz wewnętrzny scoring.
+
+  const DIVIDEND_CACHE_TTL_MS = 24 * 60 * 60 * 1000
+
+  ipcMain.handle('advisor:fetchCandidates', async (_event, { exchange, forceRefresh = false }: {
+    exchange: string
+    forceRefresh?: boolean
+  }) => {
+    const cfgExchange = EXCHANGE_CONFIG[exchange]
+    if (!cfgExchange) {
+      return { exchange, exchangeLabel: exchange, profiles: [], lastFetchedAt: null, error: `Nieznana giełda: ${exchange}` }
+    }
+
+    const oldest = getDividendCacheAge(exchange)
+    const cacheStale = !oldest || (Date.now() - new Date(oldest + 'Z').getTime()) > DIVIDEND_CACHE_TTL_MS
+
+    if (!forceRefresh && !cacheStale) {
+      const cached = getDividendCache(exchange)
+      if (cached.length > 0) {
+        return {
+          exchange,
+          exchangeLabel: cfgExchange.label,
+          profiles: cached.map(r => JSON.parse(r.data_json) as StockProfile),
+          lastFetchedAt: oldest,
+          error: null,
+        }
+      }
+    }
+
+    try {
+      const tickers = advisorTickers(cfgExchange.tickers, exchange)
+      const tasks = tickers.map(t => () => fetchStockProfile(t, exchange))
+      const settled = await withConcurrencyLimit(tasks, 5)
+      const profiles = settled
+        .filter((r): r is PromiseFulfilledResult<StockProfile> => r.status === 'fulfilled')
+        .map(r => r.value)
+
+      for (const p of profiles) upsertDividendEntry(exchange, p.ticker, JSON.stringify(p))
+
+      return {
+        exchange,
+        exchangeLabel: cfgExchange.label,
+        profiles,
+        lastFetchedAt: new Date().toISOString(),
+        error: profiles.length === 0 ? 'Nie udało się pobrać danych z Yahoo Finance.' : null,
+      }
+    } catch (e: any) {
+      const cached = getDividendCache(exchange)
+      return {
+        exchange,
+        exchangeLabel: cfgExchange.label,
+        profiles: cached.map(r => JSON.parse(r.data_json) as StockProfile),
+        lastFetchedAt: oldest,
+        error: e?.message ?? 'Błąd pobierania danych.',
+      }
+    }
+  })
+
+  ipcMain.handle('advisor:analyze', async (event, { exchange, query, tickers, filters, requestId }: {
+    exchange: string
+    query: string
+    tickers?: string[]
+    filters?: AdvisorFilters
+    requestId?: string
+  }) => {
+    const cfg = getAIConfig()
+    if (!query || !query.trim()) {
+      throw new Error('Opisz, czego szukasz — np. „spółka dywidendowa z sektora energetycznego".')
+    }
+    const cfgExchange = EXCHANGE_CONFIG[exchange]
+    const label = cfgExchange?.label ?? exchange
+
+    const cached = getDividendCache(exchange)
+    if (cached.length === 0) {
+      throw new Error('Brak danych o spółkach dla tej giełdy. Najpierw pobierz dane.')
+    }
+    let profiles = cached.map(r => JSON.parse(r.data_json) as StockProfile)
+    // Ręczne zaznaczenie w tabeli ma pierwszeństwo przed automatycznym doborem
+    if (tickers && tickers.length > 0) {
+      const wanted = new Set(tickers.map(t => t.toUpperCase()))
+      profiles = profiles.filter(p => wanted.has(p.ticker.toUpperCase()))
+    } else {
+      profiles = selectCandidates(profiles, filters ?? {})
+    }
+    if (profiles.length === 0) {
+      throw new Error('Brak spółek do analizy dla tych ustawień.')
+    }
+
+    const portfolioTickers = getAllAssets().map(a => a.ticker)
+    const dataDate = getDividendCacheAge(exchange)?.slice(0, 10) ?? new Date().toISOString().slice(0, 10)
+
+    // Kursy walut notowań → PLN, żeby model mógł przeliczyć budżet podany w złotówkach
+    const fxRates: Record<string, number> = { PLN: 1 }
+    const FX_TICKERS_ADVISOR: Record<string, string> = {
+      USD: 'USDPLN=X', EUR: 'EURPLN=X', GBP: 'GBPPLN=X',
+      CHF: 'CHFPLN=X', JPY: 'JPYPLN=X', GBp: 'GBPPLN=X',
+    }
+    const neededCurrencies = [...new Set(profiles.map(p => p.currency))].filter(c => c !== 'PLN')
+    await Promise.all(neededCurrencies.map(async cur => {
+      const fxTicker = FX_TICKERS_ADVISOR[cur]
+      if (!fxTicker) return
+      try {
+        const q = await fetchQuote(fxTicker)
+        // LSE kwotuje w pensach (GBp) — 1 GBp = 1/100 GBP
+        fxRates[cur] = cur === 'GBp' ? q.price / 100 : q.price
+      } catch { /* brak kursu — model dostanie listę bez tej waluty */ }
+    }))
+
+    const { system, user } = buildAdvisorPrompt({
+      userQuery: query,
+      profiles,
+      exchangeLabel: label,
+      portfolioTickers,
+      dataDate,
+      fxRates,
+    })
+
+    const { opts, release } = makeCallOptions(event, requestId, 'advisor', () => `Doradca — ${label}`)
+    try {
+      const text = await callChatCompletion(
+        [{ role: 'system', content: system }, { role: 'user', content: user }],
+        'advisor',
+        cfg,
+        opts
+      )
+      return addReport({
+        ticker: `__ADVISOR_${exchange}__`,
+        model: cfg.models.advisor,
+        report_text: ensureDisclaimer(text, 'analysis'),
+      })
+    } finally {
+      release()
+    }
   })
 
   // ─── Screener (Stock Scoring) ─────────────────────────────────────────────

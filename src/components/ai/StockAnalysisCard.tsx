@@ -1,5 +1,6 @@
-import type { AIReport } from '../../lib/types'
+import type { AIReport, AIProgress } from '../../lib/types'
 import { MarkdownRenderer } from './MarkdownRenderer'
+import AIProgressIndicator from './AIProgressIndicator'
 
 interface Props {
   ticker: string
@@ -7,9 +8,14 @@ interface Props {
   report: AIReport | null
   isAnalyzing: boolean
   onAnalyze: () => void
+  progress?: AIProgress | null
+  elapsedMs?: number
+  onCancel?: () => void
 }
 
-export default function StockAnalysisCard({ ticker, name, report, isAnalyzing, onAnalyze }: Props) {
+export default function StockAnalysisCard({
+  ticker, name, report, isAnalyzing, onAnalyze, progress = null, elapsedMs = 0, onCancel,
+}: Props) {
   return (
     <div className="glass-card rounded-lg p-4 flex flex-col gap-3">
       {/* Header */}
@@ -56,7 +62,14 @@ export default function StockAnalysisCard({ ticker, name, report, isAnalyzing, o
 
       {/* Body */}
       {isAnalyzing ? (
-        <div className="text-gray-500 text-xs italic">Generowanie analizy AI...</div>
+        <div className="border-t border-gray-700 pt-3">
+          <AIProgressIndicator
+            progress={progress}
+            elapsedMs={elapsedMs}
+            onCancel={onCancel}
+            idleLabel="Pobieram dane spółki…"
+          />
+        </div>
       ) : report ? (
         <>
           <div className="flex items-center gap-3 text-xs text-gray-500">

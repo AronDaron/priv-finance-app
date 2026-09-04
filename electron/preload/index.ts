@@ -3,7 +3,7 @@
 // ZASADA: każda metoda to cienka warstwa — tylko ipcRenderer.invoke().
 // Logika biznesowa należy do electron/main/database.ts (main process).
 
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   // Metadane
@@ -141,14 +141,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('db:settings:getAll')
   },
 
-  // ── AI (OpenRouter) ──────────────────────────────────────────────────────
+  // ── AI (OpenRouter albo serwer lokalny) ──────────────────────────────────
   ai: {
-    analyzeStock: (ticker: string) =>
-      ipcRenderer.invoke('ai:analyzeStock', ticker),
-    analyzePortfolio: () =>
-      ipcRenderer.invoke('ai:analyzePortfolio'),
-    chat: (messages: Array<{ role: 'user' | 'assistant'; content: string }>) =>
-      ipcRenderer.invoke('ai:chat', messages),
+    analyzeStock: (ticker: string, requestId?: string) =>
+      ipcRenderer.invoke('ai:analyzeStock', ticker, requestId),
+    analyzePortfolio: (requestId?: string) =>
+      ipcRenderer.invoke('ai:analyzePortfolio', requestId),
+    chat: (messages: Array<{ role: 'user' | 'assistant'; content: string }>, requestId?: string) =>
+      ipcRenderer.invoke('ai:chat', messages, requestId),
+    cancel: (requestId: string) =>
+      ipcRenderer.invoke('ai:cancel', requestId),
+    listModels: (baseUrl: string, apiKey: string) =>
+      ipcRenderer.invoke('ai:listModels', baseUrl, apiKey),
+    getConfig: () =>
+      ipcRenderer.invoke('ai:getConfig'),
+    onProgress: (callback: (progress: unknown) => void) => {
+      const listener = (_e: IpcRendererEvent, progress: unknown) => callback(progress)
+      ipcRenderer.on('ai:progress', listener)
+      return () => { ipcRenderer.removeListener('ai:progress', listener) }
+    },
   },
 
   // ── news (RSS) ──────────────────────────────────────────────────────────
@@ -179,8 +190,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ── global AI region analysis ─────────────────────────────────────────────
   globalAI: {
-    analyzeRegion: (regionId: string, newsHeadlines: string[]) =>
-      ipcRenderer.invoke('ai:analyzeRegion', regionId, newsHeadlines),
+    analyzeRegion: (regionId: string, newsHeadlines: string[], requestId?: string) =>
+      ipcRenderer.invoke('ai:analyzeRegion', regionId, newsHeadlines, requestId),
   },
 
   // ── obligacje skarbowe ───────────────────────────────────────────────────
@@ -199,5 +210,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   screener: {
     fetch: (args: { exchange: string; lookbackDays?: number; forceRefresh?: boolean }) =>
       ipcRenderer.invoke('screener:fetch', args),
+  },
+
+  // ── doradca dywidendowy ──────────────────────────────────────────────────
+  advisor: {
+    fetchCandidates: (args: { exchange: string; forceRefresh?: boolean }) =>
+      ipcRenderer.invoke('advisor:fetchCandidates', args),
+    analyze: (args: {
+      exchange: string
+      query: string
+      tickers?: string[]
+      filters?: Record<string, unknown>
+      requestId?: string
+    }) => ipcRenderer.invoke('advisor:analyze', args),
   },
 })

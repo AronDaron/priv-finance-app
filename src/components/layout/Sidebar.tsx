@@ -86,6 +86,7 @@ const aiSubLinks = [
   { to: '/ai/portfolio', label: 'Portfel' },
   { to: '/ai/stocks', label: 'Spółki' },
   { to: '/ai/chat', label: 'Chat' },
+  { to: '/ai/doradca', label: 'Doradca' },
 ]
 
 const aiIcon = (

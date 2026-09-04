@@ -34,8 +34,13 @@ import type {
   ChatMessage,
   BondValueResult,
   ScreenerExchangeResult,
+  RemoteModelsResult,
+  AIProgress,
+  ActiveAIConfig,
+  AdvisorCandidatesResult,
+  AdvisorFilters,
 } from './types'
-import { FX_TICKERS } from './types'
+import { FX_TICKERS, AI_SETTING_KEYS } from './types'
 
 export type { ChatMessage }
 
@@ -113,15 +118,19 @@ declare global {
         globalMarket(): Promise<GlobalAnalysis>
       }
       ai: {
-        analyzeStock(ticker: string): Promise<AIReport>
-        analyzePortfolio(): Promise<AIReport>
-        chat(messages: ChatMessage[]): Promise<string>
+        analyzeStock(ticker: string, requestId?: string): Promise<AIReport>
+        analyzePortfolio(requestId?: string): Promise<AIReport>
+        chat(messages: ChatMessage[], requestId?: string): Promise<string>
+        cancel(requestId: string): Promise<{ success: boolean }>
+        listModels(baseUrl: string, apiKey: string): Promise<RemoteModelsResult>
+        getConfig(): Promise<ActiveAIConfig>
+        onProgress(callback: (progress: AIProgress) => void): () => void
       }
       news: {
         fetchRegion(region: string): Promise<NewsItem[]>
       }
       globalAI: {
-        analyzeRegion(regionId: string, newsHeadlines: string[]): Promise<{ text: string; model: string }>
+        analyzeRegion(regionId: string, newsHeadlines: string[], requestId?: string): Promise<{ text: string; model: string }>
       }
       bonds: {
         getBatchValues(assetIds: number[]): Promise<Array<{ id: number } & BondValueResult & { error?: string }>>
@@ -131,6 +140,16 @@ declare global {
       }
       screener: {
         fetch(args: { exchange: string; lookbackDays?: number; forceRefresh?: boolean }): Promise<ScreenerExchangeResult>
+      }
+      advisor: {
+        fetchCandidates(args: { exchange: string; forceRefresh?: boolean }): Promise<AdvisorCandidatesResult>
+        analyze(args: {
+          exchange: string
+          query: string
+          tickers?: string[]
+          filters?: AdvisorFilters
+          requestId?: string
+        }): Promise<AIReport>
       }
     }
   }
@@ -585,23 +604,83 @@ export async function getPortfolioHistory(portfolioId?: number, period: string =
   return devApiPost('/portfolio-history', { assets: JSON.stringify(assets), cashTransactions: JSON.stringify(cashTransactions), period, marginCache: JSON.stringify(getCachedBondMargins()) })
 }
 
-export async function analyzeStock(ticker: string): Promise<AIReport> {
-  if (isElectron()) return window.electronAPI!.ai.analyzeStock(ticker)
-  const apiKey = await getSetting('openrouter_api_key')
+// ─── Konfiguracja providera AI ────────────────────────────────────────────────
+
+/** Unikalny identyfikator żądania — pozwala je potem anulować i wiązać z postępem. */
+export function newAIRequestId(): string {
+  return 'ai_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8)
+}
+
+/**
+ * Ustawienia AI przekazywane do trybu dev. Electron czyta je z SQLite po stronie
+ * main process — w przeglądarce nie ma SQLite, więc przesyłamy je z localStorage,
+ * a dev-api-plugin składa z nich tę samą konfigurację co Electron.
+ */
+async function getAISettingsPayload(): Promise<string> {
+  const all = await getAllSettings()
+  const picked: Record<string, string> = {}
+  for (const key of AI_SETTING_KEYS) {
+    if (all[key] != null) picked[key] = all[key]
+  }
+  return JSON.stringify(picked)
+}
+
+export async function listAIModels(baseUrl: string, apiKey: string): Promise<RemoteModelsResult> {
+  if (isElectron()) return window.electronAPI!.ai.listModels(baseUrl, apiKey)
+  return devApiPost<RemoteModelsResult>('/ai/list-models', { baseUrl, apiKey })
+}
+
+export async function getActiveAIConfig(): Promise<ActiveAIConfig | null> {
+  if (isElectron()) return window.electronAPI!.ai.getConfig()
+  const all = await getAllSettings()
+  const provider = all.ai_provider === 'local' ? 'local' : 'openrouter'
+  const localModel = all.local_ai_model ?? ''
+  const managerModel = all.local_ai_model_manager || localModel
+  const models = provider === 'local'
+    ? { worker: localModel, manager: managerModel, world: localModel, chat: localModel, advisor: managerModel }
+    : {
+        worker: 'google/gemini-3-flash-preview',
+        manager: 'google/gemini-3.1-pro-preview',
+        world: 'google/gemini-3-flash-preview',
+        chat: 'google/gemini-3-flash-preview',
+        advisor: 'google/gemini-3.1-pro-preview',
+      }
+  return { provider, models, baseUrl: provider === 'local' ? (all.local_ai_url ?? '') : 'https://openrouter.ai/api/v1' }
+}
+
+export async function cancelAIRequest(requestId: string): Promise<void> {
+  if (isElectron()) { await window.electronAPI!.ai.cancel(requestId); return }
+  // Dev: brak kanału anulowania — żądanie dobiegnie końca po stronie serwera Vite.
+}
+
+/** Subskrypcja postępu generowania. Zwraca funkcję odsubskrybowania. */
+export function subscribeAIProgress(callback: (p: AIProgress) => void): () => void {
+  if (isElectron()) return window.electronAPI!.ai.onProgress(callback)
+  return () => { /* dev: postęp niedostępny */ }
+}
+
+// ─── Analizy AI ───────────────────────────────────────────────────────────────
+
+export async function analyzeStock(ticker: string, requestId?: string): Promise<AIReport> {
+  if (isElectron()) return window.electronAPI!.ai.analyzeStock(ticker, requestId)
   const assets = await getAssets()
   const asset = assets.find(a => a.ticker === ticker)
   const goldGrams = asset?.gold_grams != null ? String(asset.gold_grams) : ''
   const newsHeadlines = devNewsCacheSearch(ticker, 8)
   const result = await devApiPost<{ report_text: string; model: string; ticker: string }>(
-    '/ai/analyze-stock', { ticker, apiKey: apiKey ?? '', gold_grams: goldGrams, news_headlines: JSON.stringify(newsHeadlines) }
+    '/ai/analyze-stock', {
+      ticker,
+      aiSettings: await getAISettingsPayload(),
+      gold_grams: goldGrams,
+      news_headlines: JSON.stringify(newsHeadlines),
+    }
   )
   return addReport({ ticker, model: result.model, report_text: result.report_text })
 }
 
-export async function analyzePortfolio(): Promise<AIReport> {
-  if (isElectron()) return window.electronAPI!.ai.analyzePortfolio()
-  const apiKey = await getSetting('openrouter_api_key')
-  const [allAssets, cash] = await Promise.all([getAssets(), getCashAccounts()])
+export async function analyzePortfolio(requestId?: string): Promise<AIReport> {
+  if (isElectron()) return window.electronAPI!.ai.analyzePortfolio(requestId)
+  const [allAssets, cash, reports] = await Promise.all([getAssets(), getCashAccounts(), getReports()])
   const assets = allAssets.filter(a => a.asset_type !== 'bond')
   const bondAssets = allAssets.filter(a => a.asset_type === 'bond')
   const result = await devApiPost<{ report_text: string; model: string }>(
@@ -609,7 +688,9 @@ export async function analyzePortfolio(): Promise<AIReport> {
       assets: JSON.stringify(assets),
       bondAssets: JSON.stringify(bondAssets),
       cashAccounts: JSON.stringify(cash),
-      apiKey: apiKey ?? '',
+      // Gotowe raporty Worker — bez nich dev regenerowałby wszystkie od zera
+      reports: JSON.stringify(reports),
+      aiSettings: await getAISettingsPayload(),
     }
   )
   return addReport({ ticker: '__PORTFOLIO__', model: result.model, report_text: result.report_text })
@@ -658,21 +739,19 @@ export async function fetchGlobalAnalysis(): Promise<GlobalAnalysis> {
   return devApiFetch<GlobalAnalysis>('/global-market', {})
 }
 
-export async function analyzeRegionAI(regionId: RegionId, newsHeadlines: string[]): Promise<{ text: string; model: string }> {
-  if (isElectron()) return window.electronAPI!.globalAI.analyzeRegion(regionId, newsHeadlines)
-  const apiKey = await getSetting('openrouter_api_key')
+export async function analyzeRegionAI(regionId: RegionId, newsHeadlines: string[], requestId?: string): Promise<{ text: string; model: string }> {
+  if (isElectron()) return window.electronAPI!.globalAI.analyzeRegion(regionId, newsHeadlines, requestId)
   return devApiPost<{ text: string; model: string }>('/ai/analyze-region', {
     regionId,
     newsHeadlines: JSON.stringify(newsHeadlines),
-    apiKey: apiKey ?? '',
+    aiSettings: await getAISettingsPayload(),
   })
 }
 
 // ─── AI Chat (RAG Agent) ──────────────────────────────────────────────────────
 
-export async function chatPortfolio(messages: ChatMessage[]): Promise<string> {
-  if (isElectron()) return window.electronAPI!.ai.chat(messages)
-  const apiKey = await getSetting('openrouter_api_key')
+export async function chatPortfolio(messages: ChatMessage[], requestId?: string): Promise<string> {
+  if (isElectron()) return window.electronAPI!.ai.chat(messages, requestId)
   const [allAssets, reports, cash] = await Promise.all([getAssets(), getReports(), getCashAccounts()])
   const stockAssets = allAssets.filter(a => a.asset_type !== 'bond')
   const bondAssets = allAssets.filter(a => a.asset_type === 'bond')
@@ -682,7 +761,7 @@ export async function chatPortfolio(messages: ChatMessage[]): Promise<string> {
     bondAssets: JSON.stringify(bondAssets),
     cashAccounts: JSON.stringify(cash),
     reports: JSON.stringify(reports),
-    apiKey: apiKey ?? '',
+    aiSettings: await getAISettingsPayload(),
   })
 }
 
@@ -790,4 +869,43 @@ export async function fetchScoringExchange(
     return window.electronAPI!.screener.fetch({ exchange, lookbackDays, forceRefresh })
   }
   return devApiPost<ScreenerExchangeResult>('/screener/fetch', { exchange, lookbackDays, forceRefresh })
+}
+
+// ─── Doradca dywidendowy ──────────────────────────────────────────────────────
+
+export async function fetchAdvisorCandidates(
+  exchange: string,
+  forceRefresh = false
+): Promise<AdvisorCandidatesResult> {
+  if (isElectron()) return window.electronAPI!.advisor.fetchCandidates({ exchange, forceRefresh })
+  return devApiPost<AdvisorCandidatesResult>('/advisor/candidates', {
+    exchange,
+    forceRefresh: String(forceRefresh),
+  })
+}
+
+export async function analyzeAdvisor(
+  exchange: string,
+  query: string,
+  tickers: string[],
+  filters: AdvisorFilters,
+  requestId?: string
+): Promise<AIReport> {
+  if (isElectron()) {
+    return window.electronAPI!.advisor.analyze({ exchange, query, tickers, filters, requestId })
+  }
+  const portfolioTickers = (await getAssets()).map(a => a.ticker)
+  const result = await devApiPost<{ report_text: string; model: string }>('/advisor/analyze', {
+    exchange,
+    query,
+    tickers: JSON.stringify(tickers),
+    filters: JSON.stringify(filters),
+    portfolioTickers: JSON.stringify(portfolioTickers),
+    aiSettings: await getAISettingsPayload(),
+  })
+  return addReport({
+    ticker: `__ADVISOR_${exchange}__`,
+    model: result.model,
+    report_text: result.report_text,
+  })
 }

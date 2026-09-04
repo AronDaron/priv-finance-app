@@ -1,55 +1,42 @@
 import type { FundamentalData, TechnicalIndicators, GlobalMarketData, RegionScore } from '../../src/lib/types'
 import { gramsToTroyOz } from '../../src/lib/types'
+import {
+  callChatCompletion,
+  ensureDisclaimer,
+  DEFAULT_OPENROUTER_MODELS,
+  type AIConfig,
+  type CallOptions,
+} from './aiProvider'
 
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
-const WORKER_MODEL   = 'google/gemini-3-flash-preview'
-const MANAGER_MODEL  = 'google/gemini-3.1-pro-preview'
-const WORLD_MODEL    = 'google/gemini-3-flash-preview'
-const CHAT_MODEL     = 'google/gemini-3-flash-preview'
-const APP_REFERER    = 'https://finance-portfolio-tracker'
+// Domyślne modele OpenRoutera — reeksport dla zachowania zgodności z index.ts i dev-api-plugin.ts.
+const WORKER_MODEL   = DEFAULT_OPENROUTER_MODELS.worker
+const MANAGER_MODEL  = DEFAULT_OPENROUTER_MODELS.manager
+const WORLD_MODEL    = DEFAULT_OPENROUTER_MODELS.world
+const CHAT_MODEL     = DEFAULT_OPENROUTER_MODELS.chat
 
 export { WORKER_MODEL, MANAGER_MODEL, WORLD_MODEL, CHAT_MODEL }
 
 // ─── Pomocnicza funkcja HTTP ──────────────────────────────────────────────────
+// Warstwa transportowa (OpenRouter vs serwer lokalny, streaming, timeouty) siedzi
+// w aiProvider.ts. Tutaj zostaje wyłącznie budowanie promptów.
 
-async function callOpenRouter(
-  model: string,
+async function callLLM(
+  role: 'worker' | 'manager' | 'world' | 'advisor',
   systemPrompt: string,
   userPrompt: string,
-  apiKey: string,
-  maxTokens = 8000
+  cfg: AIConfig,
+  opts?: CallOptions
 ): Promise<string> {
-  if (!apiKey) throw new Error('Brak klucza API OpenRouter. Skonfiguruj go w Ustawieniach.')
-
-  const res = await fetch(OPENROUTER_URL, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'HTTP-Referer': APP_REFERER,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user',   content: userPrompt  },
-      ],
-      max_tokens: maxTokens,
-      temperature: 0.3,
-    }),
-  })
-
-  if (res.status === 401) throw new Error('Nieprawidłowy klucz API OpenRouter.')
-  if (res.status === 429) throw new Error('Przekroczono limit zapytań. Spróbuj za chwilę.')
-  if (res.status >= 500) throw new Error('Błąd serwera OpenRouter. Spróbuj ponownie.')
-  if (!res.ok) throw new Error(`Błąd OpenRouter: ${res.status} ${res.statusText}`)
-
-  const data = await res.json() as {
-    choices?: Array<{ message?: { content?: string } }>
-  }
-  const content = data.choices?.[0]?.message?.content
-  if (!content) throw new Error('Brak treści w odpowiedzi OpenRouter.')
-  return content
+  const text = await callChatCompletion(
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user',   content: userPrompt  },
+    ],
+    role,
+    cfg,
+    opts ?? {}
+  )
+  return ensureDisclaimer(text, 'analysis')
 }
 
 // ─── Funkcje pomocnicze formatowania ─────────────────────────────────────────
@@ -87,7 +74,8 @@ export interface GlobalMacroContext {
 export interface StockAnalysisParams {
   ticker: string
   name: string
-  apiKey: string
+  cfg: AIConfig
+  opts?: CallOptions
   fundamentals: FundamentalData
   technicals: TechnicalIndicators
   currentPrice: number
@@ -109,7 +97,7 @@ function formatRecommendationTrend(rt: FundamentalData['recommendationTrend']): 
 }
 
 export async function analyzeStock(params: StockAnalysisParams): Promise<string> {
-  const { ticker, name, apiKey, fundamentals, technicals, currentPrice, currency, gold_grams, marketContext, newsHeadlines } = params
+  const { ticker, name, cfg, opts, fundamentals, technicals, currentPrice, currency, gold_grams, marketContext, newsHeadlines } = params
   const {
     pe, eps, dividendYield, marketCap, beta, sector, industry, week52High, week52Low,
     totalRevenue, revenueGrowth, grossMargins, profitMargins, totalDebt, totalCash,
@@ -191,13 +179,14 @@ Napisz wyczerpującą analizę zawierającą:
 4. Prognozy analityków — EPS i przychody na kolejne okresy (jeśli dostępne), ostatnie zmiany ratingów
 5. Rekomendację: KUP / TRZYMAJ / SPRZEDAJ z uzasadnieniem`
 
-  return callOpenRouter(WORKER_MODEL, systemPrompt, userPrompt, apiKey, 15000)
+  return callLLM('worker', systemPrompt, userPrompt, cfg, opts)
 }
 
 // ─── Manager: analiza całego portfela ────────────────────────────────────────
 
 export interface PortfolioAnalysisParams {
-  apiKey: string
+  cfg: AIConfig
+  opts?: CallOptions
   assets: Array<{
     ticker: string
     name: string
@@ -217,7 +206,7 @@ export interface PortfolioAnalysisParams {
 }
 
 export async function analyzePortfolio(params: PortfolioAnalysisParams): Promise<string> {
-  const { apiKey, assets, totalValuePLN, totalPnlPercent, portfolios, bondsSummary, cashSummary } = params
+  const { cfg, opts, assets, totalValuePLN, totalPnlPercent, portfolios, bondsSummary, cashSummary } = params
 
   const systemPrompt = `Jesteś zarządzającym portfelem inwestycyjnym. Piszesz po polsku. Twoje analizy są konkretne i actionable. Zawsze pisz pełną analizę z 4 sekcjami używając markdown: **bold** dla kluczowych wartości i wniosków, listy punktowane dla rekomendacji i ryzyk. Nigdy nie skracaj analizy. Na końcu KAŻDEJ analizy dołącz obowiązkowo w osobnym akapicie notę: "---\\n⚠️ *Powyższa analiza została wygenerowana przez model AI i ma charakter wyłącznie informacyjny. Nie stanowi porady inwestycyjnej ani rekomendacji w rozumieniu przepisów prawa. Decyzje inwestycyjne podejmuj na własną odpowiedzialność — w razie wątpliwości skonsultuj się z licencjonowanym doradcą finansowym. Wyniki historyczne nie są gwarancją przyszłych wyników.*"`
 
@@ -288,20 +277,21 @@ KRYTYCZNE ZASADY — przestrzegaj bezwzględnie:
 3. Najsilniejsze i najsłabsze pozycje (oceniaj przez pryzmat strategii portfela, nie tylko krótkoterminowych wyników)
 4. Rekomendacje zgodne ze strategią portfela (jeśli potrzebne — rebalansowanie, dokupienie, nie sprzedaż bez fundamentalnego powodu)`
 
-  return callOpenRouter(MANAGER_MODEL, systemPrompt, userPrompt, apiKey, 8000)
+  return callLLM('manager', systemPrompt, userPrompt, cfg, opts)
 }
 
 // ─── Analiza regionu (na żądanie) ─────────────────────────────────────────────
 
 export interface RegionAnalysisParams {
-  apiKey: string
+  cfg: AIConfig
+  opts?: CallOptions
   region: RegionScore
   marketData: GlobalMarketData
   newsHeadlines: string[]  // tytuły newsów RSS dla regionu
 }
 
 export async function analyzeRegion(params: RegionAnalysisParams): Promise<string> {
-  const { apiKey, region, marketData, newsHeadlines } = params
+  const { cfg, opts, region, marketData, newsHeadlines } = params
   const m = marketData
 
   const systemPrompt = `Jesteś analitykiem geopolitycznym i rynkowym. Piszesz zwięzłe analizy po polsku. Używasz markdown: **bold** dla kluczowych wniosków, listy dla punktów. Zawsze kończysz wyraźną oceną potencjału inwestycyjnego. Na końcu KAŻDEJ analizy dołącz obowiązkowo w osobnym akapicie notę: "---\\n⚠️ *Powyższa analiza została wygenerowana przez model AI i ma charakter wyłącznie informacyjny. Nie stanowi porady inwestycyjnej ani rekomendacji w rozumieniu przepisów prawa. Decyzje inwestycyjne podejmuj na własną odpowiedzialność — w razie wątpliwości skonsultuj się z licencjonowanym doradcą finansowym. Wyniki historyczne nie są gwarancją przyszłych wyników.*"`
@@ -367,7 +357,7 @@ Napisz wyczerpującą analizę:
 3. **Główne ryzyka** — geopolityczne, walutowe, surowcowe
 4. **Ocena końcowa** — czy score algorytmu ${region.score}/100 jest adekwatny i co inwestor powinien wiedzieć`
 
-  return callOpenRouter(WORLD_MODEL, systemPrompt, userPrompt, apiKey, 6000)
+  return callLLM('world', systemPrompt, userPrompt, cfg, opts)
 }
 
 // ─── Chat (RAG Agent) ─────────────────────────────────────────────────────────
@@ -377,55 +367,21 @@ export interface ChatMessage {
   content: string
 }
 
-async function callOpenRouterMessages(
-  model: string,
-  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
-  apiKey: string,
-  maxTokens = 8000
-): Promise<string> {
-  if (!apiKey) throw new Error('Brak klucza API OpenRouter. Skonfiguruj go w Ustawieniach.')
-
-  const res = await fetch(OPENROUTER_URL, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'HTTP-Referer': APP_REFERER,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      max_tokens: maxTokens,
-      temperature: 0.5,
-    }),
-  })
-
-  if (res.status === 401) throw new Error('Nieprawidłowy klucz API OpenRouter.')
-  if (res.status === 429) throw new Error('Przekroczono limit zapytań. Spróbuj za chwilę.')
-  if (res.status >= 500) throw new Error('Błąd serwera OpenRouter. Spróbuj ponownie.')
-  if (!res.ok) throw new Error(`Błąd OpenRouter: ${res.status} ${res.statusText}`)
-
-  const data = await res.json() as {
-    choices?: Array<{ message?: { content?: string } }>
-  }
-  const content = data.choices?.[0]?.message?.content
-  if (!content) throw new Error('Brak treści w odpowiedzi OpenRouter.')
-  return content
-}
-
 /**
  * Konwersacyjny agent AI z kontekstem portfela.
  * Przyjmuje gotowy systemContext (zbudowany w index.ts z danych DB + yahoo-finance2)
- * oraz historię konwersacji i wysyła do OpenRouter.
+ * oraz historię konwersacji i wysyła do aktywnego providera (OpenRouter lub serwer lokalny).
  */
 export async function chatWithPortfolio(
   messages: ChatMessage[],
   systemContext: string,
-  apiKey: string
+  cfg: AIConfig,
+  opts?: CallOptions
 ): Promise<string> {
-  const openRouterMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+  const chatMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
     { role: 'system', content: systemContext },
     ...messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
   ]
-  return callOpenRouterMessages(CHAT_MODEL, openRouterMessages, apiKey, 8000)
+  const text = await callChatCompletion(chatMessages, 'chat', cfg, opts ?? {})
+  return ensureDisclaimer(text, 'chat')
 }

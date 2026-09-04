@@ -260,6 +260,15 @@ function createTables(): void {
       last_full_fetch  TEXT NOT NULL,
       lookback_days    INTEGER NOT NULL DEFAULT 30
     );
+
+    CREATE TABLE IF NOT EXISTS dividend_cache (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      exchange   TEXT NOT NULL,
+      ticker     TEXT NOT NULL,
+      data_json  TEXT NOT NULL,
+      fetched_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(exchange, ticker)
+    );
   `)
 }
 
@@ -869,4 +878,39 @@ export function upsertScreenerMetadata(exchange: string, lookbackDays: number): 
       last_full_fetch = excluded.last_full_fetch,
       lookback_days = excluded.lookback_days
   `).run(exchange, lookbackDays)
+}
+
+// ─── dividend_cache (moduł Doradca) ───────────────────────────────────────────
+// Dane dywidendowe zmieniają się rzadko, a pobranie całej giełdy to ~20 spółek
+// × kilka zapytań do Yahoo. Cache z TTL 24h trzyma je między sesjami.
+
+export interface DBDividendEntry {
+  exchange: string
+  ticker: string
+  data_json: string
+  fetched_at: string
+}
+
+export function getDividendCache(exchange: string): DBDividendEntry[] {
+  return db
+    .prepare('SELECT exchange, ticker, data_json, fetched_at FROM dividend_cache WHERE exchange = ?')
+    .all(exchange) as DBDividendEntry[]
+}
+
+export function upsertDividendEntry(exchange: string, ticker: string, dataJson: string): void {
+  db.prepare(`
+    INSERT INTO dividend_cache (exchange, ticker, data_json, fetched_at)
+    VALUES (?, ?, ?, datetime('now'))
+    ON CONFLICT(exchange, ticker) DO UPDATE SET
+      data_json = excluded.data_json,
+      fetched_at = excluded.fetched_at
+  `).run(exchange, ticker, dataJson)
+}
+
+/** Najstarszy wpis w cache danej giełdy — podstawa oceny świeżości. */
+export function getDividendCacheAge(exchange: string): string | null {
+  const row = db
+    .prepare('SELECT MIN(fetched_at) as oldest FROM dividend_cache WHERE exchange = ?')
+    .get(exchange) as { oldest: string | null } | undefined
+  return row?.oldest ?? null
 }

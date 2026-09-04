@@ -9,6 +9,7 @@ import SettingsView from './components/settings/SettingsView'
 import PortfolioAnalysisView from './components/ai/PortfolioAnalysisView'
 import StocksAnalysisView from './components/ai/StocksAnalysisView'
 import ChatView from './components/ai/ChatView'
+import AdvisorView from './components/ai/AdvisorView'
 import BenchmarkView from './components/benchmark/BenchmarkView'
 import NewsView from './components/news/NewsView'
 import GlobalView from './components/global/GlobalView'
@@ -36,6 +37,7 @@ export default function App() {
             <Route path="ai/portfolio" element={<PortfolioAnalysisView />} />
             <Route path="ai/stocks" element={<StocksAnalysisView />} />
             <Route path="ai/chat" element={<ChatView />} />
+            <Route path="ai/doradca" element={<AdvisorView />} />
             <Route path="benchmark" element={<BenchmarkView />} />
             <Route path="news" element={<NewsView />} />
             <Route path="global" element={<GlobalView />} />
