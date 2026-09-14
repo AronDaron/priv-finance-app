@@ -9,7 +9,7 @@
 [![Download](https://img.shields.io/badge/Pobierz_.zip-latest-0078D4?logo=windows&logoColor=white)](https://github.com/AronDaron/priv-finance-app/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/AronDaron/priv-finance-app/total?label=pobrania&color=brightgreen)](https://github.com/AronDaron/priv-finance-app/releases)
 
-Śledź akcje, ETF-y, złoto i polskie obligacje skarbowe. Analizuj portfel z pomocą AI. Wszystko lokalnie, bez subskrypcji, bez chmury.
+Śledź akcje, ETF-y, złoto i polskie obligacje skarbowe. Analizuj portfel z pomocą AI — z chmury albo z własnego serwera. Planuj niezależność finansową. Wszystko lokalnie, bez subskrypcji.
 
 🚧 Projekt jest aktywnie rozwijany — nowe funkcje i poprawki pojawiają się regularnie.
 
@@ -125,9 +125,27 @@ Panel rankingowy spółek z największych giełd świata. Każda spółka ocenia
 
 ---
 
+### 🔥 FIRE — kalkulator niezależności finansowej
+
+Odpowiada na dwa pytania: *kiedy kapitał zacznie utrzymywać mnie sam* i *na ile lat go starczy*.
+
+- **Punkt startowy z aplikacji** — wartość portfela pobierana automatycznie, z podziałem na koszyki podatkowe (IKE / IKZE / zwykłe) i klasy aktywów (akcje, obligacje, metale, gotówka)
+- **Trzy scenariusze na jednym wykresie** — pesymistyczny / bazowy / optymistyczny plus linia potrzebnego kapitału
+- **Osobne stopy zwrotu per klasa** — akcje, obligacje i metale rosną każde po swojemu; kapitał startowy według swojej alokacji, nowe wpłaty według tego, w co je kierujesz
+- **Podatek Belki liczony realnie** — 19% od zysku na zwykłym koncie, 0% na IKE, ryczałt 10% na IKZE
+- **Faza wypłat** — do jakiego wieku starczy kapitał, gdy przestaniesz wpłacać: „na wydatki" (Twoje wydatki + inflacja) i „tylko SWR" (bezpieczna stopa wypłaty). Ostrzeżenie, gdy SWR przekracza realny zwrot
+- Widok w **dzisiejszych złotówkach** albo **nominalnie**, wpłata rosnąca z inflacją, parametry zapamiętywane
+
+---
+
 ### 🤖 Analiza AI (Map-Reduce)
 
-Aplikacja używa dwóch modeli Gemini przez OpenRouter, dobranych pod konkretne zadania:
+Analizy działają z dwóch źródeł do wyboru w Ustawieniach:
+
+- **OpenRouter** (chmura) — dwa modele Gemini dobrane pod konkretne zadania (tabela poniżej)
+- **Serwer lokalny** — własny LLM przez API zgodne z OpenAI: Unsloth Studio, Ollama, LM Studio, llama.cpp, vLLM. Zero kosztów, zero limitów, dane portfela nie opuszczają Twojej sieci. Lista modeli pobierana z serwera jednym kliknięciem; podgląd postępu generowania (tokeny/s) i przycisk Anuluj, bo raport na modelu 30B potrafi trwać kilkanaście minut
+
+Domyślne modele OpenRoutera:
 
 | Zadanie | Model | Dlaczego |
 |---|---|---|
@@ -135,12 +153,15 @@ Aplikacja używa dwóch modeli Gemini przez OpenRouter, dobranych pod konkretne 
 | Analiza całego portfela (Manager) | `google/gemini-3.1-pro-preview` | Jedno złożone zadanie wymagające głębokiego rozumowania — model Pro łączy wszystkie raporty Worker w spójną ocenę ryzyka portfela |
 | Analiza regionu globalnego | `google/gemini-3-flash-preview` | Szybka analiza na żądanie przy kliknięciu w kartę regionu |
 | Chat z portfelem | `google/gemini-3-flash-preview` | Konwersacja w czasie rzeczywistym — priorytet to czas odpowiedzi; wykrywa spółki spoza portfela z pytania (np. "Porównaj Apple do Microsoft") i automatycznie pobiera ich dane |
+| Doradca | `google/gemini-3.1-pro-preview` | Dobór spółek pod Twoje kryteria opisane własnymi słowami — patrz niżej |
 
 **Wzorzec Map-Reduce:**
 - **Etap A (Worker):** każda spółka analizowana osobno — dane fundamentalne + techniczne + kontekst makro → raport zapisywany w SQLite
 - **Etap B (Manager):** model Pro zbiera wszystkie raporty Worker i generuje całościową ocenę dywersyfikacji, ryzyka i rekomendacje zgodne ze strategią portfela (uwzględnia tagi: IKE, IKZE, Dywidendowy itp.)
 
-Do korzystania z funkcji AI wystarczy darmowe konto na [OpenRouter](https://openrouter.ai) — niektóre modele są bezpłatne w ramach darmowego okresu, wszystkie modele powinny działać lecz w wersji DEV testowane były tylko modele z serii Gemini.
+**Doradca** — opisujesz własnymi słowami, czego szukasz (*„2500 zł w stabilną spółkę dywidendową, która się rozwija"*), wybierasz giełdę, a model dostaje komplet realnych danych o spółkach (wycena, wzrost, marże, zadłużenie, historia dywidend z 10 lat, konsensus analityków) i dobiera kandydatów z uzasadnieniem liczbowym. Przy podanej kwocie liczy ile akcji kupisz, koszt i roczną dywidendę. Wewnętrzny scoring nie trafia do promptu — model dostaje fakty, nie oceny. Nota prawna dopisywana w kodzie, niezależnie od modelu.
+
+Do korzystania z OpenRoutera wystarczy darmowe konto na [OpenRouter](https://openrouter.ai) — niektóre modele są bezpłatne w ramach darmowego okresu, wszystkie modele powinny działać lecz w wersji DEV testowane były tylko modele z serii Gemini.
 
 ---
 
@@ -148,6 +169,7 @@ Do korzystania z funkcji AI wystarczy darmowe konto na [OpenRouter](https://open
 - **Zero kosztów utrzymania** — wszystkie dane rynkowe z `yahoo-finance2` (darmowe, bez rejestracji, bez limitu)
 - **W 100% lokalny** — dane przechowywane wyłącznie w SQLite na Twoim dysku; brak chmury, brak konta, brak telemetrii
 - **Klucz API tylko lokalnie** — klucz OpenRouter nigdy nie opuszcza Twojego komputera
+- **AI bez chmury** — z lokalnym serwerem LLM dane portfela nie wychodzą poza Twoją sieć domową
 
 ---
 
@@ -162,7 +184,7 @@ Do korzystania z funkcji AI wystarczy darmowe konto na [OpenRouter](https://open
 | Baza danych | [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) | Lokalny SQLite, synchroniczny dostęp |
 | Dane rynkowe | [yahoo-finance2](https://github.com/gadicc/node-yahoo-finance2) | Kursy, OHLC, fundamenty, dywidendy |
 | Wskaźniki | [technicalindicators](https://github.com/anandanand84/technicalindicators) | RSI, MACD, SMA — lokalnie |
-| AI | [OpenRouter API](https://openrouter.ai/) | Gemini Flash (Worker/Chat/Regiony) + Gemini Pro (Manager portfela) |
+| AI | [OpenRouter API](https://openrouter.ai/) lub lokalny LLM | Gemini Flash/Pro w chmurze, albo dowolny serwer zgodny z OpenAI (Ollama, LM Studio, Unsloth Studio…) przez SSE |
 | Build | electron-vite + electron-builder | Cross-compile do `.exe` z Linuxa |
 
 ---
@@ -236,6 +258,8 @@ Klucz API konfiguruje się bezpośrednio w aplikacji:
 
 > Klucz API jest przechowywany wyłącznie lokalnie w bazie SQLite na Twoim komputerze. Nigdy nie jest wysyłany nigdzie poza oficjalne API OpenRouter.
 
+**Serwer lokalny zamiast OpenRoutera:** w **Ustawieniach → Silnik AI** przełącz na „Serwer lokalny", wpisz adres (np. `http://192.168.1.1:11434/v1`), opcjonalnie klucz, i kliknij **Odśwież listę modeli**. Limit bezczynności liczy przerwę bez tokenów, nie czas całego żądania — model może pracować godzinę, byle strumień płynął. Limity tokenów są wyższe niż dla OpenRoutera, bo modele rozumujące zużywają część budżetu na myślenie.
+
 ---
 
 ## 🏗️ Architektura
@@ -248,7 +272,9 @@ electron/
     index.ts        ← Główny proces: okno, baza danych, fetch danych
     database.ts     ← Operacje SQLite (better-sqlite3)
     finance.ts      ← Integracja yahoo-finance2
-    ai.ts           ← Logika Map-Reduce, wywołania OpenRouter
+    ai.ts           ← Logika Map-Reduce, prompty Worker/Manager/Chat
+    aiProvider.ts   ← Warstwa transportowa LLM: OpenRouter (blocking) | serwer lokalny (SSE)
+    stockAdvisor.ts ← Doradca: budowa promptu z realnych danych spółek
     bonds.ts        ← Wycena obligacji (3 modele), fetch NBP/CPI/obligacjeskarbowe.pl
   preload/
     index.ts        ← Most IPC — contextBridge.exposeInMainWorld
@@ -257,6 +283,7 @@ src/                ← Renderer: aplikacja React (sandbox, brak Node.js)
   components/       ← Wszystkie widoki UI
   lib/
     api.ts          ← Warstwa abstrakcji: electronAPI lub localStorage
+    fireMath.ts     ← Kalkulator FIRE: czysta matematyka, bez zależności
     types.ts        ← Wspólne typy TypeScript
 ```
 
