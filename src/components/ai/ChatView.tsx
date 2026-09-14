@@ -3,6 +3,7 @@ import { MarkdownRenderer } from './MarkdownRenderer'
 import { chatPortfolio, type ChatMessage } from '../../lib/api'
 import { useAIRun } from '../../lib/useAIRun'
 import AIProgressIndicator from './AIProgressIndicator'
+import AIEngineBadge from './AIEngineBadge'
 
 const GREETING = 'Witaj! Mam wgląd w Twój portfel, historię transakcji, aktualne dane rynkowe i wyniki makroekonomiczne. O co chcesz zapytać?'
 
@@ -73,7 +74,7 @@ export default function ChatView() {
             </div>
             <div>
               <h2 className="text-white font-semibold text-sm">AI Agent</h2>
-              <p className="text-gray-500 text-xs">Konwersacyjny asystent portfela • pełny kontekst danych</p>
+              <div className="mt-0.5"><AIEngineBadge role="chat" /></div>
             </div>
           </div>
           {!isEmpty && (

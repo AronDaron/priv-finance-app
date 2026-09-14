@@ -680,7 +680,7 @@ export async function analyzeStock(ticker: string, requestId?: string): Promise<
 
 export async function analyzePortfolio(requestId?: string): Promise<AIReport> {
   if (isElectron()) return window.electronAPI!.ai.analyzePortfolio(requestId)
-  const [allAssets, cash, reports] = await Promise.all([getAssets(), getCashAccounts(), getReports()])
+  const [allAssets, cash] = await Promise.all([getAssets(), getCashAccounts()])
   const assets = allAssets.filter(a => a.asset_type !== 'bond')
   const bondAssets = allAssets.filter(a => a.asset_type === 'bond')
   const result = await devApiPost<{ report_text: string; model: string }>(
@@ -688,8 +688,6 @@ export async function analyzePortfolio(requestId?: string): Promise<AIReport> {
       assets: JSON.stringify(assets),
       bondAssets: JSON.stringify(bondAssets),
       cashAccounts: JSON.stringify(cash),
-      // Gotowe raporty Worker — bez nich dev regenerowałby wszystkie od zera
-      reports: JSON.stringify(reports),
       aiSettings: await getAISettingsPayload(),
     }
   )

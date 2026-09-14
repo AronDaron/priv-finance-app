@@ -1,6 +1,7 @@
 import type { AIReport, AIProgress } from '../../lib/types'
 import { MarkdownRenderer } from './MarkdownRenderer'
 import AIProgressIndicator from './AIProgressIndicator'
+import { ReportModelNote } from './AIEngineBadge'
 
 interface Props {
   ticker: string
@@ -76,6 +77,7 @@ export default function StockAnalysisCard({
             <span>{report.model}</span>
             <span>·</span>
             <span>{new Date(report.created_at).toLocaleString('pl-PL', { dateStyle: 'short', timeStyle: 'short' })}</span>
+            <ReportModelNote reportModel={report.model} role="worker" />
           </div>
           <div className="border-t border-gray-700 pt-3">
             <MarkdownRenderer content={report.report_text} />

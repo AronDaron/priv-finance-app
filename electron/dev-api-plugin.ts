@@ -17,10 +17,9 @@ function getDevCpiData() {
   return { annual: _annualCpi, monthly: _monthlyCpi }
 }
 
-// Cache profili dywidendowych dla dev mode — odpowiednik tabeli dividend_cache
-// w Electronie. Żyje tyle, co proces Vite.
+// Awaryjny bufor profili spółek dla dev mode — odpowiednik tabeli dividend_cache
+// w Electronie. Dane pobierane są zawsze na żywo; bufor służy tylko gdy Yahoo nie odpowie.
 const _dividendCache: Record<string, { profiles: unknown[]; fetchedAt: string }> = {}
-const DIVIDEND_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 
 /**
  * Konfiguracja AI dla trybu dev. Nie ma tu SQLite, więc frontend przesyła surowe
@@ -196,22 +195,10 @@ export function financeDevApiPlugin(): Plugin {
             }
             case '/ai/analyze-portfolio': {
               const body = await readBody(req)
-              const { assets: assetsJson, bondAssets: bondAssetsJson, cashAccounts: cashJson, reports: existingReportsJson } = body
+              const { assets: assetsJson, bondAssets: bondAssetsJson, cashAccounts: cashJson } = body
               if (!assetsJson) { res.statusCode = 400; res.end(JSON.stringify({ error: 'Brak assets' })); return }
               const aiCfg = await cfgFromBody(body)
               const ai = await import('./main/ai')
-              // Gotowe raporty Worker z localStorage — bez tego dev regenerowałby wszystko
-              // od zera przy każdej analizie, co przy modelu lokalnym trwa godzinami.
-              const existingReports: Array<{ ticker: string; report_text: string; created_at: string }> =
-                JSON.parse(existingReportsJson ?? '[]')
-              const latestReportByTicker = new Map<string, { text: string; createdAt: string }>()
-              for (const r of existingReports) {
-                if (r.ticker === '__PORTFOLIO__') continue
-                const prev = latestReportByTicker.get(r.ticker)
-                if (!prev || r.created_at > prev.createdAt) {
-                  latestReportByTicker.set(r.ticker, { text: r.report_text, createdAt: r.created_at })
-                }
-              }
               const assetsList: Array<{ ticker: string; name: string; quantity: number; purchase_price: number; currency: string; gold_grams?: number | null }> =
                 JSON.parse(assetsJson)
               const bondAssetsList: Array<{ id: number; ticker: string; name: string; quantity: number; bond_type?: string | null }> =
@@ -233,14 +220,14 @@ export function financeDevApiPlugin(): Plugin {
 
               const enrichedAssets = await Promise.all(assetsList.map(async (assetFromList) => {
                 const t = assetFromList.ticker
-                const cached = latestReportByTicker.get(t)
                 const [fundamentals, history, quote] = await Promise.all([
                   finance.fetchFundamentals(t),
                   finance.fetchHistory(t, '1y'),
                   finance.fetchQuote(t),
                 ])
                 const technicals = finance.calculateTechnicals(history)
-                const workerReport = cached?.text ?? await ai.analyzeStock({
+                // Raport generowany OD NOWA — analiza portfela ma odzwierciedlać stan bieżący
+                const workerReport = await ai.analyzeStock({
                   ticker: t, cfg: aiCfg, name: quote.name,
                   currentPrice: quote.price, currency: quote.currency,
                   fundamentals, technicals,
@@ -294,23 +281,15 @@ export function financeDevApiPlugin(): Plugin {
             }
             case '/advisor/candidates': {
               const body = await readBody(req)
-              const { exchange, forceRefresh } = body
+              const { exchange } = body
               if (!exchange) { res.statusCode = 400; res.end(JSON.stringify({ error: 'Brak exchange' })); return }
               const { EXCHANGE_CONFIG, withConcurrencyLimit } = await import('./main/stockScreener')
               const { advisorTickers } = await import('./main/stockAdvisor')
               const exCfg = EXCHANGE_CONFIG[exchange]
               if (!exCfg) { res.statusCode = 400; res.end(JSON.stringify({ error: `Nieznana giełda: ${exchange}` })); return }
 
-              const cached = _dividendCache[exchange]
-              const fresh = cached && (Date.now() - new Date(cached.fetchedAt).getTime()) < DIVIDEND_CACHE_TTL_MS
-              if (fresh && String(forceRefresh) !== 'true') {
-                data = {
-                  exchange, exchangeLabel: exCfg.label,
-                  profiles: cached.profiles, lastFetchedAt: cached.fetchedAt, error: null,
-                }
-                break
-              }
-
+              // Zawsze na żywo — rekomendacja ma dotyczyć stanu bieżącego.
+              // _dividendCache służy tylko jako awaryjny fallback, gdy Yahoo nie odpowie.
               const tasks = advisorTickers(exCfg.tickers, exchange).map(t => () => finance.fetchStockProfile(t, exchange))
               const settled = await withConcurrencyLimit(tasks, 5)
               const profiles = settled

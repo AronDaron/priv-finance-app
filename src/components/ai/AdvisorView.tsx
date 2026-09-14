@@ -7,11 +7,12 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import type { StockProfile, AIReport, AdvisorFilters, ActiveAIConfig } from '../../lib/types'
-import { fetchAdvisorCandidates, analyzeAdvisor, getAssets, getActiveAIConfig } from '../../lib/api'
+import type { StockProfile, AIReport, AdvisorFilters } from '../../lib/types'
+import { fetchAdvisorCandidates, analyzeAdvisor, getAssets } from '../../lib/api'
 import { MarkdownRenderer } from './MarkdownRenderer'
 import { useAIRun } from '../../lib/useAIRun'
 import AIProgressIndicator from './AIProgressIndicator'
+import AIEngineBadge from './AIEngineBadge'
 
 const EXCHANGES = [
   { key: 'WSE', label: 'GPW' },
@@ -49,14 +50,12 @@ export default function AdvisorView() {
   const [report, setReport] = useState<AIReport | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [portfolioTickers, setPortfolioTickers] = useState<Set<string>>(new Set())
-  const [aiConfig, setAiConfig] = useState<ActiveAIConfig | null>(null)
   const [dividendOnly, setDividendOnly] = useState(false)
   const [showData, setShowData] = useState(false)
 
   const { running: analyzing, progress, elapsedMs, run, cancel } = useAIRun()
 
   useEffect(() => {
-    getActiveAIConfig().then(setAiConfig).catch(() => setAiConfig(null))
     getAssets()
       .then(a => setPortfolioTickers(new Set(a.map(x => x.ticker.toUpperCase()))))
       .catch(() => { /* portfel opcjonalny */ })
@@ -128,9 +127,8 @@ export default function AdvisorView() {
         <h1 className="text-white text-xl font-bold">Doradca</h1>
         <p className="text-gray-500 text-xs mt-0.5">
           Opisz, czego szukasz — AI przeanalizuje spółki na podstawie realnych danych z Yahoo Finance
-          {aiConfig && ` · model: ${aiConfig.models.advisor || '—'}`}
-          {aiConfig?.provider === 'local' && ' (serwer lokalny)'}
         </p>
+        <div className="mt-1.5"><AIEngineBadge role="advisor" /></div>
       </div>
 
       {/* Zapytanie */}

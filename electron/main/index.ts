@@ -929,31 +929,35 @@ function registerIpcHandlers(): void {
     const { opts, controller, release } = makeCallOptions(event, requestId, 'manager', () => stageLabel)
 
     try {
+    // Raporty spółek są generowane OD NOWA przy każdej analizie portfela — analiza ma
+    // odzwierciedlać stan bieżący, a nie raporty sprzed tygodnia (potencjalnie z innego modelu).
     for (const [idx, asset] of assets.entries()) {
       if (controller.signal.aborted) throw new Error('Anulowano.')
-      let report = getLatestReportByTicker(asset.ticker)
-      if (!report) {
-        stageLabel = `Analiza spółki ${idx + 1}/${assets.length} — ${asset.ticker}`
-        const [fundamentals, history, quote] = await Promise.all([
-          fetchFundamentals(asset.ticker),
-          fetchHistory(asset.ticker, '1y'),
-          fetchQuote(asset.ticker),
-        ])
-        const technicals = calculateTechnicals(history)
-        const reportText = await analyzeStock({
-          ticker: asset.ticker,
-          cfg,
-          opts,
-          name: quote.name,
-          currentPrice: quote.price,
-          currency: quote.currency,
-          fundamentals,
-          technicals,
-          gold_grams: asset.gold_grams ?? null,
-        })
-        report = addReport({ ticker: asset.ticker, model: cfg.models.worker, report_text: reportText })
-      }
-      const quote = await fetchQuote(asset.ticker)
+      stageLabel = `Analiza spółki ${idx + 1}/${assets.length} — ${asset.ticker}`
+      const [fundamentals, history, quote, marketData] = await Promise.all([
+        fetchFundamentals(asset.ticker),
+        fetchHistory(asset.ticker, '1y'),
+        fetchQuote(asset.ticker),
+        fetchGlobalMarketData().catch(() => null),
+      ])
+      const technicals = calculateTechnicals(history)
+      const assetRegime = marketData ? detectMarketRegime(marketData) : null
+      const newsItems = searchNews(asset.ticker, 8)
+      const reportText = await analyzeStock({
+        ticker: asset.ticker,
+        cfg,
+        opts,
+        name: quote.name,
+        currentPrice: quote.price,
+        currency: quote.currency,
+        fundamentals,
+        technicals,
+        gold_grams: asset.gold_grams ?? null,
+        marketContext: marketData && assetRegime ? buildMacroContext(marketData, assetRegime) : null,
+        newsHeadlines: newsItems.map(n => `[${n.pub_date?.slice(0, 10) ?? '?'}] ${n.source ?? ''}: ${n.title}`),
+      })
+      const report = addReport({ ticker: asset.ticker, model: cfg.models.worker, report_text: reportText })
+      // Cena pobrana już wyżej razem z fundamentami — bez ponownego zapytania do Yahoo.
       // Dla metali fizycznych: spot USD/oz → cena USD/monetę → PLN/monetę
       const ozPerCoin = asset.gold_grams ? gramsToTroyOz(asset.gold_grams) : null
       const currentPriceUSD = ozPerCoin ? quote.price * ozPerCoin : quote.price
@@ -1097,7 +1101,6 @@ function registerIpcHandlers(): void {
   // Osobna ścieżka danych od Scoringu: model dostaje realne wypłaty dywidend,
   // a nie nasz wewnętrzny scoring.
 
-  const DIVIDEND_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 
   ipcMain.handle('advisor:fetchCandidates', async (_event, { exchange, forceRefresh = false }: {
     exchange: string
@@ -1109,21 +1112,9 @@ function registerIpcHandlers(): void {
     }
 
     const oldest = getDividendCacheAge(exchange)
-    const cacheStale = !oldest || (Date.now() - new Date(oldest + 'Z').getTime()) > DIVIDEND_CACHE_TTL_MS
 
-    if (!forceRefresh && !cacheStale) {
-      const cached = getDividendCache(exchange)
-      if (cached.length > 0) {
-        return {
-          exchange,
-          exchangeLabel: cfgExchange.label,
-          profiles: cached.map(r => JSON.parse(r.data_json) as StockProfile),
-          lastFetchedAt: oldest,
-          error: null,
-        }
-      }
-    }
-
+    // Dane pobierane są ZAWSZE na żywo — rekomendacja ma dotyczyć stanu bieżącego.
+    // Zapis w dividend_cache służy wyłącznie jako awaryjny fallback, gdy Yahoo nie odpowie.
     try {
       const tickers = advisorTickers(cfgExchange.tickers, exchange)
       const tasks = tickers.map(t => () => fetchStockProfile(t, exchange))

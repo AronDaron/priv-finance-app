@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import type { PortfolioAsset, AIReport, SearchResult, ActiveAIConfig } from '../../lib/types'
-import { getAssets, getReports, analyzeStock, searchTickers, getActiveAIConfig } from '../../lib/api'
+import type { PortfolioAsset, AIReport, SearchResult } from '../../lib/types'
+import { getAssets, getReports, analyzeStock, searchTickers } from '../../lib/api'
 import StockAnalysisCard from './StockAnalysisCard'
 import { useAIRun } from '../../lib/useAIRun'
+import AIEngineBadge from './AIEngineBadge'
 
 type Mode = 'portfolio' | 'search'
 
@@ -14,7 +15,6 @@ export default function StocksAnalysisView() {
   const [selected, setSelected] = useState<{ ticker: string; name: string } | null>(null)
   const [analyzing, setAnalyzing] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [aiConfig, setAiConfig] = useState<ActiveAIConfig | null>(null)
   const { progress, elapsedMs, run, cancel } = useAIRun()
 
   // Wyszukiwarka
@@ -24,7 +24,6 @@ export default function StocksAnalysisView() {
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    getActiveAIConfig().then(setAiConfig).catch(() => setAiConfig(null))
     getAssets().then(setAssets)
     getReports().then(reports => {
       const byTicker: Record<string, AIReport> = {}
@@ -86,10 +85,7 @@ export default function StocksAnalysisView() {
       {/* Nagłówek */}
       <div>
         <h1 className="text-white text-xl font-bold">Analiza Spółek</h1>
-        <p className="text-gray-500 text-xs mt-0.5">
-          Model: {aiConfig?.models.worker || '—'}
-          {aiConfig?.provider === 'local' && ' (serwer lokalny)'}
-        </p>
+        <div className="mt-1"><AIEngineBadge role="worker" /></div>
       </div>
 
       {/* Błąd */}

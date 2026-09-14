@@ -1,15 +1,15 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import type { PortfolioAsset, AIReport } from '../../lib/types'
-import { getAssets, getReports, getLatestReportByTicker, getAllSettings, analyzePortfolio } from '../../lib/api'
+import { getAssets, getReports, getAllSettings, analyzePortfolio } from '../../lib/api'
 import { MarkdownRenderer } from './MarkdownRenderer'
 import { useAIRun } from '../../lib/useAIRun'
 import AIProgressIndicator from './AIProgressIndicator'
+import AIEngineBadge, { ReportModelNote } from './AIEngineBadge'
 
 export default function PortfolioAnalysisView() {
   const [assets, setAssets] = useState<PortfolioAsset[]>([])
   const [portfolioReport, setPortfolioReport] = useState<AIReport | null>(null)
-  const [analyzedCount, setAnalyzedCount] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [configWarning, setConfigWarning] = useState<string | null>(null)
   const { running: isAnalyzing, progress, elapsedMs, run, cancel } = useAIRun()
@@ -26,16 +26,8 @@ export default function PortfolioAnalysisView() {
       }
     })
 
-    getAssets().then(async (all) => {
-      const nonBondAssets = all.filter(a => a.asset_type !== 'bond')
-      setAssets(nonBondAssets)
-
-      // Policz ile spółek ma raport (obligacje nie mają raportów Worker AI)
-      const counts = await Promise.all(
-        nonBondAssets.map(a => getLatestReportByTicker(a.ticker).then(r => (r ? 1 : 0) as number))
-      )
-      setAnalyzedCount(counts.reduce((s, v) => s + v, 0))
-    })
+    // Obligacje nie są analizowane przez Worker AI — mają wycenę deterministyczną
+    getAssets().then(all => setAssets(all.filter(a => a.asset_type !== 'bond')))
 
     getReports().then(reports => {
       const byTicker: Record<string, AIReport> = {}
@@ -59,7 +51,6 @@ export default function PortfolioAnalysisView() {
   }
 
   const totalCount = assets.length
-  const missingCount = totalCount - analyzedCount
 
   return (
     <div className="p-6 space-y-5">
@@ -67,6 +58,7 @@ export default function PortfolioAnalysisView() {
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-white text-xl font-bold">Analiza Portfela</h1>
+          <div className="mt-1"><AIEngineBadge role="manager" /></div>
         </div>
         <button
           onClick={handleAnalyze}
@@ -96,39 +88,18 @@ export default function PortfolioAnalysisView() {
         </button>
       </div>
 
-      {/* Licznik X/Y */}
+      {/* Zakres analizy — raporty spółek powstają od nowa przy każdym uruchomieniu */}
       {totalCount > 0 && (
-        <div className={`rounded-lg p-4 flex items-center justify-between gap-4 ${
-          missingCount > 0
-            ? 'bg-yellow-900/30 border border-yellow-600/50'
-            : 'bg-emerald-900/20 border border-emerald-700/40'
-        }`}>
-          <div className="flex items-center gap-3">
-            {missingCount > 0 ? (
-              <svg className="w-5 h-5 text-yellow-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-            ) : (
-              <svg className="w-5 h-5 text-finance-green flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-            )}
-            <span className={`text-sm ${missingCount > 0 ? 'text-yellow-300' : 'text-emerald-300'}`}>
-              Analiza bazuje na raportach{' '}
-              <span className="font-bold">{analyzedCount}/{totalCount}</span>{' '}
-              spółek z portfela.
-              {missingCount > 0 && ` Brakuje ${missingCount} ${missingCount === 1 ? 'raportu' : 'raportów'}.`}
-            </span>
-          </div>
-          {missingCount > 0 && (
-            <Link
-              to="/ai/stocks"
-              className="flex-shrink-0 text-sm text-yellow-300 underline hover:text-yellow-100 whitespace-nowrap"
-            >
-              Przejdź do Spółek →
-            </Link>
-          )}
+        <div className="rounded-lg p-4 flex items-center gap-3 bg-indigo-900/20 border border-indigo-700/40">
+          <svg className="w-5 h-5 text-indigo-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+          <span className="text-sm text-indigo-200">
+            Analiza obejmie <span className="font-bold">{totalCount}</span>{' '}
+            {totalCount === 1 ? 'spółkę' : totalCount < 5 ? 'spółki' : 'spółek'} z portfela.
+            Raport każdej z nich powstaje <span className="font-bold">od nowa</span> na aktualnych danych,
+            więc przy modelu lokalnym potrwa to dłużej — postęp widać niżej i można przerwać.
+          </span>
         </div>
       )}
 
@@ -169,6 +140,7 @@ export default function PortfolioAnalysisView() {
               <span>{portfolioReport.model}</span>
               <span>·</span>
               <span>{new Date(portfolioReport.created_at).toLocaleString('pl-PL', { dateStyle: 'short', timeStyle: 'short' })}</span>
+              <ReportModelNote reportModel={portfolioReport.model} role="manager" />
             </div>
           )}
           {isAnalyzing ? (
