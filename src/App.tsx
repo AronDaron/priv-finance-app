@@ -16,6 +16,7 @@ import GlobalView from './components/global/GlobalView'
 import TransactionsView from './components/transactions/TransactionsView'
 import SearchView from './components/search/SearchView'
 import ScoringView from './components/scoring/ScoringView'
+import FireView from './components/fire/FireView'
 import { PortfolioProvider } from './contexts/PortfolioContext'
 
 export default function App() {
@@ -42,6 +43,7 @@ export default function App() {
             <Route path="news" element={<NewsView />} />
             <Route path="global" element={<GlobalView />} />
             <Route path="scoring" element={<ScoringView />} />
+            <Route path="fire" element={<FireView />} />
             <Route path="transactions" element={<TransactionsView />} />
           </Route>
         </Routes>
