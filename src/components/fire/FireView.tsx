@@ -505,6 +505,15 @@ export default function FireView() {
                 {' / '}<span style={{ color: '#6366f1' }}>{(weighted.optimistic.legacy * 100).toFixed(1)}%</span></>
               )}
             </div>
+            <Field label="Bezpieczna stopa wypłaty (SWR)" value={params.swrPct} onChange={v => update({ swrPct: v })} suffix="%" min={1} max={10} step={0.25}
+              hint={'4% = klasyczna „reguła 25×” — kapitał 25 razy większy od rocznych wydatków'} />
+            {params.swrPct > realReturnBasePct && (
+              <div className="bg-red-900/20 border border-red-700/40 rounded-lg p-2.5 text-[11px] text-red-300">
+                SWR {params.swrPct}% jest wyższe niż realny zwrot bazowy ({realReturnBasePct.toFixed(1)}% po inflacji) —
+                wypłacasz więcej, niż kapitał zarabia. „Osiągnięte FIRE" będzie pozorne: kapitał się wyczerpie.
+                Sprawdź „starczy do wieku" na kartach scenariuszy.
+              </div>
+            )}
           </div>
 
           <div className="border-t border-gray-700/50 pt-4 space-y-3">
@@ -573,7 +582,10 @@ export default function FireView() {
               <div>
                 <div className="text-[11px] text-gray-500 uppercase tracking-wider">Wypłata netto / mies.</div>
                 <div className="text-lg font-bold text-finance-green">{pln(withdrawalShown)}</div>
-                <div className="text-[11px] text-gray-600">po podatku {(fb.effectiveTaxRate * 100).toFixed(1)}%, przy SWR {params.swrPct}%</div>
+                <div className="text-[11px] text-gray-600">
+                  przy SWR {params.swrPct}%, po podatku {(fb.effectiveTaxRate * 100).toFixed(1)}% wypłaty
+                  <span className="block text-gray-700">Belka to 19% od zysku, nie od całej wypłaty — reszta wypłaty to zwrot Twoich wpłat, bez podatku</span>
+                </div>
               </div>
               <div>
                 <div className="text-[11px] text-gray-500 uppercase tracking-wider">Wydatki / mies.</div>
