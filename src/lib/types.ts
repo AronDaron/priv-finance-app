@@ -509,6 +509,21 @@ export interface RemoteModel {
   quant: string | null       // np. 'Q4_K_M'
   loaded: boolean            // niezaładowany = długie pierwsze zapytanie
   task: string | null        // modele 'text-to-image' są odfiltrowane
+  contextLength: number | null        // okno kontekstu (OpenRouter zawsze, lokalne zwykle null)
+  promptPricePerM: number | null      // USD za 1 mln tokenów wejścia — tylko OpenRouter
+  completionPricePerM: number | null  // USD za 1 mln tokenów wyjścia — tylko OpenRouter
+  free: boolean
+}
+
+export const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1'
+
+/** Domyślne modele OpenRoutera — używane, gdy użytkownik nic nie wybrał. Lustro electron/main/aiProvider.ts. */
+export const DEFAULT_OPENROUTER_MODELS: Record<AIRole, string> = {
+  worker:  'google/gemini-3-flash-preview',
+  manager: 'google/gemini-3.1-pro-preview',
+  world:   'google/gemini-3-flash-preview',
+  chat:    'google/gemini-3-flash-preview',
+  advisor: 'google/gemini-3.1-pro-preview',
 }
 
 export interface RemoteModelsResult {
@@ -540,6 +555,8 @@ export interface ActiveAIConfig {
 export const AI_SETTING_KEYS = [
   'ai_provider',
   'openrouter_api_key',
+  'openrouter_model',
+  'openrouter_model_manager',
   'local_ai_url',
   'local_ai_key',
   'local_ai_model',

@@ -65,6 +65,12 @@ export interface RemoteModel {
   quant: string | null
   loaded: boolean
   task: string | null
+  /** Okno kontekstu w tokenach (OpenRouter podaje zawsze, serwery lokalne zwykle nie) */
+  contextLength: number | null
+  /** Cena USD za 1 mln tokenów wejścia / wyjścia — tylko OpenRouter */
+  promptPricePerM: number | null
+  completionPricePerM: number | null
+  free: boolean
 }
 
 export interface ChatRole {
@@ -91,11 +97,17 @@ export function buildAIConfig(settings: Record<string, string>): AIConfig {
   const provider: AIProvider = settings.ai_provider === 'local' ? 'local' : 'openrouter'
 
   if (provider === 'openrouter') {
+    // Puste pola = dotychczasowe domyślne modele. Gdy użytkownik wybrał model główny, a nie wybrał
+    // modelu do portfela, portfel/Doradca idą na model główny („— ten sam co wyżej —", jak w lokalnym).
+    const orModel = (settings.openrouter_model ?? '').trim()
+    const orManager = (settings.openrouter_model_manager ?? '').trim()
+    const main = orModel || DEFAULT_OPENROUTER_MODELS.worker
+    const manager = orManager || (orModel ? orModel : DEFAULT_OPENROUTER_MODELS.manager)
     return {
       provider,
       baseUrl: OPENROUTER_BASE_URL,
       apiKey: settings.openrouter_api_key ?? '',
-      models: { ...DEFAULT_OPENROUTER_MODELS },
+      models: { worker: main, manager, world: main, chat: main, advisor: manager },
       maxTokens: { ...DEFAULT_OPENROUTER_MAX_TOKENS },
       idleTimeoutMs: DEFAULT_IDLE_TIMEOUT_MS,
       hardTimeoutMs: HARD_TIMEOUT_MS,
@@ -177,7 +189,7 @@ export async function listRemoteModels(
   apiKey: string
 ): Promise<{ ok: boolean; models: RemoteModel[]; error?: string }> {
   const url = normalizeBaseUrl(baseUrl)
-  if (!url) return { ok: false, models: [], error: 'Podaj adres serwera lokalnego.' }
+  if (!url) return { ok: false, models: [], error: 'Podaj adres serwera.' }
 
   try {
     const headers: Record<string, string> = { 'Accept': 'application/json' }
@@ -193,23 +205,44 @@ export async function listRemoteModels(
     }
 
     if (res.status === 401 || res.status === 403) {
-      return { ok: false, models: [], error: 'Nieprawidłowy klucz API serwera lokalnego.' }
+      return { ok: false, models: [], error: 'Nieprawidłowy klucz API.' }
     }
     if (!res.ok) {
       return { ok: false, models: [], error: 'Serwer odpowiedział błędem ' + res.status + ' ' + res.statusText }
     }
 
     const data = await res.json() as { data?: Array<Record<string, unknown>> }
+    const perM = (v: unknown): number | null => {
+      const n = typeof v === 'string' || typeof v === 'number' ? Number(v) : NaN
+      return Number.isFinite(n) ? n * 1_000_000 : null
+    }
     const models: RemoteModel[] = (data.data ?? [])
       .filter(m => typeof m.id === 'string')
-      .map(m => ({
-        id: m.id as string,
-        displayName: (m.display_name as string) ?? (m.id as string),
-        // Kwantyzacja jest tylko informacją dla użytkownika — nie wchodzi do nazwy modelu
-        quant: (m.quant as string) ?? null,
-        loaded: m.loaded === true,
-        task: (m.task as string) ?? null,
-      }))
+      // OpenRouter: warianty „:batch" to asynchroniczne API wsadowe — nie działają w /chat/completions
+      .filter(m => !(m.id as string).endsWith(':batch'))
+      // OpenRouter: modele, które nie generują tekstu (tylko obraz/audio), odpadają
+      .filter(m => {
+        const out = (m.architecture as { output_modalities?: unknown } | undefined)?.output_modalities
+        return !Array.isArray(out) || out.includes('text')
+      })
+      .map(m => {
+        const pricing = m.pricing as { prompt?: unknown; completion?: unknown } | undefined
+        const promptPricePerM = perM(pricing?.prompt)
+        const completionPricePerM = perM(pricing?.completion)
+        return {
+          id: m.id as string,
+          // OpenRouter ma `name` („Google: Gemini 3.1 Pro"), Unsloth `display_name`
+          displayName: (m.name as string) ?? (m.display_name as string) ?? (m.id as string),
+          // Kwantyzacja jest tylko informacją dla użytkownika — nie wchodzi do nazwy modelu
+          quant: (m.quant as string) ?? null,
+          loaded: m.loaded === true,
+          task: (m.task as string) ?? null,
+          contextLength: typeof m.context_length === 'number' ? m.context_length : null,
+          promptPricePerM,
+          completionPricePerM,
+          free: (m.id as string).endsWith(':free') || (promptPricePerM === 0 && completionPricePerM === 0),
+        }
+      })
       // Modele generujące obrazy (np. Z-Image) nie nadają się do analizy finansowej
       .filter(m => m.task !== 'text-to-image' && m.task !== 'text-to-video')
       // Załadowane na górę — wybór niezaładowanego oznacza długie pierwsze zapytanie

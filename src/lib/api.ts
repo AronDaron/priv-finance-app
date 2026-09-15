@@ -40,7 +40,7 @@ import type {
   AdvisorCandidatesResult,
   AdvisorFilters,
 } from './types'
-import { FX_TICKERS, AI_SETTING_KEYS } from './types'
+import { FX_TICKERS, AI_SETTING_KEYS, DEFAULT_OPENROUTER_MODELS, OPENROUTER_BASE_URL } from './types'
 
 export type { ChatMessage }
 
@@ -636,16 +636,14 @@ export async function getActiveAIConfig(): Promise<ActiveAIConfig | null> {
   const provider = all.ai_provider === 'local' ? 'local' : 'openrouter'
   const localModel = all.local_ai_model ?? ''
   const managerModel = all.local_ai_model_manager || localModel
+  // Ta sama logika co buildAIConfig() w aiProvider.ts: puste = domyślne, model portfela = główny gdy nie wybrano
+  const orModel = (all.openrouter_model ?? '').trim()
+  const orMain = orModel || DEFAULT_OPENROUTER_MODELS.worker
+  const orManager = (all.openrouter_model_manager ?? '').trim() || (orModel ? orModel : DEFAULT_OPENROUTER_MODELS.manager)
   const models = provider === 'local'
     ? { worker: localModel, manager: managerModel, world: localModel, chat: localModel, advisor: managerModel }
-    : {
-        worker: 'google/gemini-3-flash-preview',
-        manager: 'google/gemini-3.1-pro-preview',
-        world: 'google/gemini-3-flash-preview',
-        chat: 'google/gemini-3-flash-preview',
-        advisor: 'google/gemini-3.1-pro-preview',
-      }
-  return { provider, models, baseUrl: provider === 'local' ? (all.local_ai_url ?? '') : 'https://openrouter.ai/api/v1' }
+    : { worker: orMain, manager: orManager, world: orMain, chat: orMain, advisor: orManager }
+  return { provider, models, baseUrl: provider === 'local' ? (all.local_ai_url ?? '') : OPENROUTER_BASE_URL }
 }
 
 export async function cancelAIRequest(requestId: string): Promise<void> {

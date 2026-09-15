@@ -142,10 +142,10 @@ Odpowiada na dwa pytania: *kiedy kapitał zacznie utrzymywać mnie sam* i *na il
 
 Analizy działają z dwóch źródeł do wyboru w Ustawieniach:
 
-- **OpenRouter** (chmura) — dwa modele Gemini dobrane pod konkretne zadania (tabela poniżej)
+- **OpenRouter** (chmura) — dowolny model z listy OpenRoutera pobieranej na żywo w Ustawieniach (wyszukiwarka, filtr darmowych, okno kontekstu i cena za 1 mln tokenów). Dwa pola: model główny i opcjonalny mocniejszy do analizy portfela i Doradcy. Bez wyboru działają domyślne modele Gemini (tabela poniżej)
 - **Serwer lokalny** — własny LLM przez API zgodne z OpenAI: Unsloth Studio, Ollama, LM Studio, llama.cpp, vLLM. Zero kosztów, zero limitów, dane portfela nie opuszczają Twojej sieci. Lista modeli pobierana z serwera jednym kliknięciem; podgląd postępu generowania (tokeny/s) i przycisk Anuluj, bo raport na modelu 30B potrafi trwać kilkanaście minut
 
-Domyślne modele OpenRoutera:
+Domyślne modele OpenRoutera (gdy nic nie wybierzesz):
 
 | Zadanie | Model | Dlaczego |
 |---|---|---|
@@ -255,6 +255,7 @@ Klucz API konfiguruje się bezpośrednio w aplikacji:
 1. Utwórz darmowe konto na [openrouter.ai](https://openrouter.ai)
 2. Wygeneruj klucz API w zakładce [Keys](https://openrouter.ai/keys) — rejestracja nie wymaga karty kredytowej
 3. W aplikacji przejdź do **Ustawień** i wklej klucz
+4. Opcjonalnie kliknij **Pobierz listę modeli** i wybierz model główny oraz model do analizy portfela — puste pola oznaczają domyślne modele Gemini
 
 > Klucz API jest przechowywany wyłącznie lokalnie w bazie SQLite na Twoim komputerze. Nigdy nie jest wysyłany nigdzie poza oficjalne API OpenRouter.
 
