@@ -83,7 +83,7 @@ export interface ChatRole {
 function normalizeBaseUrl(raw: string): string {
   let url = (raw ?? '').trim().replace(/\/+$/, '')
   if (!url) return ''
-  // Użytkownik często wkleja sam host:port (np. http://192.168.30.241:8888)
+  // Użytkownik często wkleja sam host:port (np. http://192.168.1.50:8888)
   if (!/\/v\d+($|\/)/.test(url)) url += '/v1'
   return url
 }

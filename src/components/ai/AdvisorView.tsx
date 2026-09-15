@@ -79,6 +79,8 @@ export default function AdvisorView() {
   }, [exchange])
 
   const handleAsk = async () => {
+    // Ochrona przed podwójnym kliknięciem — pobieranie danych trwa kilkadziesiąt sekund
+    if (analyzing || loadingData) return
     if (!query.trim()) {
       setError('Napisz, czego szukasz.')
       return
@@ -86,16 +88,22 @@ export default function AdvisorView() {
     setError(null)
     setReport(null)
     try {
-      // Brak danych w cache — pobierz je automatycznie, użytkownik nie musi o tym pamiętać
+      // Brak danych — pobierz je automatycznie, ale WIDOCZNIE: spinner, komunikat i zablokowany
+      // przycisk. Bez tego przez kilkadziesiąt sekund nic się nie dzieje i wygląda to na awarię.
       let available = profiles
       if (available.length === 0) {
-        const result = await fetchAdvisorCandidates(exchange, false)
-        available = result.profiles
-        setProfiles(available)
-        setLastFetchedAt(result.lastFetchedAt)
-        if (available.length === 0) {
-          setError(result.error ?? 'Nie udało się pobrać danych o spółkach.')
-          return
+        setLoadingData(true)
+        try {
+          const result = await fetchAdvisorCandidates(exchange, false)
+          available = result.profiles
+          setProfiles(available)
+          setLastFetchedAt(result.lastFetchedAt)
+          if (available.length === 0) {
+            setError(result.error ?? 'Nie udało się pobrać danych o spółkach.')
+            return
+          }
+        } finally {
+          setLoadingData(false)
         }
       }
       const filters: AdvisorFilters = { dividendOnly }
@@ -202,10 +210,12 @@ export default function AdvisorView() {
           <button
             onClick={handleAsk}
             disabled={analyzing || loadingData || !query.trim()}
+            title={!query.trim() ? 'Najpierw opisz, czego szukasz' : loadingData ? 'Pobieram dane spółek…' : analyzing ? 'Trwa analiza' : undefined}
             className="px-5 py-2 rounded-md text-sm font-medium bg-finance-green hover:bg-emerald-600
-              text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
           >
-            {selected.size > 0 ? `Zapytaj o zaznaczone (${selected.size})` : 'Zapytaj AI'}
+            {loadingData && <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
+            {loadingData ? 'Pobieram dane…' : selected.size > 0 ? `Zapytaj o zaznaczone (${selected.size})` : 'Zapytaj AI'}
           </button>
         </div>
       </div>
@@ -220,8 +230,12 @@ export default function AdvisorView() {
 
       {/* Pobieranie danych */}
       {loadingData && (
-        <div className="glass-card rounded-xl p-4 text-sm text-gray-400">
-          Pobieram dane spółek z {exchangeLabel}… to potrwa kilkadziesiąt sekund.
+        <div className="glass-card rounded-xl p-4 text-sm text-gray-400 flex items-center gap-3">
+          <span className="w-4 h-4 border-2 border-finance-green/40 border-t-finance-green rounded-full animate-spin flex-shrink-0" />
+          <span>
+            Pobieram dane spółek z {exchangeLabel} z Yahoo Finance… to potrwa kilkadziesiąt sekund.
+            {query.trim() && !report && <span className="text-gray-500"> Zaraz potem ruszy analiza AI.</span>}
+          </span>
         </div>
       )}
 
