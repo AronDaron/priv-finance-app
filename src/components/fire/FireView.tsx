@@ -10,8 +10,9 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianG
 import { getAssets, getCashAccounts, getFxRates, getBondValues, getPortfolios, getQuote, getAllSettings, setSetting } from '../../lib/api'
 import type { SupportedCurrency } from '../../lib/types'
 import { gramsToTroyOz } from '../../lib/types'
-import { simulateScenarios, simulateDrawdown, allocationShares, weightedReturn, type FireBucket, type FireScenarios, type FireResult, type DrawdownResult, type AssetAllocation } from '../../lib/fireMath'
+import { simulateScenarios, simulateDrawdown, allocationShares, weightedReturn, BELKA_RATE, type FireBucket, type FireScenarios, type FireResult, type DrawdownResult, type AssetAllocation } from '../../lib/fireMath'
 import LoadingSpinner from '../ui/LoadingSpinner'
+import InfoTip from '../ui/InfoTip'
 
 // ─── Parametry i ich persystencja ─────────────────────────────────────────────
 
@@ -316,8 +317,11 @@ export default function FireView() {
       cash: 0,
     })
     const cs = Math.max(0, params.contribStocksPct), cb = Math.max(0, params.contribBondsPct), cm = Math.max(0, params.contribMetalsPct)
-    const csum = cs + cb + cm || 1
-    const contribShares: AssetAllocation = { stocks: cs / csum, bonds: cb / csum, metals: cm / csum, cash: 0 }
+    const csum = cs + cb + cm
+    // Wszystkie trzy pola na 0 → wpłaty nie mogą pracować na 0%; przyjmujemy 100% akcje/ETF (jak allocationShares)
+    const contribShares: AssetAllocation = csum > 0
+      ? { stocks: cs / csum, bonds: cb / csum, metals: cm / csum, cash: 0 }
+      : { stocks: 1, bonds: 0, metals: 0, cash: 0 }
     const pair = (deltaPct: number) => {
       const r = classRates(deltaPct)
       return { legacy: weightedReturn(shares, r), fresh: weightedReturn(contribShares, r) }
@@ -405,6 +409,11 @@ export default function FireView() {
   const inflationFactorFinal = Math.pow(1 + params.inflationPct / 100, fb.year)
   const expensesShown = showReal ? params.expenses : fb.monthlyExpensesNominal
   const withdrawalShown = showReal ? fb.monthlyNetWithdrawalReal : fb.monthlyNetWithdrawalNominal
+  // Do tooltipa o podatku: udział zysku w koszyku zwykłym (tam obowiązuje Belka)
+  const regularGainShare = fb.buckets.regular.value > 0
+    ? Math.max(0, (fb.buckets.regular.value - fb.buckets.regular.cost) / fb.buckets.regular.value)
+    : 0
+  const hasIkeIkze = fb.buckets.ike.value > 0 || fb.buckets.ikze.value > 0
 
   return (
     <div className="p-6 space-y-6">
@@ -517,7 +526,14 @@ export default function FireView() {
           </div>
 
           <div className="border-t border-gray-700/50 pt-4 space-y-3">
-            <h3 className="text-xs font-semibold text-gray-300">Podatki przy wypłacie</h3>
+            <h3 className="text-xs font-semibold text-gray-300">
+              Podatki przy wypłacie
+              <InfoTip text={<>
+                <b>IKE</b> — 0% podatku przy wypłacie po 60. roku życia (55 przy nabyciu uprawnień emerytalnych) i min. 5 latach wpłat.<br />
+                <b>IKZE</b> — ryczałt 10% od całej wypłaty po 65. roku życia i min. 5 latach wpłat.<br />
+                Symulacja zakłada, że te warunki są spełnione. Wcześniejszy zwrot: IKE — Belka 19% od zysku, IKZE — PIT wg skali od całej kwoty.
+              </>} />
+            </h3>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Wpłat na IKE" value={params.ikeSharePct} onChange={v => update({ ikeSharePct: v })} suffix="%" min={0} max={100} step={5} />
               <Field label="Wpłat na IKZE" value={params.ikzeSharePct} onChange={v => update({ ikzeSharePct: v })} suffix="%" min={0} max={100} step={5} />
@@ -577,14 +593,26 @@ export default function FireView() {
               <div>
                 <div className="text-[11px] text-gray-500 uppercase tracking-wider">Kapitał</div>
                 <div className="text-lg font-bold text-white">{plnShort(showReal ? fb.totalReal : fb.totalNominal)}</div>
-                <div className="text-[11px] text-gray-600">z czego wpłaty: {plnShort(showReal ? fb.contributedTotal / inflationFactorFinal : fb.contributedTotal)}</div>
+                <div className="text-[11px] text-gray-600">
+                  z czego wpłaty: {plnShort(showReal ? fb.contributedTotal / inflationFactorFinal : fb.contributedTotal)}
+                  <InfoTip side="top" text={<>
+                    Twoje własne pieniądze w kapitale: koszt zakupu obecnego portfela (z transakcji; obligacje po nominale, gotówka 1:1)
+                    plus wszystkie przyszłe wpłaty{showReal ? ', urealnione inflacją do dzisiejszych złotówek' : ''}.<br />
+                    Reszta kapitału to zysk — i tylko od niego liczona jest Belka 19%.
+                  </>} />
+                </div>
               </div>
               <div>
                 <div className="text-[11px] text-gray-500 uppercase tracking-wider">Wypłata netto / mies.</div>
                 <div className="text-lg font-bold text-finance-green">{pln(withdrawalShown)}</div>
                 <div className="text-[11px] text-gray-600">
                   przy SWR {params.swrPct}%, po podatku {(fb.effectiveTaxRate * 100).toFixed(1)}% wypłaty
-                  <span className="block text-gray-700">Belka to 19% od zysku, nie od całej wypłaty — reszta wypłaty to zwrot Twoich wpłat, bez podatku</span>
+                  <InfoTip side="top" text={<>
+                    Belka to stałe <b>19%</b>, ale od <b>zysku</b>, nie od całej wypłaty — każda wypłata to proporcjonalnie część zysku i część Twoich wpłat (bez podatku).<br />
+                    W roku {fb.year} zysk stanowi {(regularGainShare * 100).toFixed(0)}% kapitału na zwykłym koncie, więc podatek efektywnie
+                    wynosi 19% × {(regularGainShare * 100).toFixed(0)}% = <b>{(BELKA_RATE * regularGainShare * 100).toFixed(1)}%</b> wypłaty.
+                    {hasIkeIkze && <> Wynik {(fb.effectiveTaxRate * 100).toFixed(1)}% jest dodatkowo ważony koszykami IKE (0%) i IKZE (10% od całości).</>}
+                  </>} />
                 </div>
               </div>
               <div>
